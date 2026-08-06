@@ -155,8 +155,14 @@ swarm run
 | `q` | quit and stop every agent |
 
 Command line: `:inject`, `:type` (no Enter), `:keys`, `:send`, `:broadcast`,
-`:file`, `:start`, `:stop`, `:restart`, `:resize`, `:web`, `:q`. Omit the target
-and it applies to the selected agent.
+`:file`, `:start`, `:stop`, `:restart`, `:resize`, `:web`, `:q`. **Omit the
+target and the command applies to the selected agent** — `:send how is it
+going?` reaches the agent you are looking at.
+
+**Tab completes** commands, targets (agents, `@group`, `@role`, `all`), key
+names after `:keys`, and file paths after `:file`. One match is filled in;
+several extend as far as they agree, then tab cycles through them and the
+candidates are listed under the line.
 
 The agent on display is resized to the pane it occupies and follows the window
 as it changes, so its own layout adapts instead of being cropped on the right.

@@ -1057,3 +1057,60 @@ func TestCommandLineUsesTheWholeWidth(t *testing.T) {
 	}
 	t.Fatalf("the command line shows %d of %d typed characters in a %d-column window", widest, payload, cols)
 }
+
+// TestTabCompletesInTheCommandLine drives completion through the real UI: the
+// key has to reach the command line rather than being swallowed as a normal
+// key, and the result has to appear on screen.
+func TestTabCompletesInTheCommandLine(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the swarm binary and runs a full UI")
+	}
+	bin := buildSwarm(t)
+	cfg := writeFleet(t, "tab-test")
+
+	term, err := vterm.Start(vterm.Options{
+		Command: []string{bin, "run", "-c", cfg},
+		Dir:     filepath.Dir(cfg),
+		Cols:    140,
+		Rows:    40,
+	})
+	if err != nil {
+		t.Fatalf("starting the TUI: %v", err)
+	}
+	defer func() { _ = term.Stop(3 * time.Second) }()
+
+	waitScreen(t, term, "both agents up and quiet", "2 idle")
+
+	// A verb: "bro" has one match.
+	pressKey(t, term, ":")
+	typeText(t, term, "bro")
+	pressKey(t, term, "\t")
+	waitScreen(t, term, "the completed verb", "broadcast")
+
+	// A target. "al" is ambiguous — the agent alpha and the target "all" — so
+	// the first candidate lands and tab again moves to the other.
+	pressKey(t, term, "\x1b") // esc, back to normal mode
+	pressKey(t, term, ":")
+	typeText(t, term, "inject al")
+	pressKey(t, term, "\t")
+	waitScreen(t, term, "the first candidate", "inject all")
+	pressKey(t, term, "\t")
+	waitScreen(t, term, "the next candidate", "inject alpha")
+
+	// An empty target lists what is on offer.
+	pressKey(t, term, "\x1b")
+	pressKey(t, term, ":")
+	typeText(t, term, "restart ")
+	pressKey(t, term, "\t")
+	waitScreen(t, term, "the candidate list", "alpha", "beta")
+
+	// And the completed command still runs.
+	pressKey(t, term, "\x1b")
+	pressKey(t, term, ":")
+	typeText(t, term, "inj")
+	pressKey(t, term, "\t")
+	typeText(t, term, "beta completed and sent\r")
+	// The pane still shows alpha; move to beta to see what it received.
+	typeText(t, term, "j")
+	waitScreen(t, term, "the injected text reaching the agent", "beta saw:completed and sent")
+}

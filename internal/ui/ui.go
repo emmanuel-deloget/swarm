@@ -83,6 +83,13 @@ type model struct {
 	// is also what stops it from selecting text.
 	mouse bool
 
+	// completions holds the candidates of the current tab cycle, and completeAt
+	// the line they were applied to — pressing tab again on an untouched line
+	// moves to the next candidate rather than starting over.
+	completions []string
+	completeIdx int
+	completeAt  string
+
 	// visibleLines is the rendered window into the selected agent's output, and
 	// maxOffset how far back its scrollback still goes. Both come from the last
 	// refresh, so scrolling can be bounded by what actually exists.
@@ -471,10 +478,14 @@ func (m *model) openCommand(prefill string) {
 	m.input.SetValue(prefill)
 	m.input.CursorEnd()
 	m.input.Focus()
+	m.completions, m.completeAt = nil, ""
 }
 
 func (m *model) handleCommandKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
+	case tea.KeyTab:
+		m.complete()
+		return m, nil
 	case tea.KeyEsc, tea.KeyCtrlC:
 		m.mode = m.returnTo
 		m.input.Blur()
@@ -487,6 +498,10 @@ func (m *model) handleCommandKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = m.returnTo
 		return m, m.runCommand(line)
 	}
+	// Any other key ends the completion cycle: the candidates were for what was
+	// on the line before it changed.
+	m.completions, m.completeAt = nil, ""
+
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
@@ -913,19 +928,16 @@ func (m *model) viewHelp() string {
 		{"f", "stage a file and inject its path (images included)"},
 		{"K", "send key presses (esc, ctrl+c, up, ...)"},
 		{"S / x / r", "start / stop / restart the selected agent"},
-		{":", "command line"},
+		{":", "command line (tab completes)"},
 		{"q", "quit and stop every agent"},
 	}
-	cmds := [][2]string{
-		{":inject <target> <text>", "type text and submit it"},
-		{":type <target> <text>", "type text without submitting"},
-		{":keys <target> <keys>", "send key presses"},
-		{":send <target> <text>", "bus message (agents see it as coming from you)"},
-		{":broadcast <text>", "bus message to everyone"},
-		{":file <target> <path>", "stage a file and inject its path"},
-		{":start|:stop|:restart <target>", "lifecycle"},
-		{":web", "show the remote-control URL"},
-		{":q", "quit"},
+	cmds := make([][2]string, 0, len(commands))
+	for _, c := range commands {
+		usage := ":" + c.name
+		if c.args != "" {
+			usage += " " + c.args
+		}
+		cmds = append(cmds, [2]string{usage, c.help})
 	}
 
 	var b strings.Builder
@@ -938,6 +950,8 @@ func (m *model) viewHelp() string {
 		fmt.Fprintf(&b, "  %s  %s\n", padRight(styKey.Render(r[0]), 32), styBase.Render(r[1]))
 	}
 	b.WriteString("\n" + styMuted.Render("A target is an agent name, @group, @role, all, or a comma-separated list.") + "\n")
+	b.WriteString(styMuted.Render("Omit the target and the command applies to the selected agent.") + "\n")
+	b.WriteString(styMuted.Render("Tab completes commands, targets, key names and file paths.") + "\n")
 	b.WriteString(styMuted.Render("press any key to go back"))
 	return b.String()
 }
