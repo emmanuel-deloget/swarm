@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -13,7 +14,9 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/term"
+	"github.com/emmanuel-deloget/swarm/internal/config"
 	"github.com/emmanuel-deloget/swarm/internal/ipc"
+	"github.com/emmanuel-deloget/swarm/internal/vterm"
 )
 
 // statusBar keeps a reminder of how to leave on the last row of the window.
@@ -26,7 +29,10 @@ type statusBar struct {
 	mu      sync.Mutex
 	enabled bool
 	agent   string
-	w, h    int
+	// detach is the key name shown in the bar, so the reminder matches whatever
+	// key actually detaches.
+	detach string
+	w, h   int
 }
 
 func (s *statusBar) size() (w, h int) {
@@ -58,7 +64,7 @@ func (s *statusBar) draw() {
 		return
 	}
 
-	label := fmt.Sprintf(" %s — ctrl+\\ detach ", s.agent)
+	label := fmt.Sprintf(" %s — %s detach ", s.agent, s.detach)
 	// Never write in the very last column: on the bottom row that would wrap
 	// and scroll the whole window.
 	width := s.w - 1
@@ -96,11 +102,12 @@ func cmdAttach(args []string) error {
 	cf.register(fs)
 	keepSize := fs.Bool("keep-size", false, "do not resize the agent to this window")
 	noStatus := fs.Bool("no-status", false, "do not reserve the last row for the detach reminder")
+	detachKey := fs.String("detach-key", "", "key that detaches, overriding the configured one (e.g. ctrl+g)")
 	_ = parseArgs(fs, args, -1)
 
 	name := fs.Arg(0)
 	if name == "" {
-		return fmt.Errorf("usage: swarm attach <agent>    (detach with ctrl+\\)")
+		return fmt.Errorf("usage: swarm attach <agent>    (detach with the configured key, ctrl+\\ by default)")
 	}
 
 	stdin := os.Stdin.Fd()
@@ -114,7 +121,22 @@ func cmdAttach(args []string) error {
 	}
 	defer func() { _ = c.Close() }()
 
-	bar := &statusBar{enabled: !*noStatus, agent: name}
+	// Ask the swarm which key detaches, unless told on the command line. The
+	// default collides with tmux, screen and asciinema, so it has to be movable.
+	keyName := *detachKey
+	if keyName == "" {
+		if info, err := c.Do(ipc.Request{Cmd: ipc.CmdInfo}); err == nil && info.DetachKey != "" {
+			keyName = info.DetachKey
+		} else {
+			keyName = config.DefaultDetachKey
+		}
+	}
+	detachSeq, err := vterm.KeySequences(keyName)
+	if err != nil {
+		return fmt.Errorf("detach key %q: %w", keyName, err)
+	}
+
+	bar := &statusBar{enabled: !*noStatus, agent: name, detach: keyName}
 	if w, h, err := term.GetSize(os.Stdout.Fd()); err == nil {
 		bar.resize(w, h)
 	}
@@ -166,7 +188,8 @@ func cmdAttach(args []string) error {
 		}()
 	}
 
-	// Keystrokes in. Ctrl+\ (0x1c) detaches without touching the agent.
+	// Keystrokes in. The detach key never reaches the agent; everything else
+	// does, byte for byte.
 	inputDone := make(chan struct{})
 	go func() {
 		defer close(inputDone)
@@ -174,7 +197,7 @@ func cmdAttach(args []string) error {
 		for {
 			n, err := os.Stdin.Read(buf)
 			if n > 0 {
-				if i := indexByte(buf[:n], 0x1c); i >= 0 {
+				if i := bytes.Index(buf[:n], []byte(detachSeq)); i >= 0 {
 					if i > 0 {
 						_ = c.Send(ipc.Request{Data: append([]byte(nil), buf[:i]...)})
 					}
@@ -232,15 +255,6 @@ func cmdAttach(args []string) error {
 		}
 		return nil
 	}
-}
-
-func indexByte(p []byte, b byte) int {
-	for i, c := range p {
-		if c == b {
-			return i
-		}
-	}
-	return -1
 }
 
 var _ flag.Value = (*stringList)(nil)

@@ -14,6 +14,7 @@ import (
 	"github.com/emmanuel-deloget/swarm/internal/hub"
 	"github.com/emmanuel-deloget/swarm/internal/ipc"
 	"github.com/emmanuel-deloget/swarm/internal/ui"
+	"github.com/emmanuel-deloget/swarm/internal/vterm"
 	"github.com/emmanuel-deloget/swarm/internal/web"
 )
 
@@ -25,6 +26,7 @@ func cmdRun(args []string) error {
 	webAddr := fs.String("web-addr", "", "override the web listen address")
 	token := fs.String("web-token", "", "override the web token")
 	noStart := fs.Bool("no-start", false, "create the agents but do not launch them")
+	detachKey := fs.String("detach-key", "", "key that leaves an attached agent (default: detach_key in the config)")
 	grace := fs.Duration("grace", 5*time.Second, "grace period given to agents on shutdown")
 	_ = parseArgs(fs, args, -1)
 
@@ -48,6 +50,12 @@ func cmdRun(args []string) error {
 	}
 	if *token != "" {
 		cfg.Web.Token = *token
+	}
+	if *detachKey != "" {
+		if _, err := vterm.KeySequences(*detachKey); err != nil {
+			return fmt.Errorf("-detach-key %q: %w", *detachKey, err)
+		}
+		cfg.DetachKey = *detachKey
 	}
 
 	h, err := hub.New(hub.Options{Config: cfg, EventHistory: 2000})

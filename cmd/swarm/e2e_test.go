@@ -113,9 +113,11 @@ func TestTUIRendersFleetAndAcceptsCommands(t *testing.T) {
 	}
 	defer func() { _ = term.Stop(3 * time.Second) }()
 
-	// The fleet and its state show up.
+	// The fleet and its state show up. "2 idle" proves both agents are running:
+	// the event log prints their argv, so waiting on their output alone would
+	// match before they had started.
 	waitScreen(t, term, "the agent list", "swarm", "tui-test", "alpha", "beta")
-	waitScreen(t, term, "the selected agent's screen", "alpha ready")
+	waitScreen(t, term, "both agents up and quiet", "2 idle")
 
 	// Moving down selects the second agent, whose terminal is then shown.
 	typeText(t, term, "j")
@@ -545,5 +547,171 @@ agents:
 	waitScreen(t, term, "the end of the output again", "line-60")
 	if strings.Contains(term.Text(), "scrolled") {
 		t.Error("back at the bottom, there should be no scroll indicator")
+	}
+}
+
+// TestDetachKeyIsConfigurable covers the reason it exists: ctrl+\ is taken by
+// whatever is recording or multiplexing the terminal (asciinema, tmux, screen),
+// so it has to be movable — and the key it replaces must then reach the agent
+// like any other input.
+func TestDetachKeyIsConfigurable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the swarm binary")
+	}
+	bin := buildSwarm(t)
+
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "swarm.yaml")
+	// cat -v shows control characters, so we can see ctrl+\ arrive as ^\.
+	body := `session: detach-test
+detach_key: ctrl+g
+defaults:
+  idle_after: 300ms
+web:
+  enabled: false
+agents:
+  - name: a1
+    # stty -isig so that ctrl+\ arrives as a character instead of raising
+    # SIGQUIT: this test is about who intercepts the key, not about signals.
+    command: [sh, -c, "stty -isig; printf 'a1 ready\n'; cat -v"]
+`
+	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	run := exec.Command(bin, "run", "-c", cfg, "--no-tui")
+	run.Dir = dir
+	if err := run.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = run.Process.Kill()
+		_, _ = run.Process.Wait()
+	}()
+
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		cmd := exec.Command(bin, "ls", "-c", cfg)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err == nil && strings.Contains(string(out), "a1") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the swarm never came up")
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	term, err := vterm.Start(vterm.Options{
+		Command: []string{bin, "attach", "-c", cfg, "a1"},
+		Dir:     dir,
+		Cols:    100,
+		Rows:    24,
+	})
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	defer func() { _ = term.Stop(3 * time.Second) }()
+
+	// The status bar advertises the configured key, not the default.
+	waitScreen(t, term, "the agent screen", "a1 ready")
+	waitScreen(t, term, "the configured key in the status bar", "ctrl+g detach")
+	if strings.Contains(term.Text(), `ctrl+\ detach`) {
+		t.Error("the status bar still advertises the default key")
+	}
+
+	// ctrl+\ is no longer special: it must reach the agent, and leave the
+	// attachment alone.
+	pressKey(t, term, "\x1c")
+	waitScreen(t, term, "ctrl+\\ passed through to the agent", "^\\")
+	time.Sleep(500 * time.Millisecond)
+	if term.Exited() {
+		t.Fatal("ctrl+\\ detached even though the key was moved")
+	}
+
+	// ctrl+g does detach.
+	pressKey(t, term, "\x07")
+	select {
+	case <-term.Done():
+	case <-time.After(10 * time.Second):
+		t.Fatalf("ctrl+g did not detach; screen was:\n%s", term.Text())
+	}
+
+	// The flag overrides the configured key.
+	term2, err := vterm.Start(vterm.Options{
+		Command: []string{bin, "attach", "-c", cfg, "-detach-key", "ctrl+]", "a1"},
+		Dir:     dir,
+		Cols:    100,
+		Rows:    24,
+	})
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	defer func() { _ = term2.Stop(3 * time.Second) }()
+
+	waitScreen(t, term2, "the overridden key in the status bar", "ctrl+] detach")
+	pressKey(t, term2, "\x1d")
+	select {
+	case <-term2.Done():
+	case <-time.After(10 * time.Second):
+		t.Fatalf("-detach-key was ignored; screen was:\n%s", term2.Text())
+	}
+}
+
+// TestTUIUsesTheConfiguredDetachKey checks the TUI's attached mode honours the
+// same setting as `swarm attach`, so there is one key to remember.
+func TestTUIUsesTheConfiguredDetachKey(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the swarm binary and runs a full UI")
+	}
+	bin := buildSwarm(t)
+
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "swarm.yaml")
+	body := `session: tui-detach
+detach_key: ctrl+g
+defaults:
+  idle_after: 300ms
+web:
+  enabled: false
+agents:
+  - name: a1
+    command: [sh, -c, "stty -isig; printf 'a1 ready\n'; cat -v"]
+`
+	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	term, err := vterm.Start(vterm.Options{
+		Command: []string{bin, "run", "-c", cfg},
+		Dir:     dir,
+		Cols:    120,
+		Rows:    40,
+	})
+	if err != nil {
+		t.Fatalf("starting the TUI: %v", err)
+	}
+	defer func() { _ = term.Stop(3 * time.Second) }()
+
+	// Wait for the state, not for a string that also appears in the argv the
+	// event log prints: that would match before the agent is running.
+	waitScreen(t, term, "the agent to be up and quiet", "1 idle")
+
+	// Attach: the status bar names the configured key.
+	pressKey(t, term, "\r")
+	waitScreen(t, term, "the attached status bar", "ATTACHED", "ctrl+g")
+
+	// ctrl+\ now goes to the agent instead of detaching.
+	pressKey(t, term, "\x1c")
+	waitScreen(t, term, "ctrl+\\ reaching the agent", "^\\")
+	if !strings.Contains(term.Text(), "ATTACHED") {
+		t.Error("ctrl+\\ left the attached mode even though the key was moved")
+	}
+
+	// ctrl+g comes back.
+	pressKey(t, term, "\x07")
+	waitScreen(t, term, "the normal status bar again", "detached")
+	if strings.Contains(term.Text(), "ATTACHED") {
+		t.Error("ctrl+g did not leave the attached mode")
 	}
 }

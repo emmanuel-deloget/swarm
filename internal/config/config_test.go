@@ -246,3 +246,31 @@ func TestBusIsEnabledByDefault(t *testing.T) {
 		t.Error("bus.enabled: false should turn it off")
 	}
 }
+
+func TestDetachKey(t *testing.T) {
+	cfg, err := Load(write(t, "agents:\n  - name: a\n    command: [x]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DetachKey != DefaultDetachKey {
+		t.Errorf("detach_key = %q, want the default %q", cfg.DetachKey, DefaultDetachKey)
+	}
+
+	// Anything the keys command understands is accepted, which is what lets you
+	// get out of the way of tmux or asciinema.
+	for _, key := range []string{"ctrl+g", "ctrl+]", "^q", "esc esc", "f12"} {
+		cfg, err := Load(write(t, "detach_key: \""+key+"\"\nagents:\n  - name: a\n    command: [x]\n"))
+		if err != nil {
+			t.Errorf("detach_key %q was rejected: %v", key, err)
+			continue
+		}
+		if cfg.DetachKey != key {
+			t.Errorf("detach_key = %q, want %q", cfg.DetachKey, key)
+		}
+	}
+
+	// A name nobody can type is refused at load time, not at detach time.
+	if _, err := Load(write(t, "detach_key: \"ctrl+nonsense\"\nagents:\n  - name: a\n    command: [x]\n")); err == nil {
+		t.Error("an unknown key name should be rejected")
+	}
+}

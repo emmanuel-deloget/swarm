@@ -167,13 +167,14 @@ func (s *Server) handle(req Request) Response {
 	case CmdInfo:
 		url, token := h.WebURL()
 		return Response{
-			OK:       true,
-			Session:  h.Config().Session,
-			Socket:   s.path,
-			StateDir: h.StateDir(),
-			WebURL:   url,
-			Token:    token,
-			Shared:   h.Config().Shared,
+			OK:        true,
+			Session:   h.Config().Session,
+			DetachKey: h.Config().DetachKey,
+			Socket:    s.path,
+			StateDir:  h.StateDir(),
+			WebURL:    url,
+			Token:     token,
+			Shared:    h.Config().Shared,
 		}
 
 	case CmdList:

@@ -56,6 +56,11 @@ defaults:
   delivery: push
   message_template: "[swarm] {from} says: {body}"
 
+# Key that leaves an attached agent, in the TUI and in "swarm attach". Move it
+# when something else is capturing the terminal: tmux, screen and asciinema all
+# want ctrl+\ too. Any name the keys command understands works: ctrl+g, f12.
+detach_key: 'ctrl+\'
+
 web:
   enabled: true
   # 127.0.0.1 keeps it local. Use 0.0.0.0 to reach it from your phone, and

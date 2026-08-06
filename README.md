@@ -141,7 +141,7 @@ swarm run
 |---|---|
 | `j` `k` `↑` `↓`, `tab` | select an agent |
 | `1`…`9` | jump to an agent |
-| `↵` | attach: your keys go to that agent, `ctrl+\` comes back |
+| `↵` | attach: your keys go to that agent, the detach key comes back |
 | `A` | attach full screen, with a byte-perfect keyboard |
 | `pgup` `pgdn` | scroll back through the agent's output |
 | `m` | mosaic: every agent at once |
@@ -176,7 +176,7 @@ fleet from any other terminal — or from a script.
 swarm ls                            # the fleet and its state
 swarm status @dev                   # more detail
 swarm screen dev-1                  # what that terminal shows right now
-swarm attach dev-1                  # take it over in this window (ctrl+\ to leave)
+swarm attach dev-1                  # take it over in this window
 swarm logs dev-1 -f                 # recorded output, escape sequences stripped
 
 swarm inject dev-1 "run the tests"  # type and submit
@@ -195,8 +195,21 @@ swarm shutdown
 ```
 
 While attached, the bottom row of the window is a status bar showing the agent
-name and `ctrl+\ detach`; the agent gets the rows above it. `swarm attach
+name and the detach key; the agent gets the rows above it. `swarm attach
 -no-status` gives the whole window to the agent instead.
+
+### Detaching
+
+`ctrl+\` leaves an attached agent, in the TUI and in `swarm attach` alike. It is
+also what tmux, screen and asciinema like to grab, so it is configurable:
+
+```yaml
+detach_key: 'ctrl+g'      # any name `swarm keys` understands: ctrl+], f12, esc esc
+```
+
+`swarm run -detach-key ctrl+g` and `swarm attach -detach-key ctrl+g` override it
+for one session — handy while recording. Whatever key it is no longer reaches
+the agent; the one it replaced does.
 
 `swarm run --no-tui` runs it headless if you would rather drive it entirely from
 the CLI or the web.

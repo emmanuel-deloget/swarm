@@ -13,8 +13,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/emmanuel-deloget/swarm/internal/agent"
+	"github.com/emmanuel-deloget/swarm/internal/config"
 	"github.com/emmanuel-deloget/swarm/internal/event"
 	"github.com/emmanuel-deloget/swarm/internal/hub"
+	"github.com/emmanuel-deloget/swarm/internal/vterm"
 )
 
 // Run shows the interface and returns when the user quits, or when quit is
@@ -68,6 +70,12 @@ type model struct {
 	isError bool
 	confirm string // pending confirmation prompt
 
+	// detachKey is the key name that leaves the attached mode, and detachSeq the
+	// bytes it produces. Configurable because the default collides with tmux,
+	// screen and asciinema.
+	detachKey string
+	detachSeq string
+
 	// visibleLines is the rendered window into the selected agent's output, and
 	// maxOffset how far back its scrollback still goes. Both come from the last
 	// refresh, so scrolling can be bounded by what actually exists.
@@ -81,16 +89,26 @@ func newModel(h *hub.Hub, events <-chan event.Event, quit <-chan struct{}) *mode
 	in.CharLimit = 4096
 	in.Width = 60
 
+	key := h.Config().DetachKey
+	seq, err := vterm.KeySequences(key)
+	if err != nil {
+		// The config validated this key, so this cannot normally happen; fall
+		// back rather than leave the user with no way out of an attached pane.
+		key, seq = config.DefaultDetachKey, "\x1c"
+	}
+
 	return &model{
-		h:       h,
-		events:  events,
-		quit:    quit,
-		mode:    modeNormal,
-		infos:   h.Infos(),
-		showLog: true,
-		log:     h.Log().History(200),
-		input:   in,
-		status:  "press ? for help",
+		h:         h,
+		events:    events,
+		quit:      quit,
+		mode:      modeNormal,
+		infos:     h.Infos(),
+		showLog:   true,
+		log:       h.Log().History(200),
+		input:     in,
+		status:    "press ? for help",
+		detachKey: key,
+		detachSeq: seq,
 	}
 }
 
@@ -291,7 +309,7 @@ func (m *model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if in := m.current(); in != nil && in.State != agent.StateExited && in.State != agent.StateStopped {
 			m.mode = modeAttached
 			m.offset = 0
-			m.status = fmt.Sprintf("attached to %s — ctrl+\\ to come back", in.Name)
+			m.status = fmt.Sprintf("attached to %s — %s to come back", in.Name, m.detachKey)
 		} else {
 			m.status, m.isError = "that agent is not running", true
 		}
@@ -383,15 +401,16 @@ func (m *model) clampSel() {
 	m.refreshScreen()
 }
 
-// handleAttachedKey forwards keystrokes to the selected agent. ctrl+\ leaves
-// the mode, which is the same key the standalone `swarm attach` uses.
+// handleAttachedKey forwards keystrokes to the selected agent. The detach key
+// leaves the mode instead, and is the same one the standalone `swarm attach`
+// uses.
 func (m *model) handleAttachedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.Type == tea.KeyCtrlBackslash {
+	data := keyBytes(msg)
+	if string(data) == m.detachSeq {
 		m.mode = modeNormal
 		m.status = "detached"
 		return m, nil
 	}
-	data := keyBytes(msg)
 	if len(data) == 0 {
 		return m, nil
 	}
@@ -741,7 +760,7 @@ func (m *model) statusLine() string {
 		styKey.Render("?") + " help",
 	}
 	if m.mode == modeAttached {
-		hints = []string{styAttn.Render("ATTACHED") + styMuted.Render(" — keys go to the agent, ") + styKey.Render("ctrl+\\") + styMuted.Render(" to detach")}
+		hints = []string{styAttn.Render("ATTACHED") + styMuted.Render(" — keys go to the agent, ") + styKey.Render(m.detachKey) + styMuted.Render(" to detach")}
 	}
 	left := strings.Join(hints, styMuted.Render(" · "))
 	status := m.status
@@ -831,7 +850,7 @@ func (m *model) viewHelp() string {
 		{"j / k / ↑ / ↓", "select an agent"},
 		{"tab / shift+tab", "cycle through agents"},
 		{"1..9", "jump to an agent"},
-		{"↵", "attach: your keys go to that agent (ctrl+\\ to come back)"},
+		{"↵", "attach: your keys go to that agent (" + m.detachKey + " to come back)"},
 		{"A", "attach full screen, with a byte-perfect keyboard"},
 		{"pgup / pgdn", "scroll the agent's screen"},
 		{"m", "mosaic: every agent at once"},

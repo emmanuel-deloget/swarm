@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/emmanuel-deloget/swarm/internal/vterm"
 	"gopkg.in/yaml.v3"
 )
 
@@ -31,6 +32,12 @@ type Config struct {
 
 	// Defaults are merged into every agent that leaves a field empty.
 	Defaults AgentDefaults `yaml:"defaults"`
+
+	// DetachKey leaves an attached terminal, in the TUI and in `swarm attach`
+	// alike. It is a key name as understood by the keys command ("ctrl+g",
+	// "ctrl+]", "esc esc"). Configurable because the default collides with
+	// whatever else is capturing the terminal — tmux, asciinema, screen.
+	DetachKey string `yaml:"detach_key"`
 
 	// Web configures the remote-control HTTP server.
 	Web WebConfig `yaml:"web"`
@@ -188,6 +195,9 @@ const (
 // DefaultMessageTemplate is what a pushed bus message looks like in a terminal.
 const DefaultMessageTemplate = "[swarm] message from {from}: {body}"
 
+// DefaultDetachKey leaves an attached terminal when nothing else is configured.
+const DefaultDetachKey = "ctrl+\\"
+
 // Load reads and validates a config file.
 func Load(path string) (*Config, error) {
 	raw, err := os.ReadFile(path)
@@ -277,6 +287,13 @@ func (c *Config) normalize() error {
 	}
 	if d.MessageTemplate == "" {
 		d.MessageTemplate = DefaultMessageTemplate
+	}
+
+	if c.DetachKey == "" {
+		c.DetachKey = DefaultDetachKey
+	}
+	if _, err := vterm.KeySequences(c.DetachKey); err != nil {
+		return fmt.Errorf("detach_key %q: %w", c.DetachKey, err)
 	}
 
 	if c.Web.Addr == "" {

@@ -107,12 +107,13 @@ type Response struct {
 	// screen, after it fell too far behind.
 	Resync bool `json:"resync,omitempty"`
 
-	Session  string `json:"session,omitempty"`
-	Socket   string `json:"socket,omitempty"`
-	StateDir string `json:"state_dir,omitempty"`
-	WebURL   string `json:"web_url,omitempty"`
-	Token    string `json:"token,omitempty"`
-	Shared   string `json:"shared,omitempty"`
+	Session   string `json:"session,omitempty"`
+	Socket    string `json:"socket,omitempty"`
+	DetachKey string `json:"detach_key,omitempty"`
+	StateDir  string `json:"state_dir,omitempty"`
+	WebURL    string `json:"web_url,omitempty"`
+	Token     string `json:"token,omitempty"`
+	Shared    string `json:"shared,omitempty"`
 }
 
 func errorResponse(err error) Response {
