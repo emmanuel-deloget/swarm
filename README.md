@@ -146,6 +146,7 @@ swarm run
 | `pgup` `pgdn` | scroll back through the agent's output |
 | `m` | mosaic: every agent at once |
 | `l` | show/hide the event log |
+| `M` | mouse reporting on/off (see below) |
 | `i` `s` `b` | inject / send a bus message / broadcast |
 | `f` | stage a file and inject its path |
 | `K` | send key presses |
@@ -198,6 +199,16 @@ swarm shutdown
 While attached, the bottom row of the window is a status bar showing the agent
 name and the detach key; the agent gets the rows above it. `swarm attach
 -no-status` gives the whole window to the agent instead.
+
+### The mouse
+
+Mouse reporting is **off by default**, and that is deliberate: a terminal that
+reports mouse events to an application stops selecting text itself, so turning it
+on costs you copy-paste of an agent's output. With it on, the wheel scrolls the
+pane and a click picks an agent.
+
+`M` toggles it while running, and `mouse: true` starts with it on. Many terminals
+also let you select with shift held down while reporting is on.
 
 ### Key names
 

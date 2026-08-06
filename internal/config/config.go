@@ -39,6 +39,13 @@ type Config struct {
 	// whatever else is capturing the terminal — tmux, asciinema, screen.
 	DetachKey string `yaml:"detach_key"`
 
+	// Mouse turns on mouse reporting in the TUI: the wheel scrolls the pane and
+	// a click selects an agent. It is off by default, because a terminal that
+	// reports mouse events to swarm no longer lets you select and copy text
+	// with it — and reading an agent's output matters more than the wheel.
+	// Toggle it at runtime with M.
+	Mouse bool `yaml:"mouse"`
+
 	// Web configures the remote-control HTTP server.
 	Web WebConfig `yaml:"web"`
 

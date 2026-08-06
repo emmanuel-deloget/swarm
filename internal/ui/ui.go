@@ -26,7 +26,10 @@ func Run(h *hub.Hub, quit <-chan struct{}) error {
 	defer cancel()
 
 	m := newModel(h, events, quit)
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	// Mouse reporting is requested from Init when configured, not here: with it
+	// on, the terminal stops handling text selection itself, so it has to be
+	// something one can turn off.
+	p := tea.NewProgram(m, tea.WithAltScreen())
 
 	// A shutdown asked for from elsewhere must also close the UI.
 	go func() {
@@ -76,6 +79,10 @@ type model struct {
 	detachKey string
 	detachSeq string
 
+	// mouse tracks whether the terminal is reporting mouse events to us, which
+	// is also what stops it from selecting text.
+	mouse bool
+
 	// visibleLines is the rendered window into the selected agent's output, and
 	// maxOffset how far back its scrollback still goes. Both come from the last
 	// refresh, so scrolling can be bounded by what actually exists.
@@ -109,6 +116,7 @@ func newModel(h *hub.Hub, events <-chan event.Event, quit <-chan struct{}) *mode
 		status:    "press ? for help",
 		detachKey: key,
 		detachSeq: seq,
+		mouse:     h.Config().Mouse,
 	}
 }
 
@@ -134,7 +142,11 @@ func (m *model) waitEvent() tea.Cmd {
 }
 
 func (m *model) Init() tea.Cmd {
-	return tea.Batch(tick(), m.waitEvent())
+	cmds := []tea.Cmd{tick(), m.waitEvent()}
+	if m.mouse {
+		cmds = append(cmds, tea.EnableMouseCellMotion)
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m *model) current() *agent.Info {
@@ -329,6 +341,15 @@ func (m *model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "l":
 		m.showLog = !m.showLog
 		return m, nil
+
+	case "M":
+		m.mouse = !m.mouse
+		if m.mouse {
+			m.status = "mouse on — wheel scrolls, click selects; text selection is the terminal's no more"
+			return m, tea.EnableMouseCellMotion
+		}
+		m.status = "mouse off — select and copy text as usual"
+		return m, tea.DisableMouse
 
 	case "?":
 		m.returnTo = m.mode
@@ -855,6 +876,7 @@ func (m *model) viewHelp() string {
 		{"pgup / pgdn", "scroll the agent's screen"},
 		{"m", "mosaic: every agent at once"},
 		{"l", "show or hide the event log"},
+		{"M", "mouse reporting: the wheel and clicks, at the cost of text selection"},
 		{"i", "inject text into the selected agent"},
 		{"s", "send a bus message to the selected agent"},
 		{"b", "broadcast a bus message"},

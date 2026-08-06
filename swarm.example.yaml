@@ -45,6 +45,11 @@ defaults:
   delivery: push
   message_template: "[swarm] {from} says: {body}"
 
+# Mouse reporting in the TUI: the wheel scrolls the pane, a click picks an
+# agent. Off by default, because a terminal that reports mouse events to swarm
+# will no longer select text for you. Toggle it with M while running.
+mouse: false
+
 # Key that leaves an attached agent, in the TUI and in "swarm attach". Move it
 # when something else is capturing the terminal: tmux, screen and asciinema all
 # want ctrl+\ too. Run "swarm keys -list" for the names accepted here.

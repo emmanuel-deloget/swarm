@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -808,4 +810,141 @@ func assertNoPanic(t *testing.T, what string, out []byte) {
 			t.Fatalf("`swarm %s` crashed:\n%s", what, text)
 		}
 	}
+}
+
+// TestMouseReportingIsOffByDefault checks the TUI does not ask the terminal for
+// mouse events unless told to. A terminal that reports them to an application
+// stops handling text selection itself, so this is the difference between being
+// able to copy an agent's output and not.
+//
+// The assertion is on the escape sequences swarm actually writes: OnOutput sees
+// the raw stream, so there is no need to trust a claim about the mode.
+func TestMouseReportingIsOffByDefault(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the swarm binary and runs a full UI")
+	}
+	bin := buildSwarm(t)
+
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "swarm.yaml")
+	body := `session: mouse-test
+defaults:
+  idle_after: 300ms
+web:
+  enabled: false
+agents:
+  - name: a1
+    command: [sh, -c, "printf 'ready\n'; while :; do sleep 1; done"]
+`
+	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var (
+		mu     sync.Mutex
+		stream []byte
+	)
+	seen := func(pattern string) bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return bytes.Contains(stream, []byte(pattern))
+	}
+
+	term, err := vterm.Start(vterm.Options{
+		Command: []string{bin, "run", "-c", cfg},
+		Dir:     dir,
+		Cols:    100,
+		Rows:    30,
+		OnOutput: func(b []byte) {
+			mu.Lock()
+			stream = append(stream, b...)
+			mu.Unlock()
+		},
+	})
+	if err != nil {
+		t.Fatalf("starting the TUI: %v", err)
+	}
+	defer func() { _ = term.Stop(3 * time.Second) }()
+
+	waitScreen(t, term, "the agent to be up", "1 idle")
+
+	// 1002 is cell-motion tracking, 1003 all-motion: neither should be asked
+	// for while the setting is off.
+	for _, mode := range []string{"\x1b[?1002h", "\x1b[?1003h"} {
+		if seen(mode) {
+			t.Errorf("the TUI asked for mouse reporting (%q) without being told to", mode)
+		}
+	}
+
+	// M turns it on, for the wheel and for clicking an agent.
+	pressKey(t, term, "M")
+	deadline := time.Now().Add(5 * time.Second)
+	for !seen("\x1b[?1002h") && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !seen("\x1b[?1002h") {
+		t.Fatalf("M did not turn mouse reporting on; screen was:\n%s", term.Text())
+	}
+	waitScreen(t, term, "the status line to say so", "mouse on")
+
+	// And off again, giving text selection back.
+	pressKey(t, term, "M")
+	waitScreen(t, term, "the status line to say so", "mouse off")
+}
+
+// TestMouseReportingCanBeConfigured checks mouse: true asks for it from the
+// start, for whoever prefers the wheel.
+func TestMouseReportingCanBeConfigured(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the swarm binary and runs a full UI")
+	}
+	bin := buildSwarm(t)
+
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "swarm.yaml")
+	body := `session: mouse-on-test
+mouse: true
+defaults:
+  idle_after: 300ms
+web:
+  enabled: false
+agents:
+  - name: a1
+    command: [sh, -c, "printf 'ready\n'; while :; do sleep 1; done"]
+`
+	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var (
+		mu     sync.Mutex
+		stream []byte
+	)
+	term, err := vterm.Start(vterm.Options{
+		Command: []string{bin, "run", "-c", cfg},
+		Dir:     dir,
+		Cols:    100,
+		Rows:    30,
+		OnOutput: func(b []byte) {
+			mu.Lock()
+			stream = append(stream, b...)
+			mu.Unlock()
+		},
+	})
+	if err != nil {
+		t.Fatalf("starting the TUI: %v", err)
+	}
+	defer func() { _ = term.Stop(3 * time.Second) }()
+
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		got := bytes.Contains(stream, []byte("\x1b[?1002h"))
+		mu.Unlock()
+		if got {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("mouse: true did not turn mouse reporting on")
 }
