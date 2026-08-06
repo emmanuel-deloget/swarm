@@ -182,6 +182,7 @@ swarm logs dev-1 -f                 # recorded output, escape sequences stripped
 swarm inject dev-1 "run the tests"  # type and submit
 swarm inject dev-1 -submit=false "typed but not submitted"
 swarm keys dev-1 esc ctrl+c         # key presses
+swarm keys -list                    # the key names swarm understands
 swarm inject dev-1 -file shot.png "what is wrong here?"
 
 swarm send @review "PR 42 is ready" # bus message
@@ -198,13 +199,24 @@ While attached, the bottom row of the window is a status bar showing the agent
 name and the detach key; the agent gets the rows above it. `swarm attach
 -no-status` gives the whole window to the agent instead.
 
+### Key names
+
+`swarm keys -list` prints every name, the bytes it sends, and the three patterns
+that cover the rest: `ctrl+<char>`, `alt+<char>`, `^<char>`. Several keys in one
+call are fine: `swarm keys dev-1 esc ctrl+c enter`.
+
+A few names are **sendable but not bindable**, and the listing marks them:
+`ctrl+enter` and `shift+enter` send bytes an agent may well act on, but a
+terminal produces nothing distinct when you press them, so a key bound to one
+would be advertised and never fire. Binding one is refused, with the reason.
+
 ### Detaching
 
 `ctrl+\` leaves an attached agent, in the TUI and in `swarm attach` alike. It is
 also what tmux, screen and asciinema like to grab, so it is configurable:
 
 ```yaml
-detach_key: 'ctrl+g'      # any name `swarm keys` understands: ctrl+], f12, esc esc
+detach_key: 'ctrl+g'      # any bindable name: ctrl+], f12, esc esc
 ```
 
 `swarm run -detach-key ctrl+g` and `swarm attach -detach-key ctrl+g` override it

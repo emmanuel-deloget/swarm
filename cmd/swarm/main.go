@@ -27,6 +27,7 @@ fleet
 driving an agent
   inject <target> [text]    type text into the agent prompt
   keys <target> <keys...>   send key presses (ctrl+c, esc, enter, up, ...)
+  keys -list                list the key names swarm understands
   screen <target>           print what the agent's terminal shows right now
   attach <agent>            take over an agent's terminal in this window
   logs <agent>              show the recorded terminal output

@@ -18,6 +18,7 @@ import (
 	"github.com/emmanuel-deloget/swarm/internal/event"
 	"github.com/emmanuel-deloget/swarm/internal/hub"
 	"github.com/emmanuel-deloget/swarm/internal/ipc"
+	"github.com/emmanuel-deloget/swarm/internal/vterm"
 )
 
 func loadConfig(path string) (*config.Config, error) { return config.Load(path) }
@@ -333,7 +334,13 @@ func cmdKeys(args []string) error {
 	var cf clientFlags
 	fs := newFlagSet("keys")
 	cf.register(fs)
+	list := fs.Bool("list", false, "print the key names swarm understands and exit")
 	_ = parseArgs(fs, args, 1)
+
+	if *list {
+		printKeyNames()
+		return nil
+	}
 
 	target := fs.Arg(0)
 	keys := joinArgs(argsFrom(fs, 1))
@@ -354,6 +361,66 @@ func cmdKeys(args []string) error {
 	}
 	printResults(resp.Results)
 	return nil
+}
+
+// printKeyNames documents the key vocabulary in one place: the names below plus
+// the three patterns, and which of them can be bound rather than only sent.
+func printKeyNames() {
+	fmt.Println("Key names accepted by `swarm keys` and by detach_key:")
+	fmt.Println()
+
+	names := vterm.KeyNames()
+	rows := make([][]string, 0, len(names))
+	for _, n := range names {
+		seq, err := vterm.KeySequence(n)
+		if err != nil {
+			continue
+		}
+		note := ""
+		if !vterm.Bindable(n) {
+			note = "can be sent, cannot be bound"
+		}
+		rows = append(rows, []string{"  " + n, quoteSeq(seq), note})
+	}
+	printTable(rows)
+
+	fmt.Println()
+	fmt.Println("Patterns, for anything not named above:")
+	fmt.Println("  ctrl+<char>    ctrl+c, ctrl+d, ctrl+], ctrl+\\")
+	fmt.Println("  ^<char>        ^c, ^d — the same thing, shorter")
+	fmt.Println("  alt+<char>     alt+b; also alt+<name>, as in alt+left")
+	fmt.Println("  <char>         a single character sends itself")
+	fmt.Println()
+	fmt.Println("Several keys in one go: swarm keys dev-1 esc ctrl+c enter")
+	fmt.Println("A key marked above as \"cannot be bound\" is one a terminal never")
+	fmt.Println("produces on its own, so detach_key would never fire on it.")
+}
+
+// quoteSeq renders a key's bytes readably: ^C rather than an invisible 0x03.
+func quoteSeq(seq string) string {
+	var b strings.Builder
+	for _, c := range []byte(seq) {
+		switch {
+		case c == 0x1b:
+			b.WriteString("ESC")
+		case c == '\r':
+			b.WriteString("CR")
+		case c == '\n':
+			b.WriteString("LF")
+		case c == '\t':
+			b.WriteString("TAB")
+		case c == 0x7f:
+			b.WriteString("DEL")
+		case c == ' ':
+			b.WriteString("SPACE")
+		case c < 0x20:
+			b.WriteByte('^')
+			b.WriteByte(c + '@')
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 func cmdScreen(args []string) error {

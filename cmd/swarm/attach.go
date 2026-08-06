@@ -131,6 +131,9 @@ func cmdAttach(args []string) error {
 			keyName = config.DefaultDetachKey
 		}
 	}
+	if err := vterm.CheckBindable(keyName); err != nil {
+		return fmt.Errorf("detach key: %w (see `swarm keys -list`)", err)
+	}
 	detachSeq, err := vterm.KeySequences(keyName)
 	if err != nil {
 		return fmt.Errorf("detach key %q: %w", keyName, err)

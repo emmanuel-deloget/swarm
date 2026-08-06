@@ -268,3 +268,57 @@ func TestRenderKeepsColours(t *testing.T) {
 		t.Errorf("Render() lost the content: %q", render)
 	}
 }
+
+func TestBindableVersusSendable(t *testing.T) {
+	// Some names exist so those bytes can be *sent* to an agent, but a terminal
+	// never produces them as a distinct key press: binding one would leave the
+	// user with a key that is advertised and never fires.
+	for _, name := range []string{"ctrl+enter", "shift+enter"} {
+		if _, err := KeySequence(name); err != nil {
+			t.Errorf("%q should still be sendable: %v", name, err)
+		}
+		if Bindable(name) {
+			t.Errorf("%q should not be bindable", name)
+		}
+		if err := CheckBindable(name); err == nil {
+			t.Errorf("CheckBindable(%q) should explain why not", name)
+		} else if !strings.Contains(err.Error(), "same bytes") {
+			t.Errorf("CheckBindable(%q) should say why: %v", name, err)
+		}
+	}
+
+	// The keys one would actually reach for are bindable.
+	for _, name := range []string{"ctrl+g", "ctrl+]", "^q", "esc", "f12", "alt+enter", "shift+tab"} {
+		if err := CheckBindable(name); err != nil {
+			t.Errorf("CheckBindable(%q) = %v, want it accepted", name, err)
+		}
+	}
+
+	// An unknown name is still an error, with its own message.
+	if err := CheckBindable("ctrl+nonsense"); err == nil {
+		t.Error("an unknown name should be refused")
+	}
+
+	// A multi-key binding is checked key by key.
+	if err := CheckBindable("esc ctrl+enter"); err == nil {
+		t.Error("a sequence containing an unbindable key should be refused")
+	}
+}
+
+func TestKeyNamesAreAllUsable(t *testing.T) {
+	names := KeyNames()
+	if len(names) < 20 {
+		t.Fatalf("KeyNames returned %d names, expected the whole alias table", len(names))
+	}
+	// Everything the listing prints must translate, or the listing is a lie.
+	for _, n := range names {
+		if _, err := KeySequence(n); err != nil {
+			t.Errorf("KeyNames lists %q but KeySequence rejects it: %v", n, err)
+		}
+	}
+	for i := 1; i < len(names); i++ {
+		if names[i-1] > names[i] {
+			t.Fatalf("KeyNames should be sorted: %q before %q", names[i-1], names[i])
+		}
+	}
+}

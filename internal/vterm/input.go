@@ -2,6 +2,7 @@ package vterm
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -92,6 +93,46 @@ var keyAliases = map[string]string{
 	"alt+enter":   "\x1b\r",
 	"shift+enter": "\x1b\r",
 	"ctrl+enter":  "\n",
+}
+
+// unbindable lists names that exist so you can *send* those bytes to an agent,
+// but that a terminal cannot produce as a distinct key press — so binding
+// anything to them would never fire.
+var unbindable = map[string]string{
+	"ctrl+enter":  "a terminal sends the same bytes for ctrl+enter as for enter",
+	"shift+enter": "a terminal sends the same bytes for shift+enter as for alt+enter",
+}
+
+// CheckBindable reports whether a key name can be used as a binding — a detach
+// key, say — as opposed to merely being sendable.
+func CheckBindable(name string) error {
+	key := strings.ToLower(strings.TrimSpace(name))
+	if _, err := KeySequences(key); err != nil {
+		return err
+	}
+	for _, part := range strings.Fields(key) {
+		if why, bad := unbindable[part]; bad {
+			return fmt.Errorf("%q cannot be bound: %s", part, why)
+		}
+	}
+	return nil
+}
+
+// KeyNames returns every name KeySequence understands, sorted. It is what
+// `swarm keys -list` prints, so there is somewhere to look the names up.
+func KeyNames() []string {
+	out := make([]string, 0, len(keyAliases))
+	for name := range keyAliases {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Bindable reports whether a name can be bound as well as sent.
+func Bindable(name string) bool {
+	_, bad := unbindable[strings.ToLower(strings.TrimSpace(name))]
+	return !bad
 }
 
 // KeySequence translates a key name into the bytes to write to a terminal.

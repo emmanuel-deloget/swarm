@@ -47,7 +47,7 @@ defaults:
 
 # Key that leaves an attached agent, in the TUI and in "swarm attach". Move it
 # when something else is capturing the terminal: tmux, screen and asciinema all
-# want ctrl+\ too. Any name the keys command understands works: ctrl+g, f12.
+# want ctrl+\ too. Run "swarm keys -list" for the names accepted here.
 detach_key: 'ctrl+\'
 
 web:

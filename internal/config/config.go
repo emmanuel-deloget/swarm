@@ -292,8 +292,8 @@ func (c *Config) normalize() error {
 	if c.DetachKey == "" {
 		c.DetachKey = DefaultDetachKey
 	}
-	if _, err := vterm.KeySequences(c.DetachKey); err != nil {
-		return fmt.Errorf("detach_key %q: %w", c.DetachKey, err)
+	if err := vterm.CheckBindable(c.DetachKey); err != nil {
+		return fmt.Errorf("detach_key: %w (see `swarm keys -list`)", err)
 	}
 
 	if c.Web.Addr == "" {

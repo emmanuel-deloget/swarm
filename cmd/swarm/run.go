@@ -52,8 +52,8 @@ func cmdRun(args []string) error {
 		cfg.Web.Token = *token
 	}
 	if *detachKey != "" {
-		if _, err := vterm.KeySequences(*detachKey); err != nil {
-			return fmt.Errorf("-detach-key %q: %w", *detachKey, err)
+		if err := vterm.CheckBindable(*detachKey); err != nil {
+			return fmt.Errorf("-detach-key: %w (see `swarm keys -list`)", err)
 		}
 		cfg.DetachKey = *detachKey
 	}
