@@ -1,5 +1,7 @@
 # swarm
 
+[![CI](https://github.com/emmanuel-deloget/swarm/actions/workflows/ci.yml/badge.svg)](https://github.com/emmanuel-deloget/swarm/actions/workflows/ci.yml)
+
 Run a fleet of terminal agents — `claude`, `codex`, anything with a CLI — each in
 its own virtual terminal, and drive them all from one place: a TUI, a web page,
 or the `swarm` command itself. The agents get that same command, so they can talk
@@ -295,5 +297,9 @@ with a pointer file when the project path is too long for a Unix socket.
   you would always answer the same way.
 
 ```sh
-go test ./...
+go test ./...          # add -race; CI runs -race -shuffle=on
 ```
+
+CI runs the suite on Linux and macOS at the Go version in `go.mod`, plus the
+current Go release, and checks `go vet`, `gofmt` and `go mod tidy`. There is no
+Windows job: swarm needs ptys, Unix sockets and process groups.

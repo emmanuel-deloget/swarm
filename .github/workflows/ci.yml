@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push supersedes the run it interrupts.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The tests spawn real ptys and build the binary; give them room without
+  # letting a hung one burn the whole job budget.
+  GOTEST_FLAGS: -race -count=1 -shuffle=on -timeout 10m
+
+jobs:
+  test:
+    # swarm needs ptys, Unix sockets and process groups, so the matrix is the
+    # two platforms it claims to support. The Go version comes from go.mod:
+    # this job is what backs "requires Go 1.24+".
+    name: test · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test
+        run: go test $GOTEST_FLAGS ./...
+
+  test-latest:
+    # The same suite against the current Go release, so a regression shows up
+    # here rather than the day the minimum version moves.
+    name: test · latest Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          check-latest: true
+
+      - name: Test
+        run: go test $GOTEST_FLAGS ./...
+
+  checks:
+    name: vet, gofmt, tidy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::these files need gofmt:"
+            echo "$unformatted"
+            gofmt -d $unformatted
+            exit 1
+          fi
+
+      - name: go.mod is tidy
+        run: go mod tidy -diff
+
+      - name: Dependencies verify
+        run: go mod verify
