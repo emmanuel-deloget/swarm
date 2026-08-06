@@ -389,9 +389,7 @@ func (t *Terminal) Resize(cols, rows int) error {
 	if rows < t.rows && !t.altOn.Load() {
 		pos := t.emu.CursorPosition()
 		if need := pos.Y - (rows - 1); need > 0 {
-			_, _ = fmt.Fprintf(t.emu, "\x1b[%dS", need)
-			// SU does not move the cursor; put it back on its own line.
-			_, _ = fmt.Fprintf(t.emu, "\x1b[%d;%dH", pos.Y-need+1, pos.X+1)
+			t.scrollUp(need)
 		}
 	}
 	t.cols, t.rows = cols, rows

@@ -2,6 +2,7 @@ package vterm
 
 import (
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -119,5 +120,62 @@ func TestShrinkingKeepsTheRecentOutput(t *testing.T) {
 	window, _ := term.RenderWindow(15, 10)
 	if !strings.Contains(strings.Join(window, "\n"), "line-01") {
 		t.Errorf("the displaced lines should be reachable by scrolling:\n%s", strings.Join(window, "\n"))
+	}
+}
+
+// TestResizeDoesNotCorruptAnEscapeSequence guards the mistake that shipped
+// once: Resize used to write a scroll sequence into the emulator, and if that
+// landed while the agent was halfway through an escape sequence, the sequence
+// was truncated and its payload spilled onto the screen. A window title is the
+// case one notices, since agent CLIs set it constantly.
+func TestResizeDoesNotCorruptAnEscapeSequence(t *testing.T) {
+	var (
+		mu    sync.Mutex
+		title string
+	)
+
+	term, err := Start(Options{
+		OnTitle: func(s string) {
+			mu.Lock()
+			title = s
+			mu.Unlock()
+		},
+		// Print enough to fill the screen, then send a title in two pieces with
+		// a pause in the middle, so a resize can fall inside it.
+		Command: []string{"sh", "-c", `
+			i=1; while [ $i -le 30 ]; do printf 'line-%02d\n' $i; i=$((i+1)); done
+			printf '\033]0;my window '
+			sleep 1
+			printf 'title\007'
+			printf 'output-follows\n'
+			sleep 30`},
+		Cols:       40,
+		Rows:       30,
+		Scrollback: 200,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer func() { _ = term.Stop(time.Second) }()
+
+	waitFor(t, "the screen to fill", func() bool { return strings.Contains(term.Text(), "line-30") })
+
+	// Shrink while the title is in flight. This is what the TUI does when the
+	// window changes or the event log is toggled.
+	if err := term.Resize(40, 12); err != nil {
+		t.Fatalf("Resize: %v", err)
+	}
+
+	waitFor(t, "the rest of the output", func() bool { return strings.Contains(term.Text(), "output-follows") })
+
+	screen := term.Text()
+	if strings.Contains(screen, "my window") {
+		t.Errorf("the title leaked onto the screen after a resize:\n%s", screen)
+	}
+	mu.Lock()
+	got := title
+	mu.Unlock()
+	if got != "my window title" {
+		t.Errorf("title = %q, want the whole thing", got)
 	}
 }

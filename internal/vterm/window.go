@@ -142,3 +142,52 @@ func renderCells(at func(x int) *uv.Cell, cols int) string {
 	flush()
 	return b.String()
 }
+
+// scrollUp moves the screen up by n lines, pushing what leaves the top into the
+// scrollback. It is used before shrinking the height, so the cursor and the
+// output around it survive.
+//
+// It works on cells rather than by writing a scroll sequence to the emulator,
+// and that is the whole point: the parser may be halfway through an escape
+// sequence from the agent — an OSC carrying a window title, say — and injecting
+// bytes there truncates it, spilling the rest onto the screen.
+//
+// The caller holds mu.
+func (t *Terminal) scrollUp(n int) {
+	if n <= 0 {
+		return
+	}
+	if n > t.rows {
+		n = t.rows
+	}
+
+	if sb := t.emu.Scrollback(); sb != nil {
+		for y := range n {
+			line := make(uv.Line, t.cols)
+			for x := range t.cols {
+				if c := t.emu.CellAt(x, y); c != nil {
+					line[x] = *c
+				}
+			}
+			sb.Push(line)
+		}
+	}
+
+	// Top to bottom: each source row sits below the destination, so nothing is
+	// overwritten before it has been read.
+	for y := n; y < t.rows; y++ {
+		for x := range t.cols {
+			cell := uv.Cell{Content: " ", Width: 1}
+			if c := t.emu.CellAt(x, y); c != nil {
+				cell = *c
+			}
+			t.emu.SetCell(x, y-n, &cell)
+		}
+	}
+	for y := t.rows - n; y < t.rows; y++ {
+		for x := range t.cols {
+			blank := uv.Cell{Content: " ", Width: 1}
+			t.emu.SetCell(x, y, &blank)
+		}
+	}
+}
