@@ -948,3 +948,71 @@ agents:
 	}
 	t.Fatal("mouse: true did not turn mouse reporting on")
 }
+
+// TestTinyWindowDoesNotShrinkTheAgent guards the mistake that made the web view
+// look broken: a small TUI pane resized the agent down to it — three rows in the
+// reported case — which flattens the agent's own layout and pushes everything
+// that no longer fits into the scrollback. A pane that small should crop, not
+// resize.
+func TestTinyWindowDoesNotShrinkTheAgent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the swarm binary and runs a full UI")
+	}
+	bin := buildSwarm(t)
+
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "swarm.yaml")
+	body := `session: tiny-test
+defaults:
+  cols: 120
+  rows: 40
+  idle_after: 300ms
+web:
+  enabled: false
+agents:
+  - name: a1
+    command: [sh, -c, "printf 'ready\n'; while :; do sleep 1; done"]
+`
+	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// A window with room for a pane of only a few rows once the header, the
+	// status line and the event log have taken theirs.
+	term, err := vterm.Start(vterm.Options{
+		Command: []string{bin, "run", "-c", cfg},
+		Dir:     dir,
+		Cols:    146,
+		Rows:    15,
+	})
+	if err != nil {
+		t.Fatalf("starting the TUI: %v", err)
+	}
+	defer func() { _ = term.Stop(3 * time.Second) }()
+
+	waitScreen(t, term, "the agent to be up", "1 idle")
+	time.Sleep(1500 * time.Millisecond) // give the fit a chance to misbehave
+
+	cols, rows := agentSize(t, bin, cfg, "a1")
+	if rows < minAgentRows {
+		t.Errorf("agent shrunk to %dx%d in a 15-row window; it should have kept its own geometry", cols, rows)
+	}
+
+	// A window with room to spare does fit the agent, so the guard has not
+	// simply disabled the feature.
+	if err := term.Resize(146, 50); err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if c, r := agentSize(t, bin, cfg, "a1"); c != 120 || r != 40 {
+			t.Logf("fitted to %dx%d in a 146x50 window", c, r)
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Error("a roomy window should still fit the agent to the pane")
+}
+
+// minAgentRows mirrors the floor the UI applies; a terminal below it is not one.
+const minAgentRows = 12

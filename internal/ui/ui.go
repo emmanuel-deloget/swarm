@@ -548,8 +548,17 @@ func (m *model) screenRows(paneHeight int) int {
 	return rows
 }
 
-// fitSelected keeps the displayed agent the size of the space it is shown in.
-// It is a no-op once the sizes match, so it costs nothing on a steady window.
+// A pane smaller than this is not a size to give an agent: agent CLIs collapse
+// below it, and resizing down there costs the output that no longer fits. When
+// the pane is this small the agent keeps its own geometry and the pane simply
+// shows part of it.
+const (
+	minFitCols = 60
+	minFitRows = 12
+)
+
+// fitSelected keeps the displayed agent the size of the space it is shown in,
+// as long as that space is worth having.
 func (m *model) fitSelected() {
 	if m.mode == modeMosaic || m.width == 0 {
 		return
@@ -564,6 +573,10 @@ func (m *model) fitSelected() {
 	}
 	paneW, paneH, _ := m.paneGeometry()
 	rows := m.screenRows(paneH)
+	if paneW < minFitCols || rows < minFitRows {
+		// Too small to be a terminal. Leave the agent alone and crop instead.
+		return
+	}
 	if in.Cols == paneW && in.Rows == rows {
 		return
 	}

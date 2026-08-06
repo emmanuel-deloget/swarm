@@ -444,12 +444,18 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		return conn.Write(wctx, websocket.MessageText, data)
 	}
 
+	// The first frame goes out without waiting for a tick: a page that just
+	// opened should not sit on "connecting..." for a frame interval.
+	first := true
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
+		if !first {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
 		}
+		first = false
 
 		info := a.Info()
 		lines := a.HTMLLines()

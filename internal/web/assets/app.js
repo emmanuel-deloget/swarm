@@ -212,7 +212,10 @@ function fitFont(el, cols) {
   if (!per100) return;
   const avail = el.clientWidth - 18;
   let size = (avail / cols) * (100 / per100);
-  size = Math.max(5, Math.min(16, size));
+  // Never shrink below something readable: a wide agent on a narrow screen is
+  // better scrolled sideways than rendered at a size nobody can read. The pane
+  // scrolls (overflow: auto), so nothing is lost.
+  size = Math.max(9, Math.min(16, size));
   el.style.fontSize = size.toFixed(2) + "px";
 }
 
@@ -224,13 +227,24 @@ function paintFull(lines, cols) {
   fitFont(el, cols);
 }
 
-function paintDiff(changed) {
+function paintDiff(changed, cols) {
   const el = $("#screen");
+  // If the DOM and our idea of it have drifted apart — after an offline
+  // notice, say — patching by index would land on the wrong lines. Reconnect
+  // instead: the server starts a new stream with a full screen.
+  if (el.children.length !== state.lines.length) {
+    if (state.ws) state.ws.close();
+    return;
+  }
   const children = el.children;
   for (const [idx, html] of Object.entries(changed)) {
     const i = Number(idx);
     state.lines[i] = html;
     if (children[i]) children[i].outerHTML = html;
+  }
+  if (cols && cols !== state.cols) {
+    state.cols = cols;
+    fitFont(el, cols);
   }
 }
 
@@ -264,7 +278,7 @@ function connect(agent) {
     const f = JSON.parse(ev.data);
     if (f.info) mergeInfo(f.info);
     if (f.type === "full") paintFull(f.full, f.cols);
-    else if (f.type === "diff") paintDiff(f.lines || {});
+    else if (f.type === "diff") paintDiff(f.lines || {}, f.cols);
     else if (f.type === "off") showOffline(f.text || "not running");
   };
   ws.onclose = () => {
