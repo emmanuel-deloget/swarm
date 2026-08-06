@@ -15,13 +15,14 @@ $EDITOR swarm.yaml  # list your agents
 swarm run           # start the fleet + the TUI + the web remote
 ```
 
-## What it gives you
+## What it does
 
-- **One window for eleven agents.** A list with live state, the selected agent's
-  terminal next to it, and a mosaic view when you want to see everyone at once.
-- **A state per agent**, derived from what it prints: working, idle (that is,
-  waiting for you), plus whatever your own regexps say — `approval`, `error`,
-  anything you name. The header tells you how many need you.
+- **One window for the whole fleet.** A list with live state, the selected
+  agent's terminal beside it, and a mosaic view showing every agent at once.
+- **A state per agent**, derived from what it prints: `working`, `idle` — quiet
+  long enough that it is probably waiting for input — plus whatever the
+  configured regexps name, such as `approval` or `error`. The header counts
+  them by state.
 - **Input from anywhere.** Type into an agent from the TUI, from
   `swarm inject`, or from a browser. Send key presses (`esc`, `ctrl+c`, arrows).
   Stage a file or an image and inject its path.
@@ -68,22 +69,26 @@ web:
   token: ""               # empty → a fresh one at every start, shown in the TUI
 
 groups:                   # usable as @dev anywhere a target is expected
-  dev: [dev-1, dev-2, dev-3, dev-4, dev-5]
-  review: [review-1, review-2, review-3, review-4, review-5]
+  dev: [dev-1, dev-2]
 
 agents:
   - name: dev-1
-    role: dev             # also usable as @dev
+    role: dev             # a role is a target too: @dev
     command: [claude]     # any argv; this is the only required field
     patterns:
       - match: "(?i)\\b(do you want|proceed\\?|\\[y/n\\])"
         state: approval   # shows up as a badge, and in the event log
         notify: true
+  - name: dev-2
+    role: dev
+    command: [codex]
   - name: review-1
     role: review
     command: [codex]
     delivery: pull        # do not interrupt; it will run `swarm inbox`
 ```
+
+Add as many agents as you have work for; nothing in swarm assumes a number.
 
 ### Where the config is looked up
 
@@ -133,7 +138,7 @@ swarm run
 | `j` `k` `↑` `↓`, `tab` | select an agent |
 | `1`…`9` | jump to an agent |
 | `↵` | attach: your keys go to that agent, `ctrl+\` comes back |
-| `A` | attach full screen (byte-perfect keyboard); the last row reminds you `ctrl+\` gets you back |
+| `A` | attach full screen, with a byte-perfect keyboard |
 | `pgup` `pgdn` | scroll the agent's screen |
 | `m` | mosaic: every agent at once |
 | `l` | show/hide the event log |
@@ -154,14 +159,14 @@ Every command talks to a running swarm over a Unix socket, so you can drive the
 fleet from any other terminal — or from a script.
 
 ```sh
-swarm ls                            # who is here, what they are doing
+swarm ls                            # the fleet and its state
 swarm status @dev                   # more detail
 swarm screen dev-1                  # what that terminal shows right now
 swarm attach dev-1                  # take it over in this window (ctrl+\ to leave)
 swarm logs dev-1 -f                 # recorded output, escape sequences stripped
 
 swarm inject dev-1 "run the tests"  # type and submit
-swarm inject dev-1 -submit=false "half a thought"
+swarm inject dev-1 -submit=false "typed but not submitted"
 swarm keys dev-1 esc ctrl+c         # key presses
 swarm inject dev-1 -file shot.png "what is wrong here?"
 
@@ -182,10 +187,10 @@ name and `ctrl+\ detach`; the agent gets the rows above it. `swarm attach
 `swarm run --no-tui` runs it headless if you would rather drive it entirely from
 the CLI or the web.
 
-Flags may come after the target — `swarm inject dev-1 -file shot.png "..."` reads
-the way you would say it. Free text is taken literally from the first plain word
-onwards, so a message can mention `-json` without it being parsed as a flag; use
-`--` if you need a message that *starts* with a dash.
+Flags are accepted after the target, so `swarm inject dev-1 -file shot.png "..."`
+works. Free text is taken literally from the first plain word onwards, so a
+message can contain `-json` without it being parsed as a flag; use `--` for a
+message that starts with a dash.
 
 ### Injecting text, files and images
 
@@ -213,7 +218,7 @@ Every agent gets `swarm` on its `PATH`, already pointed at the running session:
 So an agent can do this on its own:
 
 ```sh
-swarm ls                                  # who else is here
+swarm ls                                  # the other agents and their state
 swarm send review-2 "please review PR 42"
 swarm send @dev -file report.md "findings"
 swarm inbox -wait 30s                     # block until something arrives
@@ -223,8 +228,8 @@ swarm inbox -wait 30s                     # block until something arrives
 point your agents' instructions at it and they can coordinate without you.
 
 Push recipients get messages typed into their prompt; pull recipients keep them
-queued until they ask. Reviewers deep in a file usually want pull; a triage agent
-dispatching work usually wants push.
+queued until they ask. Pull suits an agent that should not be interrupted
+mid-task, push suits one that is waiting for work.
 
 ## Remote control
 
@@ -292,9 +297,12 @@ with a pointer file when the project path is too long for a Unix socket.
 - Unix only: it uses ptys, Unix sockets and process groups.
 - Attaching from the TUI (`↵`) reconstructs key bytes from parsed events, which
   covers text, control keys and arrows but not exotic sequences or mouse input.
-  `A` runs the real `swarm attach` instead, with nothing in between.
+  `A` runs the real `swarm attach` instead, which passes bytes through
+  unchanged.
 - `reply:` in a pattern answers a prompt on your behalf. Use it only for prompts
   you would always answer the same way.
+
+## Development
 
 ```sh
 go test ./...                  # add -race; CI runs -race -shuffle=on

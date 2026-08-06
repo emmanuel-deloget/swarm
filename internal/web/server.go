@@ -422,7 +422,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	// It is much cheaper than streaming the raw pty and it survives a client
 	// that misses a frame.
 	// The grid view opens one socket per agent; those refresh slowly so that
-	// watching eleven terminals at once stays cheap.
+	// watching the whole fleet at once stays cheap.
 	period := 120 * time.Millisecond
 	if r.URL.Query().Get("rate") == "slow" {
 		period = 600 * time.Millisecond

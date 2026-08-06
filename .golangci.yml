@@ -1,9 +1,9 @@
 # golangci-lint configuration.
 #
 # The default set (errcheck, govet, ineffassign, staticcheck, unused) plus the
-# linters that earned their place by finding something real in this code base.
-# Anything that only produced style noise is left out on purpose: a linter you
-# learn to ignore is worse than no linter.
+# linters that reported an actual defect in this code base. Linters that only
+# produced style disagreements are left out, so that a report here means
+# something needs looking at.
 version: "2"
 
 linters:
@@ -28,7 +28,7 @@ linters:
     - copyloopvar
     - misspell
     - whitespace
-    - nolintlint # a nolint without an explanation is a bug in waiting
+    - nolintlint # a nolint must say which linter and why
 
   settings:
     revive:

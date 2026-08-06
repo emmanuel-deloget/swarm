@@ -76,7 +76,7 @@ agents:
     workdir: .
     # Patterns classify what the agent shows. A matching pattern turns into a
     # state badge in the TUI and an event in the log, so you can spot the
-    # agent that needs you without watching all eleven terminals.
+    # agent that needs you without watching every terminal yourself.
     patterns:
       - match: "(?i)\\b(do you want|proceed\\?|\\[y/n\\]|allow\\b.*\\?)"
         state: approval
