@@ -304,7 +304,7 @@ func TestEventsStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	got := make(chan string, 16)
 	go func() {

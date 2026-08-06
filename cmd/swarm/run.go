@@ -59,7 +59,7 @@ func cmdRun(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer srv.Close()
+	defer func() { _ = srv.Close() }()
 
 	if err := writeAgentGuide(h); err != nil {
 		h.Log().Emit(event.KindError, "", "could not write the agent guide: "+err.Error())
@@ -94,7 +94,7 @@ func cmdRun(args []string) error {
 		if err := webSrv.Start(); err != nil {
 			return err
 		}
-		defer webSrv.Close()
+		defer func() { _ = webSrv.Close() }()
 		h.SetWebURL(webSrv.URL(), tok)
 		h.Log().Emit(event.KindInfo, "", "web remote control on "+webSrv.URL()+"?t="+tok)
 	}

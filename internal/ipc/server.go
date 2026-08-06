@@ -70,7 +70,7 @@ func alive(path string) bool {
 	if err != nil {
 		return false
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	_ = c.SetDeadline(time.Now().Add(500 * time.Millisecond))
 	if err := json.NewEncoder(c).Encode(Request{Cmd: CmdPing}); err != nil {
 		return false
@@ -119,7 +119,7 @@ func (s *Server) accept() {
 }
 
 func (s *Server) serve(conn net.Conn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	dec := json.NewDecoder(conn)
 	enc := json.NewEncoder(conn)
 	var encMu sync.Mutex

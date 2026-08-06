@@ -20,7 +20,11 @@ const carryMax = 32
 func (t *Terminal) scanModes(chunk []byte) []byte {
 	buf := chunk
 	if len(t.modeCarry) > 0 {
-		buf = append(t.modeCarry, chunk...)
+		// A fresh slice: appending onto modeCarry would let buf share its
+		// backing array, and the tail of buf is copied back into it below.
+		buf = make([]byte, 0, len(t.modeCarry)+len(chunk))
+		buf = append(buf, t.modeCarry...)
+		buf = append(buf, chunk...)
 	}
 
 	i := 0

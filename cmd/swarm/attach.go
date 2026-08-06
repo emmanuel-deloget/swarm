@@ -112,7 +112,7 @@ func cmdAttach(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	bar := &statusBar{enabled: !*noStatus, agent: name}
 	if w, h, err := term.GetSize(os.Stdout.Fd()); err == nil {

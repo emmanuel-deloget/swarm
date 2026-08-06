@@ -53,12 +53,12 @@ type Log struct {
 	subs    map[uint64]chan Event
 }
 
-// NewLog returns a log keeping at most max events.
-func NewLog(max int) *Log {
-	if max <= 0 {
-		max = 500
+// NewLog returns a log keeping at most size events.
+func NewLog(size int) *Log {
+	if size <= 0 {
+		size = 500
 	}
-	return &Log{max: max, subs: make(map[uint64]chan Event)}
+	return &Log{max: size, subs: make(map[uint64]chan Event)}
 }
 
 // Publish records an event and hands it to every subscriber. Subscribers that
@@ -86,7 +86,7 @@ func (l *Log) Publish(e Event) {
 	}
 }
 
-// Publishf is Publish with formatting.
+// Emit publishes an event with just a kind, an agent and a message.
 func (l *Log) Emit(kind Kind, agent, text string) {
 	l.Publish(Event{Kind: kind, Agent: agent, Text: text})
 }

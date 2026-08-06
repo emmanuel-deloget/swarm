@@ -135,9 +135,9 @@ func KeySequence(name string) (string, error) {
 func ctrl(r rune) (string, error) {
 	switch {
 	case r >= 'a' && r <= 'z':
-		return string(rune(r - 'a' + 1)), nil
+		return string(r - 'a' + 1), nil
 	case r >= 'A' && r <= 'Z':
-		return string(rune(r - 'A' + 1)), nil
+		return string(r - 'A' + 1), nil
 	case r == '[':
 		return "\x1b", nil
 	case r == '\\':

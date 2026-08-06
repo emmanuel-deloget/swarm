@@ -87,7 +87,7 @@ func TestTokenIsRequired(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GET %s: %v", path, err)
 		}
-		res.Body.Close()
+		_ = res.Body.Close()
 		if res.StatusCode != http.StatusUnauthorized {
 			t.Errorf("GET %s without a token = %d, want 401", path, res.StatusCode)
 		}
@@ -97,7 +97,7 @@ func TestTokenIsRequired(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	res.Body.Close()
+	_ = res.Body.Close()
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Errorf("a wrong token gave %d, want 401", res.StatusCode)
 	}
@@ -106,7 +106,7 @@ func TestTokenIsRequired(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("the right token gave %d, want 200", res.StatusCode)
 	}
@@ -123,7 +123,7 @@ func TestStateListsAgents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	var payload struct {
 		Session string `json:"session"`
@@ -151,11 +151,16 @@ func TestWebSocketShowsScreenAndAcceptsInput(t *testing.T) {
 	defer cancel()
 
 	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws?agent=echo-1&t=secret"
-	conn, _, err := websocket.Dial(ctx, url, nil)
+	conn, res, err := websocket.Dial(ctx, url, nil)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	defer conn.CloseNow()
+	// A successful upgrade leaves no body to read, but closing it when there is
+	// one keeps the connection from being held open on a failed handshake.
+	if res != nil && res.Body != nil {
+		_ = res.Body.Close()
+	}
+	defer func() { _ = conn.CloseNow() }()
 
 	readFrame := func() wsFrame {
 		t.Helper()
@@ -221,7 +226,7 @@ func TestReadOnlyRefusesInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode != http.StatusForbidden {
 		t.Fatalf("read-only action gave %d, want 403", res.StatusCode)
 	}
@@ -256,7 +261,7 @@ func TestUploadStagesFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("upload gave %d", res.StatusCode)
 	}

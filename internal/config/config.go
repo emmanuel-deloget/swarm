@@ -438,7 +438,7 @@ func (c *Config) Resolve(target string) ([]string, error) {
 	return out, nil
 }
 
-// Autostart reports whether the agent starts with the swarm.
+// AutostartEnabled reports whether the agent starts with the swarm.
 func (a *AgentConfig) AutostartEnabled() bool { return a.Autostart != nil && *a.Autostart }
 
 // RestartEnabled reports whether the agent is relaunched when it exits.

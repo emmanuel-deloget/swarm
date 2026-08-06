@@ -76,7 +76,7 @@ func TestPendingAllOnlyReportsWaitingMailboxes(t *testing.T) {
 
 func TestHistoryIsBounded(t *testing.T) {
 	b := New(3)
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		b.Post(Message{To: "a", Body: string(rune('a' + i))})
 	}
 	hist := b.History("a", 0)

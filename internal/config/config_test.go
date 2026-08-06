@@ -216,7 +216,7 @@ agents:
 	if cfg.Workdir != filepath.Join(base, "sub") {
 		t.Errorf("workdir = %q", cfg.Workdir)
 	}
-	if cfg.Shared != filepath.Join(base, "elsewhere/files") {
+	if cfg.Shared != filepath.Join(base, "elsewhere", "files") {
 		t.Errorf("shared = %q", cfg.Shared)
 	}
 	a, _ := cfg.Agent("a")

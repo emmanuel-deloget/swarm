@@ -34,7 +34,7 @@ func (t *Terminal) HTMLLines() []string {
 	var b strings.Builder
 	b.Grow(cols * 2)
 
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		b.Reset()
 		b.WriteString(`<div class="l">`)
 		var (

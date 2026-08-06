@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -66,7 +67,7 @@ func cmdList(args []string, detailed bool) error {
 		if err != nil {
 			return err
 		}
-		defer c.Close()
+		defer func() { _ = c.Close() }()
 		resp, err := c.Do(ipc.Request{Cmd: ipc.CmdList, Target: target})
 		if err != nil {
 			return err
@@ -221,7 +222,7 @@ func cmdLifecycle(cmd string, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	ipcCmd := map[string]string{"start": ipc.CmdStart, "stop": ipc.CmdStop, "restart": ipc.CmdRestart}[cmd]
 	resp, err := c.Do(ipc.Request{Cmd: ipcCmd, Target: target, GraceMS: int(grace.Milliseconds())})
@@ -280,7 +281,7 @@ func cmdInject(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	staged, err := stageAll(c, files)
 	if err != nil {
@@ -343,7 +344,7 @@ func cmdKeys(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	resp, err := c.Do(ipc.Request{Cmd: ipc.CmdKeys, Target: target, Keys: keys})
 	if err != nil {
 		return err
@@ -370,7 +371,7 @@ func cmdScreen(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	resp, err := c.Do(ipc.Request{Cmd: ipc.CmdScreen, Target: target, Plain: *plain})
 	if err != nil {
 		return err
@@ -422,7 +423,7 @@ func cmdSend(args []string, broadcast bool) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	staged, err := stageAll(c, files)
 	if err != nil {
@@ -471,7 +472,7 @@ func cmdInbox(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	waitMS := 0
 	switch {
@@ -520,13 +521,13 @@ func cmdStage(args []string) error {
 	_ = parseArgs(fs, args, -1)
 
 	if fs.NArg() == 0 {
-		return fmt.Errorf("usage: swarm stage <file>...")
+		return errors.New("usage: swarm stage <file> [more files]")
 	}
 	c, err := cf.dial()
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	paths, err := stageAll(c, fs.Args())
 	if err != nil {
 		return err
@@ -549,7 +550,7 @@ func cmdEvents(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	return c.Stream(ipc.Request{Cmd: ipc.CmdEvents, Follow: *follow, Lines: *lines}, func(r ipc.Response) bool {
 		if cf.asJSON {
 			if r.Event != nil {
@@ -597,7 +598,7 @@ func cmdInfo(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	resp, err := c.Do(ipc.Request{Cmd: ipc.CmdInfo})
 	if err != nil {
 		return err
@@ -634,7 +635,7 @@ func cmdShutdown(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	resp, err := c.Do(ipc.Request{Cmd: ipc.CmdShutdown})
 	if err != nil {
 		return err
@@ -669,14 +670,14 @@ func cmdLogs(args []string) error {
 	if err != nil {
 		return fmt.Errorf("no log for agent %q (%s)", name, path)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	write := func(p []byte) {
 		if *raw {
-			os.Stdout.Write(p)
+			_, _ = os.Stdout.Write(p)
 			return
 		}
-		os.Stdout.WriteString(ansi.Strip(string(p)))
+		_, _ = os.Stdout.WriteString(ansi.Strip(string(p)))
 	}
 	buf := make([]byte, 32*1024)
 	for {

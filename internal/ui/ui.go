@@ -719,9 +719,9 @@ func (m *model) viewMosaic() string {
 	}
 
 	out := []string{m.headerLine(), m.tabLine()}
-	for r := 0; r < rows; r++ {
+	for r := range rows {
 		var cells [][]string
-		for c := 0; c < cols; c++ {
+		for c := range cols {
 			i := r*cols + c
 			if i >= n {
 				cells = append(cells, block(nil, cellW, cellH))
@@ -800,11 +800,11 @@ func (m *model) viewHelp() string {
 	var b strings.Builder
 	b.WriteString(styHeader.Render("swarm — keys") + "\n\n")
 	for _, r := range rows {
-		b.WriteString(fmt.Sprintf("  %s  %s\n", padRight(styKey.Render(r[0]), 20), styBase.Render(r[1])))
+		fmt.Fprintf(&b, "  %s  %s\n", padRight(styKey.Render(r[0]), 20), styBase.Render(r[1]))
 	}
 	b.WriteString("\n" + styHeader.Render("commands") + "\n\n")
 	for _, r := range cmds {
-		b.WriteString(fmt.Sprintf("  %s  %s\n", padRight(styKey.Render(r[0]), 32), styBase.Render(r[1])))
+		fmt.Fprintf(&b, "  %s  %s\n", padRight(styKey.Render(r[0]), 32), styBase.Render(r[1]))
 	}
 	b.WriteString("\n" + styMuted.Render("A target is an agent name, @group, @role, all, or a comma-separated list.") + "\n")
 	b.WriteString(styMuted.Render("press any key to go back"))

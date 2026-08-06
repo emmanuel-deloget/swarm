@@ -105,6 +105,6 @@ func Call(socket string, req Request) (Response, error) {
 	if err != nil {
 		return Response{}, err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	return c.Do(req)
 }

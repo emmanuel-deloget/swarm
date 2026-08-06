@@ -213,7 +213,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleState(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]any{
 		"session":   s.h.Config().Session,
 		"agents":    s.h.Infos(),
@@ -318,7 +318,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	data := make([]byte, 0, header.Size)
 	buf := make([]byte, 64*1024)
@@ -380,7 +380,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()

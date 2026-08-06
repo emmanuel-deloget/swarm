@@ -136,7 +136,7 @@ func (a *Agent) Start() error {
 				}
 				a.logFile = f
 				a.mu.Unlock()
-				fmt.Fprintf(f, "\n\x1b[0m--- swarm: %s started at %s ---\r\n", a.cfg.Name, time.Now().Format(time.RFC3339))
+				_, _ = fmt.Fprintf(f, "\n\x1b[0m--- swarm: %s started at %s ---\r\n", a.cfg.Name, time.Now().Format(time.RFC3339))
 			}
 		}
 	}
@@ -279,7 +279,7 @@ func (a *Agent) onExit(gen uint64, st vterm.ExitStatus) {
 		a.watchStop = nil
 	}
 	if a.logFile != nil {
-		fmt.Fprintf(a.logFile, "\r\n--- swarm: %s %s ---\r\n", a.cfg.Name, st)
+		_, _ = fmt.Fprintf(a.logFile, "\r\n--- swarm: %s %s ---\r\n", a.cfg.Name, st)
 		_ = a.logFile.Close()
 		a.logFile = nil
 	}

@@ -138,7 +138,7 @@ func padRight(s string, width int) string {
 // block turns lines into a fixed-size rectangle.
 func block(lines []string, width, height int) []string {
 	out := make([]string, 0, height)
-	for i := 0; i < height; i++ {
+	for i := range height {
 		if i < len(lines) {
 			out = append(out, padRight(lines[i], width))
 		} else {
@@ -157,7 +157,7 @@ func joinColumns(sep string, cols ...[]string) []string {
 		}
 	}
 	out := make([]string, height)
-	for i := 0; i < height; i++ {
+	for i := range height {
 		var b strings.Builder
 		for j, c := range cols {
 			if j > 0 {
