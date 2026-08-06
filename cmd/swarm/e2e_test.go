@@ -1007,3 +1007,53 @@ agents:
 
 // minAgentRows mirrors the floor the UI applies; a terminal below it is not one.
 const minAgentRows = 12
+
+// TestCommandLineUsesTheWholeWidth checks the command line is as wide as the
+// window. It used to be fixed at 60 columns, so on a wide terminal it stopped
+// around the middle and the rest of what you typed scrolled out of sight.
+func TestCommandLineUsesTheWholeWidth(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the swarm binary and runs a full UI")
+	}
+	bin := buildSwarm(t)
+	cfg := writeFleet(t, "cmdline-test")
+
+	const cols = 150
+	term, err := vterm.Start(vterm.Options{
+		Command: []string{bin, "run", "-c", cfg},
+		Dir:     filepath.Dir(cfg),
+		Cols:    cols,
+		Rows:    40,
+	})
+	if err != nil {
+		t.Fatalf("starting the TUI: %v", err)
+	}
+	defer func() { _ = term.Stop(3 * time.Second) }()
+
+	waitScreen(t, term, "both agents up and quiet", "2 idle")
+
+	// Type a command whose text alone is wider than the old 60-column field.
+	const payload = 100
+	pressKey(t, term, ":")
+	typeText(t, term, "broadcast "+strings.Repeat("x", payload))
+
+	// The x's must all be on screen: with a 60-column field, only a window onto
+	// them would be.
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, line := range strings.Split(term.Text(), "\n") {
+			if strings.Count(line, "x") >= payload {
+				return
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	var widest int
+	for _, line := range strings.Split(term.Text(), "\n") {
+		if n := strings.Count(line, "x"); n > widest {
+			widest = n
+		}
+	}
+	t.Fatalf("the command line shows %d of %d typed characters in a %d-column window", widest, payload, cols)
+}

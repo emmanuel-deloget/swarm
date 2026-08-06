@@ -94,6 +94,8 @@ func newModel(h *hub.Hub, events <-chan event.Event, quit <-chan struct{}) *mode
 	in := textinput.New()
 	in.Prompt = ":"
 	in.CharLimit = 4096
+	// Width is set from the window size; 60 is only what it starts at, before
+	// the first WindowSizeMsg arrives.
 	in.Width = 60
 
 	key := h.Config().DetachKey
@@ -173,6 +175,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.resizeInput()
 		return m, nil
 
 	case tickMsg:
@@ -448,9 +451,23 @@ func (m *model) handleAttachedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// resizeInput gives the command line the whole width. Left at its default, it
+// stops halfway across the window and the rest of what you type scrolls out of
+// sight for no reason.
+func (m *model) resizeInput() {
+	// The prompt takes one column and the cursor one more; leave a third so the
+	// line never reaches the last column, which would wrap.
+	width := m.usable() - 3
+	if width < 20 {
+		width = 20
+	}
+	m.input.Width = width
+}
+
 func (m *model) openCommand(prefill string) {
 	m.returnTo = m.mode
 	m.mode = modeCommand
+	m.resizeInput()
 	m.input.SetValue(prefill)
 	m.input.CursorEnd()
 	m.input.Focus()
