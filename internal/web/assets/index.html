@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>swarm · {{.Session}}</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='14'>🐝</text></svg>">
+</head>
+<body data-readonly="{{if .ReadOnly}}1{{end}}">
+
+<header>
+  <span class="brand">swarm</span>
+  <span class="session">{{.Session}}</span>
+  <span id="counts" class="counts"></span>
+  <span class="grow"></span>
+  {{if .ReadOnly}}<span class="badge ro">read-only</span>{{end}}
+  <button id="btn-grid" class="ghost" title="show every agent at once">grid</button>
+  <button id="btn-log" class="ghost" title="event log">log</button>
+</header>
+
+<main>
+  <aside id="sidebar">
+    <ul id="agents"></ul>
+  </aside>
+
+  <section id="view">
+    <div id="title" class="title"></div>
+    <div id="screen" class="screen" tabindex="0" aria-label="agent terminal">
+      <div class="hint">connecting…</div>
+    </div>
+    <div id="grid" class="grid" hidden></div>
+    <div id="log" class="log" hidden></div>
+  </section>
+</main>
+
+<footer>
+  <div class="keys">
+    <button data-keys="esc">esc</button>
+    <button data-keys="ctrl+c">^C</button>
+    <button data-keys="enter">↵</button>
+    <button data-keys="up">↑</button>
+    <button data-keys="down">↓</button>
+    <button data-keys="tab">⇥</button>
+    <button data-keys="shift+tab">⇤</button>
+  </div>
+  <form id="composer" autocomplete="off">
+    <input id="prompt" type="text" placeholder="type for the selected agent — Enter sends" aria-label="message">
+    <label class="file" title="upload a file or image; its path is injected">
+      <input type="file" id="file" hidden>＋
+    </label>
+    <select id="mode" aria-label="how to deliver">
+      <option value="inject">prompt</option>
+      <option value="send">bus</option>
+    </select>
+    <button type="submit" class="primary">send</button>
+  </form>
+  <div id="status" class="status"></div>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>
