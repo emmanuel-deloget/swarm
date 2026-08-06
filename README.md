@@ -43,7 +43,7 @@ Or from a checkout:
 go build -o swarm ./cmd/swarm
 ```
 
-Requires Go 1.24+ and a Unix-like system (Linux, macOS).
+Requires Go 1.25+ and a Unix-like system (Linux, macOS).
 
 ## Configuration
 
@@ -297,9 +297,21 @@ with a pointer file when the project path is too long for a Unix socket.
   you would always answer the same way.
 
 ```sh
-go test ./...          # add -race; CI runs -race -shuffle=on
+go test ./...                  # add -race; CI runs -race -shuffle=on
+golangci-lint run ./...        # config in .golangci.yml
+govulncheck ./...              # run it with the latest Go, as CI does
 ```
 
 CI runs the suite on Linux and macOS at the Go version in `go.mod`, plus the
-current Go release, and checks `go vet`, `gofmt` and `go mod tidy`. There is no
-Windows job: swarm needs ptys, Unix sockets and process groups.
+current Go release, and separately checks `go vet`, `gofmt`, `go mod tidy`,
+golangci-lint and govulncheck. It also runs weekly, so an advisory published
+without a commit still shows up. There is no Windows job: swarm needs ptys,
+Unix sockets and process groups.
+
+`govulncheck` deliberately runs with the latest Go rather than the version in
+`go.mod`: it reports standard-library advisories for the toolchain it runs with,
+and those are fixed by the newest patch release.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE).
