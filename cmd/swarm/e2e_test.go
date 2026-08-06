@@ -1114,3 +1114,40 @@ func TestTabCompletesInTheCommandLine(t *testing.T) {
 	typeText(t, term, "j")
 	waitScreen(t, term, "the injected text reaching the agent", "beta saw:completed and sent")
 }
+
+// TestHelpFitsTheWindow checks the help screen stays inside the terminal. It
+// grew past 40 rows once and scrolled its own title off the top, which is how
+// one ends up with a help screen that does not say what it is.
+func TestHelpFitsTheWindow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the swarm binary and runs a full UI")
+	}
+	bin := buildSwarm(t)
+	cfg := writeFleet(t, "help-test")
+
+	for _, size := range [][2]int{{140, 40}, {100, 24}, {180, 60}} {
+		cols, rows := size[0], size[1]
+		term, err := vterm.Start(vterm.Options{
+			Command: []string{bin, "run", "-c", cfg},
+			Dir:     filepath.Dir(cfg),
+			Cols:    cols,
+			Rows:    rows,
+		})
+		if err != nil {
+			t.Fatalf("starting the TUI: %v", err)
+		}
+
+		waitScreen(t, term, "both agents up and quiet", "2 idle")
+		typeText(t, term, "?")
+		// The title has to be there, which it is not if the screen scrolled.
+		waitScreen(t, term, "the help title", "swarm — keys")
+		// And the commands, which live in the other column.
+		waitScreen(t, term, "the commands column", "swarm — commands", ":broadcast")
+
+		screen := term.Text()
+		if lines := strings.Split(screen, "\n"); len(lines) > rows {
+			t.Errorf("%dx%d: help rendered %d lines", cols, rows, len(lines))
+		}
+		_ = term.Stop(3 * time.Second)
+	}
+}

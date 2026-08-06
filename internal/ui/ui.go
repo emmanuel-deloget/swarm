@@ -912,23 +912,22 @@ func (m *model) mosaicCell(i, width, height int) []string {
 }
 
 func (m *model) viewHelp() string {
-	rows := [][2]string{
+	keys := [][2]string{
 		{"j / k / ↑ / ↓", "select an agent"},
 		{"tab / shift+tab", "cycle through agents"},
 		{"1..9", "jump to an agent"},
-		{"↵", "attach: your keys go to that agent (" + m.detachKey + " to come back)"},
-		{"A", "attach full screen, with a byte-perfect keyboard"},
-		{"pgup / pgdn", "scroll the agent's screen"},
+		{"↵", "attach: keys go to that agent"},
+		{"A", "attach full screen"},
+		{"pgup / pgdn", "scroll back through its output"},
 		{"m", "mosaic: every agent at once"},
 		{"l", "show or hide the event log"},
-		{"M", "mouse reporting: the wheel and clicks, at the cost of text selection"},
-		{"i", "inject text into the selected agent"},
-		{"s", "send a bus message to the selected agent"},
-		{"b", "broadcast a bus message"},
-		{"f", "stage a file and inject its path (images included)"},
-		{"K", "send key presses (esc, ctrl+c, up, ...)"},
-		{"S / x / r", "start / stop / restart the selected agent"},
+		{"M", "mouse: wheel and clicks, no text selection"},
+		{"i / s / b", "inject / send / broadcast"},
+		{"f", "stage a file and inject its path"},
+		{"K", "send key presses"},
+		{"S / x / r", "start / stop / restart"},
 		{":", "command line (tab completes)"},
+		{"?", "this screen"},
 		{"q", "quit and stop every agent"},
 	}
 	cmds := make([][2]string, 0, len(commands))
@@ -940,18 +939,41 @@ func (m *model) viewHelp() string {
 		cmds = append(cmds, [2]string{usage, c.help})
 	}
 
-	var b strings.Builder
-	b.WriteString(styHeader.Render("swarm — keys") + "\n\n")
+	// Two columns, because the help outgrew the screen once and pushed its own
+	// title off the top.
+	half := m.usable() / 2
+	left := helpColumn("keys", keys, half-1)
+	right := helpColumn("commands", cmds, half-1)
+	lines := joinColumns(" ", block(left, half-1, max(len(left), len(right))), right)
+
+	lines = append(lines,
+		"",
+		styMuted.Render("A target is an agent name, @group, @role, all, or a list."),
+		styMuted.Render("Omit it and the command applies to the selected agent."),
+		styMuted.Render("Detach from an attached agent with "+m.detachKey+"."),
+		styMuted.Render("press any key to go back"),
+	)
+
+	// Never draw past the window: the title has to stay visible.
+	if len(lines) > m.height {
+		lines = lines[:m.height-1]
+		lines = append(lines, styMuted.Render("…"))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// helpColumn renders one titled table of "key — meaning" rows.
+func helpColumn(title string, rows [][2]string, width int) []string {
+	label := 0
 	for _, r := range rows {
-		fmt.Fprintf(&b, "  %s  %s\n", padRight(styKey.Render(r[0]), 20), styBase.Render(r[1]))
+		if w := lipgloss.Width(styKey.Render(r[0])); w > label {
+			label = w
+		}
 	}
-	b.WriteString("\n" + styHeader.Render("commands") + "\n\n")
-	for _, r := range cmds {
-		fmt.Fprintf(&b, "  %s  %s\n", padRight(styKey.Render(r[0]), 32), styBase.Render(r[1]))
+	out := []string{styHeader.Render("swarm — " + title), ""}
+	for _, r := range rows {
+		line := "  " + padRight(styKey.Render(r[0]), label+2) + styBase.Render(r[1])
+		out = append(out, padRight(line, width))
 	}
-	b.WriteString("\n" + styMuted.Render("A target is an agent name, @group, @role, all, or a comma-separated list.") + "\n")
-	b.WriteString(styMuted.Render("Omit the target and the command applies to the selected agent.") + "\n")
-	b.WriteString(styMuted.Render("Tab completes commands, targets, key names and file paths.") + "\n")
-	b.WriteString(styMuted.Render("press any key to go back"))
-	return b.String()
+	return out
 }
