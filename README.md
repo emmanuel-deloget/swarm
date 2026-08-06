@@ -15,6 +15,9 @@ $EDITOR swarm.yaml  # list your agents
 swarm run           # start the fleet + the TUI + the web remote
 ```
 
+![The swarm TUI: the agent list on the left with a state per agent, the selected
+agent's terminal on the right, and the event log underneath](assets/tui.png)
+
 ## What it does
 
 - **One window for the whole fleet.** A list with live state, the selected
