@@ -1,0 +1,47 @@
+# Dependabot keeps two things current: the Go modules swarm builds on, and the
+# actions the CI itself runs. Both are grouped so a quiet week produces one pull
+# request rather than six.
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    labels:
+      - dependencies
+    groups:
+      # The charm libraries move together; splitting them across pull requests
+      # only makes each one harder to check.
+      charm:
+        patterns:
+          - "github.com/charmbracelet/*"
+      go-x:
+        patterns:
+          - "golang.org/x/*"
+      others:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "github.com/charmbracelet/*"
+          - "golang.org/x/*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies
+      - ci
+    groups:
+      actions:
+        patterns:
+          - "*"
