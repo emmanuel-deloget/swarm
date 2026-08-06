@@ -39,6 +39,13 @@ type Config struct {
 	// whatever else is capturing the terminal — tmux, asciinema, screen.
 	DetachKey string `yaml:"detach_key"`
 
+	// LogInput records everything swarm sends to an agent, in
+	// <state>/logs/<agent>.input.log: injections, key presses, and the answers
+	// the emulator gives to the agent's own queries. Off by default — it is a
+	// record of what you typed — and worth turning on to settle "did swarm send
+	// that, or did the agent print it itself?".
+	LogInput bool `yaml:"log_input"`
+
 	// Mouse turns on mouse reporting in the TUI: the wheel scrolls the pane and
 	// a click selects an agent. It is off by default, because a terminal that
 	// reports mouse events to swarm no longer lets you select and copy text

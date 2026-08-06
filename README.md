@@ -259,6 +259,23 @@ Images and other files travel as paths: `-file` copies the file into the shared
 directory and injects its absolute path, which is what agent CLIs read. The same
 happens when you drop a file in the web UI.
 
+### What was sent to an agent
+
+`swarm logs` shows what an agent *printed*. With `log_input: true`, swarm also
+records what it *sent*, in `.swarm/logs/<agent>.input.log`:
+
+```
+2026-08-07T00:20:27+02:00	inject	"run the tests"
+2026-08-07T00:20:27+02:00	submit	"\r"
+2026-08-07T00:20:31+02:00	keys	"\f"
+2026-08-07T00:20:33+02:00	terminal-reply	"\x1b[?62;c"
+```
+
+Each line says when, where it came from, and the exact bytes — including the
+answers the emulator gives to the agent's own queries. It settles "did swarm
+type that, or did the agent print it itself?" in one grep. Off by default, and
+written 0600: it holds what you typed.
+
 ## Agents talking to each other
 
 Every agent gets `swarm` on its `PATH`, already pointed at the running session:

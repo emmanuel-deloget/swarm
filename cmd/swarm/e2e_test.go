@@ -1151,3 +1151,112 @@ func TestHelpFitsTheWindow(t *testing.T) {
 		_ = term.Stop(3 * time.Second)
 	}
 }
+
+// TestInputLogRecordsWhatSwarmSends covers the question that took an afternoon
+// to answer without it: did swarm type that, or did the agent print it itself?
+// With log_input on, every byte swarm sends is recorded with its origin.
+func TestInputLogRecordsWhatSwarmSends(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the swarm binary")
+	}
+	bin := buildSwarm(t)
+
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "swarm.yaml")
+	body := `session: inputlog-test
+log_input: true
+defaults:
+  idle_after: 300ms
+web:
+  enabled: false
+agents:
+  - name: a1
+    command: [sh, -c, "printf 'ready\n'; while IFS= read -r l; do printf 'saw:%s\n' \"$l\"; done"]
+`
+	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	run := exec.Command(bin, "run", "-c", cfg, "--no-tui")
+	run.Dir = dir
+	if err := run.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = run.Process.Kill()
+		_, _ = run.Process.Wait()
+	}()
+	waitRunning(t, bin, cfg, "a1")
+
+	swarm := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command(bin, append(args, "-c", cfg)...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("swarm %v: %v\n%s", args, err, out)
+		}
+	}
+	swarm("inject", "a1", "hello from the log test")
+	swarm("keys", "a1", "ctrl+l")
+
+	logPath := filepath.Join(dir, ".swarm", "logs", "a1.input.log")
+	deadline := time.Now().Add(10 * time.Second)
+	var text string
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(logPath)
+		if err == nil {
+			text = string(data)
+			if strings.Contains(text, "hello from the log test") && strings.Contains(text, "keys") {
+				break
+			}
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+
+	// Each line says when, from where, and what.
+	for _, want := range []string{"started", "inject", "hello from the log test", "submit", "keys", `\f`} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the input log should mention %q, got:\n%s", want, text)
+		}
+	}
+	// And it is not world-readable: it holds what was typed at an agent.
+	info, err := os.Stat(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("input log mode = %v, want 0600", perm)
+	}
+}
+
+// TestInputLogIsOffByDefault checks the recording is opt-in.
+func TestInputLogIsOffByDefault(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the swarm binary")
+	}
+	bin := buildSwarm(t)
+	cfg := writeFleet(t, "no-inputlog")
+	dir := filepath.Dir(cfg)
+
+	run := exec.Command(bin, "run", "-c", cfg, "--no-tui")
+	run.Dir = dir
+	if err := run.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = run.Process.Kill()
+		_, _ = run.Process.Wait()
+	}()
+	waitRunning(t, bin, cfg, "alpha")
+
+	cmd := exec.Command(bin, "inject", "alpha", "no record of this", "-c", cfg)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("inject: %v\n%s", err, out)
+	}
+	time.Sleep(500 * time.Millisecond)
+
+	if _, err := os.Stat(filepath.Join(dir, ".swarm", "logs", "alpha.input.log")); !os.IsNotExist(err) {
+		t.Error("no input log should be written unless log_input is set")
+	}
+}

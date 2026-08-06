@@ -49,6 +49,9 @@ type Options struct {
 	OnOutput func([]byte)
 	// OnExit is called once, when the child process is reaped.
 	OnExit func(status ExitStatus)
+	// OnInput, when set, is called with everything written to the child, and
+	// where it came from. It is how one answers "did swarm type that?".
+	OnInput func(source string, data []byte)
 }
 
 // ExitStatus describes how the child process ended.
@@ -288,6 +291,11 @@ func (t *Terminal) replyWriteLoop() {
 	for {
 		select {
 		case chunk := <-t.replies:
+			// Labelled, because a terminal reply landing in an agent's prompt
+			// is exactly the kind of thing one needs to be able to rule out.
+			if t.opts.OnInput != nil {
+				t.opts.OnInput("terminal-reply", chunk)
+			}
 			if _, err := t.write(chunk); err != nil {
 				return
 			}
@@ -335,8 +343,18 @@ func (t *Terminal) waitLoop() {
 // Write sends raw bytes to the child's terminal input. This is the injection
 // primitive: everything else (text, keys, pastes) is built on top of it.
 func (t *Terminal) Write(p []byte) (int, error) {
+	return t.WriteSource("input", p)
+}
+
+// WriteSource is Write with a label for the input log, so a recorded byte can
+// be traced back to an injection, a key press, or the emulator answering a
+// query on the child's behalf.
+func (t *Terminal) WriteSource(source string, p []byte) (int, error) {
 	if t.exited.Load() {
 		return 0, ErrExited
+	}
+	if t.opts.OnInput != nil && len(p) > 0 {
+		t.opts.OnInput(source, p)
 	}
 	return t.write(p)
 }

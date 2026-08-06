@@ -45,6 +45,12 @@ defaults:
   delivery: push
   message_template: "[swarm] {from} says: {body}"
 
+# Record everything swarm sends to an agent, in .swarm/logs/<agent>.input.log:
+# injections, key presses, and the replies the emulator gives to the agent's own
+# queries. Off by default - it is a record of what you typed - and the thing to
+# turn on to answer "did swarm send that, or did the agent print it itself?".
+log_input: false
+
 # Mouse reporting in the TUI: the wheel scrolls the pane, a click picks an
 # agent. Off by default, because a terminal that reports mouse events to swarm
 # will no longer select text for you. Toggle it with M while running.

@@ -76,12 +76,16 @@ func New(o Options) (*Hub, error) {
 
 	for i := range cfg.Agents {
 		ac := &cfg.Agents[i]
-		h.agents[ac.Name] = agent.New(agent.Options{
+		opts := agent.Options{
 			Config:  ac,
 			Log:     h.log,
 			Env:     h.agentEnv(ac, shimDir),
 			LogFile: filepath.Join(stateDir, "logs", ac.Name+".log"),
-		})
+		}
+		if cfg.LogInput {
+			opts.InputLogFile = filepath.Join(stateDir, "logs", ac.Name+".input.log")
+		}
+		h.agents[ac.Name] = agent.New(opts)
 		h.order = append(h.order, ac.Name)
 	}
 	return h, nil

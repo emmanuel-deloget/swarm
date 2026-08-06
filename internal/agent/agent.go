@@ -68,14 +68,17 @@ type Options struct {
 	Env []string
 	// LogFile, when set, receives the raw terminal output for later replay.
 	LogFile string
+	// InputLogFile, when set, records everything sent to the agent.
+	InputLogFile string
 }
 
 // Agent supervises one command inside a virtual terminal.
 type Agent struct {
-	cfg     *config.AgentConfig
-	log     *event.Log
-	env     []string
-	logPath string
+	cfg          *config.AgentConfig
+	log          *event.Log
+	env          []string
+	logPath      string
+	inputLogPath string
 
 	mu         sync.Mutex
 	term       *vterm.Terminal
@@ -89,6 +92,7 @@ type Agent struct {
 	generation uint64
 	matched    map[int]bool
 	logFile    *os.File
+	inputLog   *os.File
 	watchStop  chan struct{}
 
 	injectMu sync.Mutex
@@ -97,12 +101,13 @@ type Agent struct {
 // New creates a stopped agent.
 func New(o Options) *Agent {
 	return &Agent{
-		cfg:     o.Config,
-		log:     o.Log,
-		env:     o.Env,
-		logPath: o.LogFile,
-		state:   StateStopped,
-		matched: make(map[int]bool),
+		cfg:          o.Config,
+		log:          o.Log,
+		env:          o.Env,
+		logPath:      o.LogFile,
+		inputLogPath: o.InputLogFile,
+		state:        StateStopped,
+		matched:      make(map[int]bool),
 	}
 }
 
@@ -141,6 +146,8 @@ func (a *Agent) Start() error {
 		}
 	}
 
+	a.openInputLog()
+
 	term, err := vterm.Start(vterm.Options{
 		Command:     a.cfg.Command,
 		Dir:         a.cfg.Workdir,
@@ -151,6 +158,7 @@ func (a *Agent) Start() error {
 		OnTitle:     func(s string) { a.setTitle(s) },
 		OnBell:      func() { a.log.Emit(event.KindBell, a.cfg.Name, "bell") },
 		OnOutput:    a.onOutput,
+		OnInput:     a.onInput,
 		OnAltScreen: func(bool) {},
 		OnExit:      func(st vterm.ExitStatus) { a.onExit(gen, st) },
 	})
@@ -258,6 +266,40 @@ func (a *Agent) onOutput(chunk []byte) {
 	}
 }
 
+// openInputLog starts (or continues) the record of what is sent to the agent.
+func (a *Agent) openInputLog() {
+	if a.inputLogPath == "" {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(a.inputLogPath), 0o755); err != nil {
+		return
+	}
+	// 0600: this file holds what was typed at an agent.
+	f, err := os.OpenFile(a.inputLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return
+	}
+	a.mu.Lock()
+	if a.inputLog != nil {
+		_ = a.inputLog.Close()
+	}
+	a.inputLog = f
+	a.mu.Unlock()
+	_, _ = fmt.Fprintf(f, "%s\tstarted\t%q\n", time.Now().Format(time.RFC3339), strings.Join(a.cfg.Command, " "))
+}
+
+// onInput records one write to the agent. The bytes are quoted rather than
+// written raw: this file is read to find out what was sent, not replayed.
+func (a *Agent) onInput(source string, data []byte) {
+	a.mu.Lock()
+	f := a.inputLog
+	a.mu.Unlock()
+	if f == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(f, "%s\t%s\t%q\n", time.Now().Format(time.RFC3339), source, data)
+}
+
 func (a *Agent) setTitle(s string) {
 	a.mu.Lock()
 	a.title = s
@@ -282,6 +324,11 @@ func (a *Agent) onExit(gen uint64, st vterm.ExitStatus) {
 		_, _ = fmt.Fprintf(a.logFile, "\r\n--- swarm: %s %s ---\r\n", a.cfg.Name, st)
 		_ = a.logFile.Close()
 		a.logFile = nil
+	}
+	if a.inputLog != nil {
+		_, _ = fmt.Fprintf(a.inputLog, "%s\texited\t%q\n", time.Now().Format(time.RFC3339), st.String())
+		_ = a.inputLog.Close()
+		a.inputLog = nil
 	}
 	a.mu.Unlock()
 
@@ -455,7 +502,7 @@ func (a *Agent) Inject(text string, o InjectOptions) (int, error) {
 
 	n := 0
 	if payload != "" {
-		written, err := term.Write([]byte(payload))
+		written, err := term.WriteSource("inject", []byte(payload))
 		n += written
 		if err != nil {
 			return n, err
@@ -465,7 +512,7 @@ func (a *Agent) Inject(text string, o InjectOptions) (int, error) {
 		if payload != "" && delay > 0 {
 			time.Sleep(delay)
 		}
-		written, err := term.Write([]byte(vterm.Submit))
+		written, err := term.WriteSource("submit", []byte(vterm.Submit))
 		n += written
 		if err != nil {
 			return n, err
@@ -487,7 +534,7 @@ func (a *Agent) SendKeys(names string) error {
 	}
 	a.injectMu.Lock()
 	defer a.injectMu.Unlock()
-	_, err = term.Write([]byte(seq))
+	_, err = term.WriteSource("keys", []byte(seq))
 	return err
 }
 
@@ -498,7 +545,7 @@ func (a *Agent) WriteRaw(p []byte) error {
 	if term == nil {
 		return fmt.Errorf("agent %s: not running", a.cfg.Name)
 	}
-	_, err := term.Write(p)
+	_, err := term.WriteSource("typed", p)
 	return err
 }
 
