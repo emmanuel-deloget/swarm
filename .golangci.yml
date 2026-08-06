@@ -1,0 +1,78 @@
+# golangci-lint configuration.
+#
+# The default set (errcheck, govet, ineffassign, staticcheck, unused) plus the
+# linters that earned their place by finding something real in this code base.
+# Anything that only produced style noise is left out on purpose: a linter you
+# learn to ignore is worse than no linter.
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    # Correctness
+    - bodyclose # an unclosed response body leaks a connection
+    - errorlint # %v on an error where %w was meant
+    - nilerr # returning nil after checking an error
+    - durationcheck # multiplying two durations
+    - asasalint # passing a slice where variadic any was meant
+    - makezero # make([]T, n) then append
+    - wastedassign
+    - gocritic # caught the append aliasing in vterm/modes.go
+    # Clarity
+    - revive
+    - predeclared # shadowing max, min, len...
+    - errname
+    - unconvert
+    - intrange
+    - usestdlibvars
+    - copyloopvar
+    - misspell
+    - whitespace
+    - nolintlint # a nolint without an explanation is a bug in waiting
+
+  settings:
+    revive:
+      rules:
+        - name: exported
+        - name: redefines-builtin-id
+        - name: unused-parameter
+        - name: indent-error-flow
+        - name: error-strings
+        - name: context-as-argument
+        - name: errorf
+    gocritic:
+      # diagnostic only: the style checks flag the shape of bubbletea's
+      # Update (return m, m.cmd()) and unnamed result pairs, which is noise
+      # here. The diagnostic tag is what caught the append aliasing in
+      # vterm/modes.go.
+      enabled-tags:
+        - diagnostic
+      disabled-checks:
+        # evalOrder fires on bubbletea's canonical `return m, m.cmd()`. The
+        # model is a pointer that never changes identity, so the order in which
+        # the two results are evaluated cannot matter.
+        - evalOrder
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - std-error-handling
+    rules:
+      # Tests may shout as loudly as they like about their own assertions.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - revive
+
+formatters:
+  enable:
+    - gofmt
+
+issues:
+  # A CI that reports only the first few issues per linter hides work.
+  max-issues-per-linter: 0
+  max-same-issues: 0
