@@ -118,3 +118,26 @@ func TestParseArgsWithoutFreeText(t *testing.T) {
 		t.Errorf("args = %v, want [dev-1]", fs.Args())
 	}
 }
+
+func TestKeysAcceptsFlagsAfterKeyNames(t *testing.T) {
+	// Key names are tokens, not prose: a flag among them is a flag. Treating
+	// them as free text made `swarm keys a1 ctrl+l -c swarm.yaml` fail with
+	// "unknown key \"-c\"".
+	fs := flag.NewFlagSet("keys", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	cfg := fs.String("c", "", "")
+	list := fs.Bool("list", false, "")
+
+	if err := parseArgs(fs, []string{"a1", "esc", "ctrl+c", "-c", "swarm.yaml"}, -1); err != nil {
+		t.Fatal(err)
+	}
+	if *cfg != "swarm.yaml" {
+		t.Errorf("-c = %q, want swarm.yaml", *cfg)
+	}
+	if got := strings.Join(fs.Args(), " "); got != "a1 esc ctrl+c" {
+		t.Errorf("key names = %q, want %q", got, "a1 esc ctrl+c")
+	}
+	if *list {
+		t.Error("-list was not passed")
+	}
+}

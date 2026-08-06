@@ -335,7 +335,10 @@ func cmdKeys(args []string) error {
 	fs := newFlagSet("keys")
 	cf.register(fs)
 	list := fs.Bool("list", false, "print the key names swarm understands and exit")
-	_ = parseArgs(fs, args, 1)
+	// Flags are recognised anywhere here: the arguments are key names, not free
+	// text, and no key name starts with a dash — so `swarm keys a1 esc -c x.yaml`
+	// should work like any other command.
+	_ = parseArgs(fs, args, -1)
 
 	if *list {
 		printKeyNames()
