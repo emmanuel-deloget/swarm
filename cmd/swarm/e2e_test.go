@@ -178,19 +178,7 @@ func TestAttachDrivesAnAgentDirectly(t *testing.T) {
 		_, _ = run.Process.Wait()
 	}()
 
-	// Wait for the socket to answer.
-	deadline := time.Now().Add(15 * time.Second)
-	for {
-		cmd := exec.Command(bin, "ls", "-c", cfg)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err == nil && strings.Contains(string(out), "alpha") {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the swarm never came up")
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
+	waitRunning(t, bin, cfg, "alpha")
 
 	term, err := vterm.Start(vterm.Options{
 		Command: []string{bin, "attach", "-c", cfg, "alpha"},
@@ -309,25 +297,14 @@ agents:
 	}
 
 	// Wait for the fleet to answer.
-	deadline := time.Now().Add(15 * time.Second)
-	for {
-		cmd := exec.Command(bin, "ls", "-c", cfg)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err == nil && strings.Contains(string(out), "talker") {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the swarm never came up")
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
+	waitRunning(t, bin, cfg, "alpha", "talker")
 
 	// Tell talker something; its shell forwards it to alpha with `swarm send`.
 	swarm("inject", "talker", "please build the thing")
 
 	// alpha must end up seeing it, attributed to talker — swarm sets
 	// $SWARM_AGENT in the sender's environment.
-	deadline = time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for {
 		screen := swarm("screen", "alpha", "-plain")
 		if strings.Contains(screen, "please build the thing") && strings.Contains(screen, "talker") {
@@ -338,6 +315,42 @@ agents:
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
+}
+
+// waitRunning waits until the named agents have a live process. `swarm ls`
+// answers as soon as the socket is up and lists stopped agents too, so waiting
+// on a name there proves nothing — which made these tests fail intermittently
+// under -race, where the gap between "socket up" and "agent started" widens.
+func waitRunning(t *testing.T, bin, cfg string, names ...string) {
+	t.Helper()
+	dir := filepath.Dir(cfg)
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		ready := 0
+		for _, name := range names {
+			cmd := exec.Command(bin, "status", name, "-c", cfg, "-json")
+			cmd.Dir = dir
+			out, err := cmd.Output()
+			if err != nil {
+				break
+			}
+			var infos []struct {
+				Pid   int    `json:"pid"`
+				State string `json:"state"`
+			}
+			if json.Unmarshal(out, &infos) != nil || len(infos) != 1 {
+				break
+			}
+			if infos[0].Pid > 0 && infos[0].State != "stopped" && infos[0].State != "exited" {
+				ready++
+			}
+		}
+		if ready == len(names) {
+			return
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	t.Fatalf("agents %v never started", names)
 }
 
 // agentSize asks a running swarm for one agent's terminal geometry.
@@ -591,18 +604,7 @@ agents:
 		_, _ = run.Process.Wait()
 	}()
 
-	deadline := time.Now().Add(15 * time.Second)
-	for {
-		cmd := exec.Command(bin, "ls", "-c", cfg)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err == nil && strings.Contains(string(out), "a1") {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the swarm never came up")
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
+	waitRunning(t, bin, cfg, "a1")
 
 	term, err := vterm.Start(vterm.Options{
 		Command: []string{bin, "attach", "-c", cfg, "a1"},
@@ -772,18 +774,7 @@ func TestNoCommandPanicsAgainstARunningSwarm(t *testing.T) {
 		_, _ = run.Process.Wait()
 	}()
 
-	deadline := time.Now().Add(15 * time.Second)
-	for {
-		probe := exec.Command(bin, "ls", "-c", cfg)
-		probe.Dir = dir
-		if out, err := probe.CombinedOutput(); err == nil && strings.Contains(string(out), "alpha") {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the swarm never came up")
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
+	waitRunning(t, bin, cfg, "alpha")
 
 	// Each command with no arguments, then with only a target: the two shapes
 	// that skip the value a command needs.
