@@ -68,7 +68,11 @@ type model struct {
 	isError bool
 	confirm string // pending confirmation prompt
 
-	screen string // cached rendering of the selected agent
+	// visibleLines is the rendered window into the selected agent's output, and
+	// maxOffset how far back its scrollback still goes. Both come from the last
+	// refresh, so scrolling can be bounded by what actually exists.
+	visibleLines []string
+	maxOffset    int
 }
 
 func newModel(h *hub.Hub, events <-chan event.Event, quit <-chan struct{}) *model {
@@ -143,6 +147,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		m.infos = m.h.Infos()
+		m.fitSelected()
 		m.refreshScreen()
 		return m, tick()
 
@@ -167,17 +172,25 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) refreshScreen() {
+	m.visibleLines, m.maxOffset = nil, 0
+
 	name := m.currentName()
 	if name == "" {
-		m.screen = ""
 		return
 	}
 	a, err := m.h.Agent(name)
 	if err != nil {
-		m.screen = ""
 		return
 	}
-	m.screen = a.Render()
+	_, paneHeight, _ := m.paneGeometry()
+	rows := m.screenRows(paneHeight)
+	lines, maxOffset := a.RenderWindow(m.offset, rows)
+	m.visibleLines, m.maxOffset = lines, maxOffset
+	// The scrollback shrinks when an agent restarts, so an offset kept from
+	// before must not survive past the top of what is left.
+	if m.offset > maxOffset {
+		m.offset = maxOffset
+	}
 }
 
 func (m *model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
@@ -186,12 +199,9 @@ func (m *model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.Button {
 	case tea.MouseButtonWheelUp:
-		m.offset += 3
+		m.scroll(3)
 	case tea.MouseButtonWheelDown:
-		m.offset -= 3
-		if m.offset < 0 {
-			m.offset = 0
-		}
+		m.scroll(-3)
 	case tea.MouseButtonLeft:
 		// Clicking the sidebar selects an agent.
 		if msg.X < sidebarWidth && msg.Y >= 2 {
@@ -271,13 +281,10 @@ func (m *model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "pgup":
-		m.offset += 10
+		m.scroll(10)
 		return m, nil
 	case "pgdown":
-		m.offset -= 10
-		if m.offset < 0 {
-			m.offset = 0
-		}
+		m.scroll(-10)
 		return m, nil
 
 	case "enter":
@@ -346,6 +353,19 @@ func (m *model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// scroll moves the pane through the agent's history, stopping at the start of
+// the session rather than drifting into blank space.
+func (m *model) scroll(by int) {
+	m.offset += by
+	if m.offset < 0 {
+		m.offset = 0
+	}
+	if m.offset > m.maxOffset {
+		m.offset = m.maxOffset
+	}
+	m.refreshScreen()
 }
 
 func (m *model) clampSel() {
@@ -460,20 +480,60 @@ func (m *model) usable() int {
 	return m.width - 1
 }
 
-func (m *model) viewMain() string {
-	logHeight := 0
+// paneGeometry is the size of the terminal pane: the window minus the sidebar,
+// the header, the status line and the event log. The agent shown there is
+// resized to it, so its own layout adapts instead of being cropped.
+func (m *model) paneGeometry() (width, height, logHeight int) {
 	if m.showLog {
 		logHeight = 7
 	}
-	bodyHeight := m.height - 2 /*header*/ - 1 /*status*/ - logHeight
-	if bodyHeight < 3 {
-		bodyHeight = 3
+	height = m.height - 2 /*header*/ - 1 /*status*/ - logHeight
+	if height < 3 {
+		height = 3
 	}
+	width = m.usable() - sidebarWidth - 1
+	if width < 10 {
+		width = 10
+	}
+	return width, height, logHeight
+}
 
-	paneWidth := m.usable() - sidebarWidth - 1
-	if paneWidth < 10 {
-		paneWidth = 10
+// screenRows is the part of the pane the agent's own screen occupies, below the
+// pane's title and separator.
+func (m *model) screenRows(paneHeight int) int {
+	rows := paneHeight - 2
+	if rows < 3 {
+		rows = 3
 	}
+	return rows
+}
+
+// fitSelected keeps the displayed agent the size of the space it is shown in.
+// It is a no-op once the sizes match, so it costs nothing on a steady window.
+func (m *model) fitSelected() {
+	if m.mode == modeMosaic || m.width == 0 {
+		return
+	}
+	in := m.current()
+	if in == nil || in.Pid == 0 {
+		return
+	}
+	a, err := m.h.Agent(in.Name)
+	if err != nil || !a.Config().FollowsWindow() {
+		return
+	}
+	paneW, paneH, _ := m.paneGeometry()
+	rows := m.screenRows(paneH)
+	if in.Cols == paneW && in.Rows == rows {
+		return
+	}
+	if err := a.Resize(paneW, rows); err != nil {
+		m.status, m.isError = err.Error(), true
+	}
+}
+
+func (m *model) viewMain() string {
+	paneWidth, bodyHeight, logHeight := m.paneGeometry()
 
 	side := block(m.sidebarLines(bodyHeight), sidebarWidth, bodyHeight)
 	pane := block(m.paneLines(paneWidth, bodyHeight), paneWidth, bodyHeight)
@@ -601,7 +661,7 @@ func (m *model) paneLines(width, height int) []string {
 		meta = append(meta, fmt.Sprintf("%d restarts", in.Restarts))
 	}
 	if m.offset > 0 {
-		meta = append(meta, fmt.Sprintf("scrolled %d", m.offset))
+		meta = append(meta, fmt.Sprintf("scrolled %d/%d", m.offset, m.maxOffset))
 	}
 	if m.mode == modeAttached {
 		meta = append(meta, styAttn.Render("ATTACHED"))
@@ -614,7 +674,7 @@ func (m *model) paneLines(width, height int) []string {
 	if screenHeight < 1 {
 		return out
 	}
-	if m.screen == "" {
+	if len(m.visibleLines) == 0 {
 		msg := "not running — press S to start it"
 		if in.State == agent.StateStarting {
 			msg = "starting..."
@@ -622,7 +682,7 @@ func (m *model) paneLines(width, height int) []string {
 		out = append(out, "", styMuted.Render("  "+msg))
 		return out
 	}
-	out = append(out, cropScreen(m.screen, width, screenHeight, m.offset)...)
+	out = append(out, fitLines(m.visibleLines, width, screenHeight)...)
 	return out
 }
 

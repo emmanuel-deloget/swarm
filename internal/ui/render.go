@@ -126,6 +126,23 @@ func flattenLines(s string) string {
 	return strings.Join(strings.Fields(r.Replace(s)), " ")
 }
 
+// fitLines truncates pre-rendered lines to the pane width and pads the block to
+// its height. Every line is terminated with a reset, otherwise a background
+// colour on the last visible cell bleeds across the pane.
+func fitLines(lines []string, width, height int) []string {
+	out := make([]string, 0, height)
+	for _, l := range lines {
+		if len(out) == height {
+			break
+		}
+		out = append(out, ansi.Truncate(l, width, "")+"\x1b[0m")
+	}
+	for len(out) < height {
+		out = append(out, "")
+	}
+	return out
+}
+
 // padRight pads a possibly styled line to an exact display width.
 func padRight(s string, width int) string {
 	w := ansi.StringWidth(s)

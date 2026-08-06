@@ -57,8 +57,9 @@ workdir: .                # default working directory for agents
 shared: .swarm/shared     # where injected files land, readable by every agent
 
 defaults:                 # inherited by every agent
-  cols: 200               # terminal geometry, independent of your window
+  cols: 200               # geometry before anyone looks at the agent
   rows: 50
+  follow_window: true     # resize the displayed agent to its pane
   idle_after: 3s          # quiet for this long → "idle"
   delivery: push          # bus messages are typed into the prompt
   submit_delay: 150ms     # pause between pasting and pressing Enter
@@ -139,7 +140,7 @@ swarm run
 | `1`…`9` | jump to an agent |
 | `↵` | attach: your keys go to that agent, `ctrl+\` comes back |
 | `A` | attach full screen, with a byte-perfect keyboard |
-| `pgup` `pgdn` | scroll the agent's screen |
+| `pgup` `pgdn` | scroll back through the agent's output |
 | `m` | mosaic: every agent at once |
 | `l` | show/hide the event log |
 | `i` `s` `b` | inject / send a bus message / broadcast |
@@ -152,6 +153,16 @@ swarm run
 Command line: `:inject`, `:type` (no Enter), `:keys`, `:send`, `:broadcast`,
 `:file`, `:start`, `:stop`, `:restart`, `:resize`, `:web`, `:q`. Omit the target
 and it applies to the selected agent.
+
+The agent on display is resized to the pane it occupies and follows the window
+as it changes, so its own layout adapts instead of being cropped on the right.
+An agent nobody is looking at keeps its configured geometry. Set
+`follow_window: false` to pin that geometry instead — `:resize` then sets it by
+hand.
+
+`pgup` scrolls back into the agent's scrollback (`scrollback:` lines per agent)
+and stops at the start of the session; the pane header shows how far back you
+are. `pgdn` returns to the live output.
 
 ## The CLI
 

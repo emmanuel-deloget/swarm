@@ -536,6 +536,18 @@ func (a *Agent) Text() string {
 	return term.Text()
 }
 
+// RenderWindow returns height lines of output ending offset lines above the
+// bottom, reaching into the scrollback, plus the largest usable offset.
+func (a *Agent) RenderWindow(offset, height int) (lines []string, maxOffset int) {
+	a.mu.Lock()
+	term := a.term
+	a.mu.Unlock()
+	if term == nil {
+		return nil, 0
+	}
+	return term.RenderWindow(offset, height)
+}
+
 // HTMLLines renders the screen as one HTML fragment per line, for the web UI.
 func (a *Agent) HTMLLines() []string {
 	a.mu.Lock()

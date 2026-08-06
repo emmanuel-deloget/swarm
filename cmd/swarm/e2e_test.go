@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -48,6 +50,16 @@ agents:
 		t.Fatal(err)
 	}
 	return path
+}
+
+// pressKey sends one key, escape sequence and all, in a single write. Splitting
+// it would be read as ESC followed by plain characters, which is not the key.
+func pressKey(t *testing.T, term *vterm.Terminal, seq string) {
+	t.Helper()
+	if _, err := term.Write([]byte(seq)); err != nil {
+		t.Fatalf("pressing %q: %v", seq, err)
+	}
+	time.Sleep(30 * time.Millisecond)
 }
 
 // typeText sends characters one at a time. A whole string written at once
@@ -321,5 +333,217 @@ agents:
 			t.Fatalf("alpha never heard from talker; its screen was:\n%s", screen)
 		}
 		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+// agentSize asks a running swarm for one agent's terminal geometry.
+func agentSize(t *testing.T, bin, cfg, agent string) (cols, rows int) {
+	t.Helper()
+	cmd := exec.Command(bin, "status", agent, "-c", cfg, "-json")
+	cmd.Dir = filepath.Dir(cfg)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("status -json: %v", err)
+	}
+	var infos []struct {
+		Name string `json:"name"`
+		Cols int    `json:"cols"`
+		Rows int    `json:"rows"`
+	}
+	if err := json.Unmarshal(out, &infos); err != nil {
+		t.Fatalf("decoding status: %v\n%s", err, out)
+	}
+	if len(infos) != 1 {
+		t.Fatalf("status returned %d agents", len(infos))
+	}
+	return infos[0].Cols, infos[0].Rows
+}
+
+// TestTUIFitsTheAgentToTheWindow checks that an agent shown in the TUI is given
+// the size of the pane it appears in, and follows the window when it changes.
+// Without this an agent configured wider than the window is simply cropped, and
+// its own layout never adapts.
+//
+// The agent prints what stty reports, so the assertion is on what the agent
+// itself sees — not merely on what swarm believes it set.
+func TestTUIFitsTheAgentToTheWindow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the swarm binary and runs a full UI")
+	}
+	bin := buildSwarm(t)
+
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "swarm.yaml")
+	// Configured much wider than the window we are about to open.
+	body := `session: fit-test
+defaults:
+  cols: 200
+  rows: 50
+  idle_after: 300ms
+web:
+  enabled: false
+agents:
+  - name: a1
+    command: [sh, -c, "while :; do printf 'size='; stty size; sleep 0.3; done"]
+`
+	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	term, err := vterm.Start(vterm.Options{
+		Command: []string{bin, "run", "-c", cfg},
+		Dir:     dir,
+		Cols:    120,
+		Rows:    40,
+	})
+	if err != nil {
+		t.Fatalf("starting the TUI: %v", err)
+	}
+	defer func() { _ = term.Stop(3 * time.Second) }()
+
+	// 120 columns: 1 kept from the last column, 24 for the sidebar, 1 for the
+	// separator. 40 rows: 2 for the header, 1 for the status line, 7 for the
+	// event log, 2 for the pane title.
+	waitScreen(t, term, "the agent fitted to the window", "size=28 94")
+	if cols, rows := agentSize(t, bin, cfg, "a1"); cols != 94 || rows != 28 {
+		t.Errorf("swarm reports %dx%d, the agent sees 28x94", cols, rows)
+	}
+
+	// Grow the window: the agent must follow.
+	if err := term.Resize(160, 50); err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+	waitScreen(t, term, "the agent following the bigger window", "size=38 134")
+
+	// And shrink it.
+	if err := term.Resize(100, 30); err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+	waitScreen(t, term, "the agent following the smaller window", "size=18 74")
+}
+
+// TestFollowWindowCanBePinned checks the escape hatch: with follow_window off,
+// the configured geometry is kept whatever the window does, which is what the
+// web UI and `swarm screen` then see.
+func TestFollowWindowCanBePinned(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the swarm binary and runs a full UI")
+	}
+	bin := buildSwarm(t)
+
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "swarm.yaml")
+	body := `session: pin-test
+defaults:
+  cols: 150
+  rows: 45
+  idle_after: 300ms
+  follow_window: false
+web:
+  enabled: false
+agents:
+  - name: a1
+    command: [sh, -c, "printf 'a1 ready\n'; while :; do sleep 1; done"]
+`
+	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	term, err := vterm.Start(vterm.Options{
+		Command: []string{bin, "run", "-c", cfg},
+		Dir:     dir,
+		Cols:    120,
+		Rows:    40,
+	})
+	if err != nil {
+		t.Fatalf("starting the TUI: %v", err)
+	}
+	defer func() { _ = term.Stop(3 * time.Second) }()
+
+	waitScreen(t, term, "the agent's screen", "a1 ready")
+	time.Sleep(1500 * time.Millisecond)
+
+	if cols, rows := agentSize(t, bin, cfg, "a1"); cols != 150 || rows != 45 {
+		t.Errorf("agent is %dx%d, want the pinned 150x45", cols, rows)
+	}
+}
+
+// TestTUIScrollStopsAtTheStartOfTheSession checks two things about pgup: that it
+// reaches output which has left the screen, and that it stops at the beginning
+// instead of drifting into blank space with an ever-growing offset.
+func TestTUIScrollStopsAtTheStartOfTheSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the swarm binary and runs a full UI")
+	}
+	bin := buildSwarm(t)
+
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "swarm.yaml")
+	// 60 numbered lines: more than any pane in a 40-row window can hold.
+	body := `session: scroll-test
+defaults:
+  idle_after: 300ms
+  scrollback: 500
+web:
+  enabled: false
+agents:
+  - name: a1
+    command: [sh, -c, "i=1; while [ $i -le 60 ]; do printf 'line-%02d\n' $i; i=$((i+1)); done; while :; do sleep 1; done"]
+`
+	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	term, err := vterm.Start(vterm.Options{
+		Command: []string{bin, "run", "-c", cfg},
+		Dir:     dir,
+		Cols:    120,
+		Rows:    40,
+	})
+	if err != nil {
+		t.Fatalf("starting the TUI: %v", err)
+	}
+	defer func() { _ = term.Stop(3 * time.Second) }()
+
+	// The bottom of the output is on screen, the beginning is not.
+	waitScreen(t, term, "the end of the output", "line-60")
+	if strings.Contains(term.Text(), "line-01") {
+		t.Fatal("the window is too tall for this test to mean anything")
+	}
+
+	// Scrolling up reaches the first line, which had left the screen.
+	for range 8 {
+		pressKey(t, term, "\x1b[5~") // pgup
+	}
+	waitScreen(t, term, "the start of the output after scrolling up", "line-01")
+
+	// Keep going: the offset must stop at the top, and the first lines stay
+	// visible instead of the pane emptying out.
+	for range 30 {
+		pressKey(t, term, "\x1b[5~")
+	}
+	screen := term.Text()
+	if !strings.Contains(screen, "line-01") {
+		t.Fatalf("scrolling past the top emptied the pane:\n%s", screen)
+	}
+
+	// The indicator reports a bounded offset, not a runaway one.
+	re := regexp.MustCompile(`scrolled (\d+)/(\d+)`)
+	m := re.FindStringSubmatch(screen)
+	if m == nil {
+		t.Fatalf("no bounded scroll indicator on screen:\n%s", screen)
+	}
+	at, top := m[1], m[2]
+	if at != top {
+		t.Errorf("scrolled %s/%s: holding pgup should settle at the top", at, top)
+	}
+
+	// And coming back down returns to the live end of the output.
+	for range 40 {
+		pressKey(t, term, "\x1b[6~") // pgdown
+	}
+	waitScreen(t, term, "the end of the output again", "line-60")
+	if strings.Contains(term.Text(), "scrolled") {
+		t.Error("back at the bottom, there should be no scroll indicator")
 	}
 }

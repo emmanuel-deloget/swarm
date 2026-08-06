@@ -112,7 +112,11 @@ type Terminal struct {
 	// is only touched from the reader goroutine.
 	modeCarry []byte
 
-	writeMu sync.Mutex // serialises writes to the pty
+	// ptmMu guards every use of the pty master, including closing it: an ioctl
+	// racing the close would touch a descriptor that may already have been
+	// reused.
+	ptmMu     sync.Mutex
+	ptmClosed bool
 
 	// readerDone is closed once readLoop has drained the pty to EOF. Waiting
 	// for it before tearing anything down is what keeps a dying agent's last
@@ -199,7 +203,7 @@ func Start(o Options) (*Terminal, error) {
 func (t *Terminal) readLoop() {
 	defer func() {
 		close(t.readerDone)
-		_ = t.ptm.Close()
+		t.closePTM()
 	}()
 	buf := make([]byte, 32*1024)
 	for {
@@ -338,9 +342,33 @@ func (t *Terminal) Write(p []byte) (int, error) {
 }
 
 func (t *Terminal) write(p []byte) (int, error) {
-	t.writeMu.Lock()
-	defer t.writeMu.Unlock()
+	t.ptmMu.Lock()
+	defer t.ptmMu.Unlock()
+	if t.ptmClosed {
+		return 0, ErrExited
+	}
 	return t.ptm.Write(p)
+}
+
+// closePTM closes the pty master exactly once.
+func (t *Terminal) closePTM() {
+	t.ptmMu.Lock()
+	defer t.ptmMu.Unlock()
+	if t.ptmClosed {
+		return
+	}
+	t.ptmClosed = true
+	_ = t.ptm.Close()
+}
+
+// setSize applies the window size to the pty, unless it is already closed.
+func (t *Terminal) setSize(cols, rows int) error {
+	t.ptmMu.Lock()
+	defer t.ptmMu.Unlock()
+	if t.ptmClosed {
+		return nil
+	}
+	return pty.Setsize(t.ptm, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
 }
 
 // ErrExited is returned when writing to a terminal whose child is gone.
@@ -352,13 +380,24 @@ func (t *Terminal) Resize(cols, rows int) error {
 		return fmt.Errorf("vterm: invalid size %dx%d", cols, rows)
 	}
 	t.mu.Lock()
+	// Shrinking the height: the emulator's buffer truncates from the bottom,
+	// which throws away the most recent output — the opposite of what a
+	// terminal does. Scroll up just enough to keep the cursor on screen first;
+	// the emulator's own scroll path pushes the displaced lines into the
+	// scrollback, so nothing is lost. The alternate screen has no scrollback
+	// and is redrawn by the application, so leave it alone.
+	if rows < t.rows && !t.altOn.Load() {
+		pos := t.emu.CursorPosition()
+		if need := pos.Y - (rows - 1); need > 0 {
+			_, _ = fmt.Fprintf(t.emu, "\x1b[%dS", need)
+			// SU does not move the cursor; put it back on its own line.
+			_, _ = fmt.Fprintf(t.emu, "\x1b[%d;%dH", pos.Y-need+1, pos.X+1)
+		}
+	}
 	t.cols, t.rows = cols, rows
 	t.emu.Resize(cols, rows)
 	t.mu.Unlock()
-	if t.exited.Load() {
-		return nil
-	}
-	return pty.Setsize(t.ptm, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+	return t.setSize(cols, rows)
 }
 
 // Size returns the current geometry.

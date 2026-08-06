@@ -25,11 +25,17 @@ shared: .swarm/shared
 env: {}
 
 defaults:
-  # Terminal geometry given to every agent. Keep it wide: agent CLIs adapt
-  # their layout to it, and this size is independent of your window.
+  # Starting terminal geometry. The agent displayed in the TUI is resized to
+  # the pane showing it, so these are the size an agent has before anyone
+  # looks at it - and the size it keeps with follow_window: false.
   cols: 200
   rows: 50
   scrollback: 5000
+
+  # Resize the displayed agent to the pane it appears in, so its own layout
+  # adapts instead of being cropped. Turn it off to pin the geometry above,
+  # which is then what the web UI and "swarm screen" show.
+  follow_window: true
 
   # An agent that has printed nothing for this long is reported as idle,
   # which usually means it is waiting for you.

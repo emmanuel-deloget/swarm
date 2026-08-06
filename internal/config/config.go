@@ -60,6 +60,7 @@ type AgentDefaults struct {
 	RestartBackoff  time.Duration `yaml:"restart_backoff"`
 	SubmitDelay     time.Duration `yaml:"submit_delay"`
 	BracketedPaste  *bool         `yaml:"bracketed_paste"`
+	FollowWindow    *bool         `yaml:"follow_window"`
 	DeliveryMode    string        `yaml:"delivery"`
 	MessageTemplate string        `yaml:"message_template"`
 }
@@ -111,6 +112,11 @@ type AgentConfig struct {
 	// BracketedPaste wraps injected text in ESC[200~ / ESC[201~ so multi-line
 	// payloads are not interpreted as successive submissions.
 	BracketedPaste *bool `yaml:"bracketed_paste"`
+
+	// FollowWindow resizes the agent to the pane showing it in the TUI, so its
+	// own layout adapts instead of being cut off. Turn it off to pin the
+	// geometry above, which is what the web UI and `swarm screen` then see.
+	FollowWindow *bool `yaml:"follow_window"`
 
 	// DeliveryMode decides what happens to a bus message addressed to this
 	// agent: "push" injects it in the terminal, "pull" queues it until the
@@ -263,6 +269,9 @@ func (c *Config) normalize() error {
 	if d.BracketedPaste == nil {
 		d.BracketedPaste = ptr(true)
 	}
+	if d.FollowWindow == nil {
+		d.FollowWindow = ptr(true)
+	}
 	if d.DeliveryMode == "" {
 		d.DeliveryMode = DeliveryPush
 	}
@@ -331,6 +340,9 @@ func (c *Config) normalize() error {
 		}
 		if a.BracketedPaste == nil {
 			a.BracketedPaste = d.BracketedPaste
+		}
+		if a.FollowWindow == nil {
+			a.FollowWindow = d.FollowWindow
 		}
 		if a.DeliveryMode == "" {
 			a.DeliveryMode = d.DeliveryMode
@@ -446,6 +458,9 @@ func (a *AgentConfig) RestartEnabled() bool { return a.RestartOnExit != nil && *
 
 // PasteEnabled reports whether injected text is wrapped in bracketed paste.
 func (a *AgentConfig) PasteEnabled() bool { return a.BracketedPaste != nil && *a.BracketedPaste }
+
+// FollowsWindow reports whether the agent is resized to the pane showing it.
+func (a *AgentConfig) FollowsWindow() bool { return a.FollowWindow != nil && *a.FollowWindow }
 
 func resolve(base, p string) string {
 	p = os.ExpandEnv(p)
