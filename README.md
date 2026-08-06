@@ -1,0 +1,299 @@
+# swarm
+
+Run a fleet of terminal agents — `claude`, `codex`, anything with a CLI — each in
+its own virtual terminal, and drive them all from one place: a TUI, a web page,
+or the `swarm` command itself. The agents get that same command, so they can talk
+to each other without you relaying messages.
+
+swarm knows nothing about any particular agent. An agent is a command line.
+
+```
+swarm init          # write a starter swarm.yaml
+$EDITOR swarm.yaml  # list your agents
+swarm run           # start the fleet + the TUI + the web remote
+```
+
+## What it gives you
+
+- **One window for eleven agents.** A list with live state, the selected agent's
+  terminal next to it, and a mosaic view when you want to see everyone at once.
+- **A state per agent**, derived from what it prints: working, idle (that is,
+  waiting for you), plus whatever your own regexps say — `approval`, `error`,
+  anything you name. The header tells you how many need you.
+- **Input from anywhere.** Type into an agent from the TUI, from
+  `swarm inject`, or from a browser. Send key presses (`esc`, `ctrl+c`, arrows).
+  Stage a file or an image and inject its path.
+- **A message bus.** `swarm send dev-3 "..."` reaches an agent whether you type
+  it or another agent does. Push mode types it into the recipient's prompt; pull
+  mode leaves it for `swarm inbox`.
+- **Remote control over HTTP**, token-protected, with no JavaScript terminal
+  library: swarm already emulates the terminals and sends ready-made HTML.
+
+## Install
+
+```sh
+go install github.com/emmanuel-deloget/swarm/cmd/swarm@latest
+```
+
+Or from a checkout:
+
+```sh
+go build -o swarm ./cmd/swarm
+```
+
+Requires Go 1.24+ and a Unix-like system (Linux, macOS).
+
+## Configuration
+
+`swarm init` writes a documented `swarm.yaml`; `swarm.example.yaml` in this
+repository is the same file. The short version:
+
+```yaml
+session: default          # picks the control socket; two swarms can coexist
+workdir: .                # default working directory for agents
+shared: .swarm/shared     # where injected files land, readable by every agent
+
+defaults:                 # inherited by every agent
+  cols: 200               # terminal geometry, independent of your window
+  rows: 50
+  idle_after: 3s          # quiet for this long → "idle"
+  delivery: push          # bus messages are typed into the prompt
+  submit_delay: 150ms     # pause between pasting and pressing Enter
+
+web:
+  enabled: true
+  addr: 127.0.0.1:7777
+  token: ""               # empty → a fresh one at every start, shown in the TUI
+
+groups:                   # usable as @dev anywhere a target is expected
+  dev: [dev-1, dev-2, dev-3, dev-4, dev-5]
+  review: [review-1, review-2, review-3, review-4, review-5]
+
+agents:
+  - name: dev-1
+    role: dev             # also usable as @dev
+    command: [claude]     # any argv; this is the only required field
+    patterns:
+      - match: "(?i)\\b(do you want|proceed\\?|\\[y/n\\])"
+        state: approval   # shows up as a badge, and in the event log
+        notify: true
+  - name: review-1
+    role: review
+    command: [codex]
+    delivery: pull        # do not interrupt; it will run `swarm inbox`
+```
+
+### Where the config is looked up
+
+`swarm run` uses `-c <path>` if you pass one. Otherwise it walks up from the
+working directory, and in each directory tries `swarm.yaml`, `swarm.yml`,
+`.swarm.yaml`, `.swarm.yml`, in that order — so any subdirectory of your project
+works. There is no global config; a swarm belongs to a project.
+
+Relative paths inside the file (`workdir`, `shared`, `tls_cert`) resolve against
+the directory holding the file, never against your working directory.
+
+The other commands do not really need the config — they only use it to find the
+control socket, in this order:
+
+1. `-socket <path>`
+2. `$SWARM_SOCKET` — already set inside every agent, which is why an agent can
+   just run `swarm send` with no arguments of its own
+3. the config found as above → `<config dir>/.swarm/<session>.sock`, or wherever
+   `<session>.socketpath` points if the socket had to be relocated
+4. `./.swarm/default.sock`, if it exists
+
+A **target** is an agent name, `@group`, `@role`, `all`, or a comma-separated
+list of those. Every command that acts on agents accepts one.
+
+### Patterns
+
+A pattern is a regexp matched against the tail of the agent's screen. When it
+matches, the agent gets a state badge, optionally raises an event, and can even
+be answered automatically:
+
+```yaml
+    patterns:
+      - match: "Run this command\\? \\(y/n\\)"
+        state: approval
+        notify: true
+        reply: "y"        # auto-answer — only for prompts you trust
+```
+
+## The TUI
+
+```
+swarm run
+```
+
+| key | |
+|---|---|
+| `j` `k` `↑` `↓`, `tab` | select an agent |
+| `1`…`9` | jump to an agent |
+| `↵` | attach: your keys go to that agent, `ctrl+\` comes back |
+| `A` | attach full screen (byte-perfect keyboard); the last row reminds you `ctrl+\` gets you back |
+| `pgup` `pgdn` | scroll the agent's screen |
+| `m` | mosaic: every agent at once |
+| `l` | show/hide the event log |
+| `i` `s` `b` | inject / send a bus message / broadcast |
+| `f` | stage a file and inject its path |
+| `K` | send key presses |
+| `S` `x` `r` | start / stop / restart |
+| `:` | command line |
+| `q` | quit and stop every agent |
+
+Command line: `:inject`, `:type` (no Enter), `:keys`, `:send`, `:broadcast`,
+`:file`, `:start`, `:stop`, `:restart`, `:resize`, `:web`, `:q`. Omit the target
+and it applies to the selected agent.
+
+## The CLI
+
+Every command talks to a running swarm over a Unix socket, so you can drive the
+fleet from any other terminal — or from a script.
+
+```sh
+swarm ls                            # who is here, what they are doing
+swarm status @dev                   # more detail
+swarm screen dev-1                  # what that terminal shows right now
+swarm attach dev-1                  # take it over in this window (ctrl+\ to leave)
+swarm logs dev-1 -f                 # recorded output, escape sequences stripped
+
+swarm inject dev-1 "run the tests"  # type and submit
+swarm inject dev-1 -submit=false "half a thought"
+swarm keys dev-1 esc ctrl+c         # key presses
+swarm inject dev-1 -file shot.png "what is wrong here?"
+
+swarm send @review "PR 42 is ready" # bus message
+swarm broadcast "stopping in 5 min"
+swarm inbox dev-1                   # read a mailbox
+swarm stage diff.patch              # copy a file where every agent can read it
+
+swarm events -f                     # live event log
+swarm restart dev-3
+swarm shutdown
+```
+
+While attached, the bottom row of the window is a status bar showing the agent
+name and `ctrl+\ detach`; the agent gets the rows above it. `swarm attach
+-no-status` gives the whole window to the agent instead.
+
+`swarm run --no-tui` runs it headless if you would rather drive it entirely from
+the CLI or the web.
+
+Flags may come after the target — `swarm inject dev-1 -file shot.png "..."` reads
+the way you would say it. Free text is taken literally from the first plain word
+onwards, so a message can mention `-json` without it being parsed as a flag; use
+`--` if you need a message that *starts* with a dash.
+
+### Injecting text, files and images
+
+Text is sanitised (control characters that would drive the terminal are dropped)
+and wrapped in bracketed paste **only when the agent's UI asked for it**, the way
+a real terminal behaves — so a multi-line prompt arrives as one message, and an
+agent that does not support it never sees stray `^[[200~`.
+
+Images and other files travel as paths: `-file` copies the file into the shared
+directory and injects its absolute path, which is what agent CLIs read. The same
+happens when you drop a file in the web UI.
+
+## Agents talking to each other
+
+Every agent gets `swarm` on its `PATH`, already pointed at the running session:
+
+| variable | |
+|---|---|
+| `$SWARM_AGENT` | its own name |
+| `$SWARM_ROLE` | its role |
+| `$SWARM_PEERS` | the other agents |
+| `$SWARM_SHARED` | a directory every agent can read and write |
+| `$SWARM_SOCKET` | the control socket (used automatically) |
+
+So an agent can do this on its own:
+
+```sh
+swarm ls                                  # who else is here
+swarm send review-2 "please review PR 42"
+swarm send @dev -file report.md "findings"
+swarm inbox -wait 30s                     # block until something arrives
+```
+
+`swarm run` writes `.swarm/AGENTS.md` describing the fleet and these commands —
+point your agents' instructions at it and they can coordinate without you.
+
+Push recipients get messages typed into their prompt; pull recipients keep them
+queued until they ask. Reviewers deep in a file usually want pull; a triage agent
+dispatching work usually wants push.
+
+## Remote control
+
+With `web.enabled`, `swarm run` prints a URL carrying a token:
+
+```
+http://127.0.0.1:7777?t=1a2b3c...
+```
+
+The page shows the agent list, the selected terminal (live, and you can type into
+it), a grid view, the event log, and a composer that either types into the prompt
+or sends a bus message. Uploading a file stages it and injects its path.
+
+Past localhost, treat that URL as a shell on your machine:
+
+- set `web.token` to something you chose, or keep the generated one;
+- set `web.read_only: true` if you only want to watch;
+- put it behind TLS (`web.tls_cert` / `web.tls_key`) or a tunnel
+  (`ssh -R`, `cloudflared`) rather than binding `0.0.0.0` in the open.
+
+## How it works
+
+```
+                        ┌──────────────┐
+  swarm run ───────────►│     hub      │  fleet, events, message bus
+                        └──┬────────┬──┘
+             ┌─────────────┘        └──────────────┐
+      ┌──────▼──────┐                       ┌──────▼──────┐
+      │ agent dev-1 │  pty + VT emulator    │ agent rev-1 │
+      └──────┬──────┘                       └─────────────┘
+             │ argv: claude, codex, ...
+             ▼
+   ┌───────────────────┬────────────────────┬──────────────────┐
+   │ TUI (bubbletea)   │ unix socket (IPC)  │ HTTP + WebSocket │
+   │                   │  ← swarm CLI       │  ← browser       │
+   │                   │  ← agents          │                  │
+   └───────────────────┴────────────────────┴──────────────────┘
+```
+
+Each agent runs in a real pty, so it behaves exactly as it would in your
+terminal — job control, `^C`, terminal queries, alternate screen. swarm keeps a
+virtual terminal emulator in sync with each pty, which is what makes it possible
+to render a snapshot of any agent at any time instead of replaying a byte stream
+that may start mid-sequence. The TUI renders that snapshot as ANSI, the web
+server renders it as HTML lines and sends only the ones that changed.
+
+The control socket lives in `.swarm/<session>.sock`, or in the runtime directory
+with a pointer file when the project path is too long for a Unix socket.
+
+## Layout
+
+| | |
+|---|---|
+| `cmd/swarm` | the CLI, including `run` |
+| `internal/vterm` | pty + terminal emulator, injection primitives |
+| `internal/agent` | one supervised agent: lifecycle, state, patterns |
+| `internal/hub` | the fleet, the environment agents get, routing |
+| `internal/bus` | mailboxes |
+| `internal/ipc` | the Unix socket protocol |
+| `internal/ui` | the TUI |
+| `internal/web` | the remote control |
+
+## Limits
+
+- Unix only: it uses ptys, Unix sockets and process groups.
+- Attaching from the TUI (`↵`) reconstructs key bytes from parsed events, which
+  covers text, control keys and arrows but not exotic sequences or mouse input.
+  `A` runs the real `swarm attach` instead, with nothing in between.
+- `reply:` in a pattern answers a prompt on your behalf. Use it only for prompts
+  you would always answer the same way.
+
+```sh
+go test ./...
+```

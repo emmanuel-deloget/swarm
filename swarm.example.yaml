@@ -1,0 +1,116 @@
+# swarm — a fleet of terminal agents.
+# Every agent is just a command line: swarm does not care which CLI it is.
+
+session: default
+
+# Where agents run by default. Relative paths resolve against this file.
+workdir: .
+
+# Files injected or attached to messages are staged here so every agent can
+# read them by path (this is how images reach an agent).
+shared: .swarm/shared
+
+# Added to the environment of every agent.
+env: {}
+
+defaults:
+  # Terminal geometry given to every agent. Keep it wide: agent CLIs adapt
+  # their layout to it, and this size is independent of your window.
+  cols: 200
+  rows: 50
+  scrollback: 5000
+
+  # An agent that has printed nothing for this long is reported as idle,
+  # which usually means it is waiting for you.
+  idle_after: 3s
+
+  autostart: true
+  restart_on_exit: false
+  restart_backoff: 2s
+
+  # Injected text is wrapped in bracketed paste, then validated after this
+  # delay. Multi-line prompts land as one message instead of being submitted
+  # line by line.
+  bracketed_paste: true
+  submit_delay: 150ms
+
+  # push: a bus message is typed into the agent's prompt right away.
+  # pull: it waits until the agent runs "swarm inbox".
+  delivery: push
+  message_template: "[swarm] {from} says: {body}"
+
+web:
+  enabled: true
+  # 127.0.0.1 keeps it local. Use 0.0.0.0 to reach it from your phone, and
+  # set tls_cert/tls_key (or put it behind a tunnel) before you do.
+  addr: 127.0.0.1:7777
+  # Leave empty to get a fresh token at every start; it is printed in the TUI.
+  token: ""
+  read_only: false
+
+bus:
+  enabled: true
+  history: 200
+  allow_self_inject: false
+
+# Named sets of agents, usable as @name wherever a target is expected.
+groups:
+  dev: [dev-1, dev-2, dev-3, dev-4, dev-5]
+  review: [review-1, review-2, review-3, review-4, review-5]
+
+agents:
+  - name: dev-1
+    role: dev
+    command: [claude]
+    workdir: .
+    # Patterns classify what the agent shows. A matching pattern turns into a
+    # state badge in the TUI and an event in the log, so you can spot the
+    # agent that needs you without watching all eleven terminals.
+    patterns:
+      - match: "(?i)\\b(do you want|proceed\\?|\\[y/n\\]|allow\\b.*\\?)"
+        state: approval
+        notify: true
+      - match: "(?i)^\\s*(error|fatal|panic):"
+        state: error
+        notify: true
+
+  - name: dev-2
+    role: dev
+    command: [claude]
+  - name: dev-3
+    role: dev
+    command: [claude]
+  - name: dev-4
+    role: dev
+    command: [codex]
+  - name: dev-5
+    role: dev
+    command: [codex]
+
+  - name: review-1
+    role: review
+    command: [claude]
+    # Reviewers are often busy reading; let them collect messages themselves
+    # instead of having text typed into their prompt mid-thought.
+    delivery: pull
+  - name: review-2
+    role: review
+    command: [claude]
+    delivery: pull
+  - name: review-3
+    role: review
+    command: [claude]
+    delivery: pull
+  - name: review-4
+    role: review
+    command: [codex]
+    delivery: pull
+  - name: review-5
+    role: review
+    command: [codex]
+    delivery: pull
+
+  - name: triage
+    role: triage
+    command: [claude]
+    restart_on_exit: true
