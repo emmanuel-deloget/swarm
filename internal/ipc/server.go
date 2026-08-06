@@ -1,0 +1,430 @@
+package ipc
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/emmanuel-deloget/swarm/internal/agent"
+	"github.com/emmanuel-deloget/swarm/internal/hub"
+	"github.com/emmanuel-deloget/swarm/internal/sockpath"
+)
+
+// Server exposes the hub on a Unix socket.
+type Server struct {
+	hub *Hub
+	ln  net.Listener
+
+	path    string
+	pointer string
+	// OnShutdown is called when a client asks the swarm to quit.
+	OnShutdown func()
+
+	wg     sync.WaitGroup
+	closed chan struct{}
+	once   sync.Once
+}
+
+// Hub is the subset of *hub.Hub the server needs. Keeping it as an interface
+// makes the server testable with a fake fleet.
+type Hub = hub.Hub
+
+// Listen starts the control socket. A stale socket left by a crashed swarm is
+// removed, but a live one is reported as an error so two swarms never fight
+// over the same session.
+func Listen(h *Hub) (*Server, error) {
+	path := h.SocketPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(path); err == nil {
+		if alive(path) {
+			return nil, fmt.Errorf("a swarm is already running on %s", path)
+		}
+		_ = os.Remove(path)
+	}
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		return nil, err
+	}
+	// The socket is the control plane of the fleet: keep it private.
+	_ = os.Chmod(path, 0o600)
+
+	s := &Server{hub: h, ln: ln, path: path, pointer: h.SocketPointer(), closed: make(chan struct{})}
+	if err := sockpath.WritePointer(s.pointer, path); err != nil {
+		_ = ln.Close()
+		return nil, err
+	}
+	go s.accept()
+	return s, nil
+}
+
+func alive(path string) bool {
+	c, err := net.DialTimeout("unix", path, 300*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	defer c.Close()
+	_ = c.SetDeadline(time.Now().Add(500 * time.Millisecond))
+	if err := json.NewEncoder(c).Encode(Request{Cmd: CmdPing}); err != nil {
+		return false
+	}
+	var resp Response
+	return json.NewDecoder(c).Decode(&resp) == nil && resp.OK
+}
+
+// Path returns the socket path.
+func (s *Server) Path() string { return s.path }
+
+// Close stops accepting and removes the socket.
+func (s *Server) Close() error {
+	s.once.Do(func() {
+		close(s.closed)
+		_ = s.ln.Close()
+		_ = os.Remove(s.path)
+		if s.pointer != "" {
+			_ = os.Remove(s.pointer)
+		}
+	})
+	s.wg.Wait()
+	return nil
+}
+
+func (s *Server) accept() {
+	for {
+		conn, err := s.ln.Accept()
+		if err != nil {
+			select {
+			case <-s.closed:
+				return
+			default:
+			}
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			continue
+		}
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.serve(conn)
+		}()
+	}
+}
+
+func (s *Server) serve(conn net.Conn) {
+	defer conn.Close()
+	dec := json.NewDecoder(conn)
+	enc := json.NewEncoder(conn)
+	var encMu sync.Mutex
+	send := func(r Response) error {
+		encMu.Lock()
+		defer encMu.Unlock()
+		return enc.Encode(r)
+	}
+
+	// A connection carries as many requests as the client wants: `swarm inject
+	// -file x.png` stages the file and injects its path over the same one.
+	// Streaming commands take the connection over and end it themselves.
+	for {
+		var req Request
+		if err := dec.Decode(&req); err != nil {
+			if !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
+				_ = send(errorResponse(fmt.Errorf("bad request: %w", err)))
+			}
+			return
+		}
+
+		switch req.Cmd {
+		case CmdEvents:
+			s.handleEvents(req, send)
+			return
+		case CmdAttach:
+			s.handleAttach(req, dec, send)
+			return
+		default:
+			resp := s.handle(req)
+			resp.Done = true
+			if err := send(resp); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func (s *Server) handle(req Request) Response {
+	h := s.hub
+	switch req.Cmd {
+	case CmdPing:
+		return Response{OK: true}
+
+	case CmdInfo:
+		url, token := h.WebURL()
+		return Response{
+			OK:       true,
+			Session:  h.Config().Session,
+			Socket:   s.path,
+			StateDir: h.StateDir(),
+			WebURL:   url,
+			Token:    token,
+			Shared:   h.Config().Shared,
+		}
+
+	case CmdList:
+		if req.Target == "" {
+			return Response{OK: true, Agents: h.Infos()}
+		}
+		agents, err := h.Resolve(req.Target)
+		if err != nil {
+			return errorResponse(err)
+		}
+		pending := h.Bus().PendingAll()
+		infos := make([]agent.Info, 0, len(agents))
+		for _, a := range agents {
+			info := a.Info()
+			info.Unread = pending[info.Name]
+			infos = append(infos, info)
+		}
+		return Response{OK: true, Agents: infos}
+
+	case CmdStart:
+		res, err := h.Start(target(req))
+		return targetResponse(res, err)
+
+	case CmdStop:
+		res, err := h.Stop(target(req), grace(req))
+		return targetResponse(res, err)
+
+	case CmdRestart:
+		res, err := h.Restart(target(req), grace(req))
+		return targetResponse(res, err)
+
+	case CmdInject:
+		text := req.Text
+		if len(req.Files) > 0 {
+			// Injecting a file means injecting a path an agent can open.
+			paths := ""
+			for i, f := range req.Files {
+				if i > 0 {
+					paths += " "
+				}
+				paths += f
+			}
+			if text == "" {
+				text = paths
+			} else {
+				text += " " + paths
+			}
+		}
+		res, err := h.Inject(target(req), text, agent.InjectOptions{
+			Submit: req.Submit,
+			Raw:    req.Raw,
+			Paste:  req.Paste,
+		})
+		return targetResponse(res, err)
+
+	case CmdKeys:
+		res, err := h.Keys(target(req), req.Keys)
+		return targetResponse(res, err)
+
+	case CmdSend:
+		msgs, err := h.Send(req.From, target(req), req.Text, req.Files)
+		if err != nil {
+			return errorResponse(err)
+		}
+		return Response{OK: true, Messages: msgs}
+
+	case CmdInbox:
+		name := req.From
+		if name == "" {
+			name = req.Target
+		}
+		if name == "" {
+			return errorResponse(errors.New("inbox needs an agent name (set SWARM_AGENT or pass one)"))
+		}
+		wait := time.Duration(0)
+		switch {
+		case req.WaitMS < 0:
+			wait = 24 * time.Hour
+		case req.WaitMS > 0:
+			wait = time.Duration(req.WaitMS) * time.Millisecond
+		}
+		msgs, err := h.Inbox(name, req.Peek, wait, s.closed)
+		if err != nil {
+			return errorResponse(err)
+		}
+		return Response{OK: true, Messages: msgs}
+
+	case CmdScreen:
+		agents, err := h.Resolve(target(req))
+		if err != nil {
+			return errorResponse(err)
+		}
+		out := ""
+		for i, a := range agents {
+			if i > 0 {
+				out += "\n"
+			}
+			if len(agents) > 1 {
+				out += fmt.Sprintf("\x1b[0m=== %s ===\n", a.Name())
+			}
+			if req.Plain {
+				out += a.Text()
+			} else {
+				out += a.Render()
+			}
+		}
+		return Response{OK: true, Text: out}
+
+	case CmdStage:
+		path, err := h.StageFile(req.Name, req.Data)
+		if err != nil {
+			return errorResponse(err)
+		}
+		return Response{OK: true, Path: path}
+
+	case CmdShutdown:
+		if s.OnShutdown != nil {
+			go s.OnShutdown()
+		}
+		return Response{OK: true, Text: "shutting down"}
+	}
+	return errorResponse(fmt.Errorf("unknown command %q", req.Cmd))
+}
+
+func (s *Server) handleEvents(req Request, send func(Response) error) {
+	n := req.Lines
+	if n == 0 {
+		n = 50
+	}
+	history := s.hub.Log().History(n)
+	if err := send(Response{OK: true, Events: history, Done: !req.Follow}); err != nil || !req.Follow {
+		return
+	}
+	ch, cancel := s.hub.Log().Subscribe(256)
+	defer cancel()
+	for {
+		select {
+		case <-s.closed:
+			_ = send(Response{OK: true, Done: true})
+			return
+		case e, ok := <-ch:
+			if !ok {
+				return
+			}
+			ev := e
+			if err := send(Response{OK: true, Event: &ev}); err != nil {
+				return
+			}
+		}
+	}
+}
+
+// handleAttach turns the connection into a two-way terminal link: screen bytes
+// flow out, keystrokes flow in.
+func (s *Server) handleAttach(req Request, dec *json.Decoder, send func(Response) error) {
+	a, err := s.hub.Agent(req.Target)
+	if err != nil {
+		_ = send(errorResponse(err))
+		return
+	}
+	term := a.Terminal()
+	if term == nil {
+		_ = send(errorResponse(fmt.Errorf("agent %s is not running", req.Target)))
+		return
+	}
+	if req.Cols > 0 && req.Rows > 0 {
+		_ = a.Resize(req.Cols, req.Rows)
+	}
+
+	sub := term.Subscribe(1 << 20)
+	defer sub.Close()
+	if err := send(Response{OK: true, Text: sub.Snapshot, Resync: true}); err != nil {
+		return
+	}
+
+	done := make(chan struct{})
+	// Client → agent: keystrokes and resizes.
+	go func() {
+		defer close(done)
+		for {
+			var in Request
+			if err := dec.Decode(&in); err != nil {
+				return
+			}
+			switch {
+			case len(in.Data) > 0:
+				if err := a.WriteRaw(in.Data); err != nil {
+					return
+				}
+			case in.Cols > 0 && in.Rows > 0:
+				_ = a.Resize(in.Cols, in.Rows)
+			}
+		}
+	}()
+
+	// Agent → client.
+	go func() {
+		for {
+			data, resync, err := sub.Next()
+			if err != nil {
+				_ = send(Response{OK: true, Done: true, Text: "agent exited"})
+				return
+			}
+			var resp Response
+			if resync {
+				resp = Response{OK: true, Resync: true, Text: sub.Resnapshot()}
+			} else {
+				resp = Response{OK: true, Data: data}
+			}
+			if err := send(resp); err != nil {
+				return
+			}
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-s.closed:
+	case <-term.Done():
+		_ = send(Response{OK: true, Done: true, Text: "agent exited"})
+	}
+}
+
+func target(req Request) string {
+	if req.Target == "" {
+		return "all"
+	}
+	return req.Target
+}
+
+func grace(req Request) time.Duration {
+	if req.GraceMS <= 0 {
+		return 5 * time.Second
+	}
+	return time.Duration(req.GraceMS) * time.Millisecond
+}
+
+func targetResponse(res []hub.TargetResult, err error) Response {
+	if err != nil {
+		return errorResponse(err)
+	}
+	ok := false
+	for _, r := range res {
+		if r.OK {
+			ok = true
+			break
+		}
+	}
+	resp := Response{OK: ok, Results: res}
+	if !ok && len(res) > 0 {
+		resp.Error = res[0].Error
+	}
+	return resp
+}
