@@ -27,6 +27,14 @@ func (t *Terminal) RenderWindow(offset, height int) (lines []string, maxOffset i
 	back := t.emu.ScrollbackLen()
 	total := back + rows
 
+	// Where the cursor is, so the pane can show it. Without this there is no
+	// way to tell where typing would land — which matters most while attached.
+	cursor := t.emu.CursorPosition()
+	cursorRow := -1
+	if t.curVisible.Load() {
+		cursorRow = cursor.Y
+	}
+
 	maxOffset = total - height
 	if maxOffset < 0 {
 		maxOffset = 0
@@ -53,7 +61,11 @@ func (t *Terminal) RenderWindow(offset, height int) (lines []string, maxOffset i
 			continue
 		}
 		y := i - back
-		out = append(out, renderScreenRow(t, y, cols))
+		cursorX := -1
+		if y == cursorRow {
+			cursorX = cursor.X
+		}
+		out = append(out, renderScreenRow(t, y, cols, cursorX))
 	}
 	for len(out) < height {
 		out = append(out, "")
@@ -74,17 +86,21 @@ func renderScrollbackLine(line uv.Line, cols int) string {
 			return nil
 		}
 		return &line[x]
-	}, cols)
+	}, cols, -1)
 }
 
-func renderScreenRow(t *Terminal, y, cols int) string {
-	return renderCells(func(x int) *uv.Cell { return t.emu.CellAt(x, y) }, cols)
+func renderScreenRow(t *Terminal, y, cols, cursorX int) string {
+	return renderCells(func(x int) *uv.Cell { return t.emu.CellAt(x, y) }, cols, cursorX)
 }
 
 // renderCells turns a row of cells into an ANSI string, merging runs that share
 // a style. Trailing blanks are dropped: padding is the caller's business, and
 // an unstyled tail would otherwise carry a background colour across the pane.
-func renderCells(at func(x int) *uv.Cell, cols int) string {
+//
+// cursorX, when not negative, is drawn in reverse video: the pane is a picture
+// of the screen, not the terminal's own cursor, so the cursor has to be part of
+// the picture.
+func renderCells(at func(x int) *uv.Cell, cols, cursorX int) string {
 	// Find the last cell worth printing.
 	end := 0
 	for x := range cols {
@@ -96,6 +112,11 @@ func renderCells(at func(x int) *uv.Cell, cols int) string {
 		if (content != "" && content != " ") || !c.Style.IsZero() {
 			end = x + 1
 		}
+	}
+	// The cursor may sit past the last written cell — at the end of a prompt,
+	// which is exactly where one looks for it.
+	if cursorX >= 0 && cursorX < cols && cursorX+1 > end {
+		end = cursorX + 1
 	}
 	if end == 0 {
 		return ""
@@ -130,6 +151,16 @@ func renderCells(at func(x int) *uv.Cell, cols int) string {
 				width = c.Width
 			}
 		}
+		if x == cursorX {
+			// Its own run, whatever the cell around it looks like.
+			flush()
+			cursorStyle := style
+			cursorStyle.Attrs ^= uv.AttrReverse
+			b.WriteString(cursorStyle.Styled(content))
+			x += width
+			continue
+		}
+
 		if runOpen && !runStyle.Equal(&style) {
 			flush()
 		}

@@ -179,3 +179,64 @@ func TestResizeDoesNotCorruptAnEscapeSequence(t *testing.T) {
 		t.Errorf("title = %q, want the whole thing", got)
 	}
 }
+
+func TestRenderWindowShowsTheCursor(t *testing.T) {
+	// A prompt with the cursor sitting after it, which is where one looks to
+	// know whether typing would land in the right place.
+	term, err := Start(Options{
+		Command: []string{"sh", "-c", "printf 'prompt> '; sleep 30"},
+		Cols:    40,
+		Rows:    6,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer func() { _ = term.Stop(time.Second) }()
+
+	waitFor(t, "the prompt", func() bool { return strings.Contains(term.Text(), "prompt>") })
+
+	lines, _ := term.RenderWindow(0, 6)
+	joined := strings.Join(lines, "\n")
+
+	// Reverse video marks the cell the cursor is on.
+	if !strings.Contains(joined, "\x1b[7m") {
+		t.Errorf("the cursor should be drawn in reverse video:\n%q", joined)
+	}
+	// And it is on the prompt's line, past the last written character.
+	x, y, visible := term.Cursor()
+	if !visible {
+		t.Fatal("the cursor should be visible here")
+	}
+	if !strings.Contains(lines[y], "\x1b[7m") {
+		t.Errorf("row %d holds the cursor at column %d but is not marked: %q", y, x, lines[y])
+	}
+	for i, line := range lines {
+		if i != y && strings.Contains(line, "\x1b[7m") {
+			t.Errorf("row %d should not carry the cursor: %q", i, line)
+		}
+	}
+}
+
+func TestHiddenCursorIsNotDrawn(t *testing.T) {
+	term, err := Start(Options{
+		// Hide the cursor, as a full-screen application does.
+		Command: []string{"sh", "-c", "printf 'text\\033[?25l'; sleep 30"},
+		Cols:    40,
+		Rows:    6,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer func() { _ = term.Stop(time.Second) }()
+
+	waitFor(t, "the output", func() bool { return strings.Contains(term.Text(), "text") })
+	waitFor(t, "the cursor to be hidden", func() bool {
+		_, _, visible := term.Cursor()
+		return !visible
+	})
+
+	lines, _ := term.RenderWindow(0, 6)
+	if joined := strings.Join(lines, "\n"); strings.Contains(joined, "\x1b[7m") {
+		t.Errorf("a hidden cursor should not be drawn:\n%q", joined)
+	}
+}
