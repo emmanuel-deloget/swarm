@@ -715,3 +715,97 @@ agents:
 		t.Error("ctrl+g did not leave the attached mode")
 	}
 }
+
+// commands is every subcommand the CLI dispatches, so the sweeps below cannot
+// silently miss one that is added later.
+var commands = []string{
+	"ls", "status", "start", "stop", "restart", "inject", "keys", "screen",
+	"attach", "logs", "send", "broadcast", "inbox", "stage", "events", "info",
+	"shutdown", "run", "init",
+}
+
+// TestNoCommandPanicsOnMissingArguments sweeps every subcommand with too few
+// arguments. `swarm keys` used to panic on fs.Args()[1:] instead of printing
+// its usage, and nothing would have caught the next one.
+func TestNoCommandPanicsOnMissingArguments(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the swarm binary")
+	}
+	bin := buildSwarm(t)
+
+	// An empty directory: no config to find, so each command takes its early
+	// path with nothing to lean on.
+	dir := t.TempDir()
+
+	for _, name := range commands {
+		t.Run(name, func(t *testing.T) {
+			cmd := exec.Command(bin, name)
+			cmd.Dir = dir
+			// Keep the swarm socket of the developer's own session out of it.
+			cmd.Env = append(os.Environ(), "SWARM_SOCKET=")
+			out, _ := cmd.CombinedOutput()
+			assertNoPanic(t, name, out)
+		})
+	}
+}
+
+// TestNoCommandPanicsAgainstARunningSwarm is the same sweep with a live swarm,
+// which takes the commands past their early error paths and into the code that
+// actually talks to the fleet.
+func TestNoCommandPanicsAgainstARunningSwarm(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the swarm binary")
+	}
+	bin := buildSwarm(t)
+	cfg := writeFleet(t, "sweep-test")
+	dir := filepath.Dir(cfg)
+
+	run := exec.Command(bin, "run", "-c", cfg, "--no-tui")
+	run.Dir = dir
+	if err := run.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = run.Process.Kill()
+		_, _ = run.Process.Wait()
+	}()
+
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		probe := exec.Command(bin, "ls", "-c", cfg)
+		probe.Dir = dir
+		if out, err := probe.CombinedOutput(); err == nil && strings.Contains(string(out), "alpha") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the swarm never came up")
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	// Each command with no arguments, then with only a target: the two shapes
+	// that skip the value a command needs.
+	for _, name := range commands {
+		if name == "shutdown" || name == "run" || name == "init" {
+			continue // would stop the fleet, or start another one
+		}
+		for _, args := range [][]string{{name}, {name, "alpha"}} {
+			t.Run(strings.Join(args, "_"), func(t *testing.T) {
+				cmd := exec.Command(bin, append(args, "-c", cfg)...)
+				cmd.Dir = dir
+				out, _ := cmd.CombinedOutput()
+				assertNoPanic(t, strings.Join(args, " "), out)
+			})
+		}
+	}
+}
+
+func assertNoPanic(t *testing.T, what string, out []byte) {
+	t.Helper()
+	text := string(out)
+	for _, bad := range []string{"panic:", "goroutine ", "runtime error"} {
+		if strings.Contains(text, bad) {
+			t.Fatalf("`swarm %s` crashed:\n%s", what, text)
+		}
+	}
+}

@@ -5,6 +5,17 @@ import (
 	"strings"
 )
 
+// argsFrom returns the positional arguments from index n onwards, and nothing
+// when there are fewer than that. fs.Args()[n:] panics instead, which is how
+// `swarm keys` with no arguments crashed rather than printing its usage.
+func argsFrom(fs *flag.FlagSet, n int) []string {
+	args := fs.Args()
+	if len(args) <= n {
+		return nil
+	}
+	return args[n:]
+}
+
 // parseArgs parses a command line where flags may appear after the positional
 // arguments, which is how anyone naturally writes it:
 //

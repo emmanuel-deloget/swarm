@@ -262,7 +262,7 @@ func cmdInject(args []string) error {
 	if target == "" {
 		return fmt.Errorf("inject needs a target")
 	}
-	text := joinArgs(fs.Args()[1:])
+	text := joinArgs(argsFrom(fs, 1))
 	if *textFile != "" {
 		data, err := readFileOrStdin(*textFile)
 		if err != nil {
@@ -336,9 +336,9 @@ func cmdKeys(args []string) error {
 	_ = parseArgs(fs, args, 1)
 
 	target := fs.Arg(0)
-	keys := joinArgs(fs.Args()[1:])
+	keys := joinArgs(argsFrom(fs, 1))
 	if target == "" || keys == "" {
-		return fmt.Errorf("usage: swarm keys <target> <key>...   (e.g. swarm keys dev-1 esc ctrl+c)")
+		return errors.New("usage: swarm keys <target> <key>...   (e.g. swarm keys dev-1 esc ctrl+c)")
 	}
 	c, err := cf.dial()
 	if err != nil {
