@@ -4,6 +4,9 @@
 
 [![CI](https://github.com/emmanuel-deloget/swarm/actions/workflows/ci.yml/badge.svg)](https://github.com/emmanuel-deloget/swarm/actions/workflows/ci.yml)
 
+**[emmanueldeloget.com/swarm](https://www.emmanueldeloget.com/swarm/)** — what it
+looks like, in fewer words than this page.
+
 Run a fleet of terminal agents — `claude`, `codex`, anything with a CLI — each in
 its own virtual terminal, and drive them all from one place: a TUI, a web page,
 or the `swarm` command itself. The agents get that same command, so they can talk
