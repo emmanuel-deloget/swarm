@@ -38,6 +38,8 @@ talking
   inbox [agent]             collect the messages addressed to you
   stage <file>              copy a file where every agent can read it
   events                    show the swarm event log
+  hook test <payload.json>  show what an incoming webhook would send
+  hook post <payload.json>  send a payload to the running listener
 
   info                      session, socket, web URL and token
 
@@ -89,6 +91,8 @@ func main() {
 		err = cmdStage(args)
 	case "events":
 		err = cmdEvents(args)
+	case "hook", "hooks":
+		err = cmdHook(args)
 	case "info":
 		err = cmdInfo(args)
 	case "shutdown":
