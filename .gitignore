@@ -1,5 +1,15 @@
 # swarm's own state: sockets, logs, staged files, the CLI shim
 .swarm/
 
+# a swarm.yaml here is somebody's fleet, not part of the project.
+# swarm.example.yaml is the one that ships; `swarm init` writes the other.
+/swarm.yaml
+/swarm.yml
+/.swarm.yaml
+/.swarm.yml
+
+# terminal recordings made while testing
+*.cast
+
 # built binary
 /swarm
