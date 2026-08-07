@@ -54,8 +54,15 @@ Requires Go 1.25+ and a Unix-like system (Linux, macOS).
 
 ## Configuration
 
-`swarm init` writes a documented `swarm.yaml`; `swarm.example.yaml` in this
-repository is the same file. The short version:
+`swarm init` writes a starter `swarm.yaml`: one agent, nothing listening on a
+port, and every other setting present as a commented example. Uncomment what you
+need — each block is written so it loads as it stands.
+
+**[docs/configuration.md](docs/configuration.md) is the exhaustive reference**:
+every key, its default, and what it does. `swarm.example.yaml` in this repository
+is the starter file, if you would rather read it before installing anything.
+
+The short version:
 
 ```yaml
 session: default          # picks the control socket; two swarms can coexist
