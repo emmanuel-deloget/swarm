@@ -11,6 +11,7 @@ import (
 
 	"github.com/emmanuel-deloget/swarm/internal/config"
 	"github.com/emmanuel-deloget/swarm/internal/event"
+	"github.com/emmanuel-deloget/swarm/internal/hook"
 	"github.com/emmanuel-deloget/swarm/internal/hub"
 	"github.com/emmanuel-deloget/swarm/internal/ipc"
 	"github.com/emmanuel-deloget/swarm/internal/ui"
@@ -23,6 +24,7 @@ func cmdRun(args []string) error {
 	cfgPath := fs.String("c", "", "path to swarm.yaml (default: nearest one, searching upwards)")
 	noTUI := fs.Bool("no-tui", false, "run headless: no terminal UI, drive it with the swarm CLI")
 	noWeb := fs.Bool("no-web", false, "disable the web remote control")
+	noHooks := fs.Bool("no-hooks", false, "disable the inbound webhook listener")
 	webAddr := fs.String("web-addr", "", "override the web listen address")
 	token := fs.String("web-token", "", "override the web token")
 	noStart := fs.Bool("no-start", false, "create the agents but do not launch them")
@@ -43,6 +45,9 @@ func cmdRun(args []string) error {
 	}
 	if *noWeb {
 		cfg.Web.Enabled = false
+	}
+	if *noHooks {
+		cfg.Hooks.Enabled = false
 	}
 	if *webAddr != "" {
 		cfg.Web.Addr = *webAddr
@@ -111,6 +116,43 @@ func cmdRun(args []string) error {
 		go h.StartAll()
 	}
 
+	var hookSrv *hook.Server
+	if cfg.Hooks.Enabled {
+		var trace *hook.Log
+		if cfg.HookLogEnabled() {
+			path := filepath.Join(h.StateDir(), "logs", "webhooks.log")
+			trace, err = hook.OpenLog(path)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = trace.Close() }()
+			h.Log().Emit(event.KindInfo, "", "webhook deliveries recorded in "+path)
+		}
+		hookSrv, err = hook.New(hook.Options{
+			Addr:            cfg.Hooks.Addr,
+			Token:           cfg.Hooks.Token,
+			Secret:          cfg.Hooks.Secret,
+			SignatureHeader: cfg.Hooks.SignatureHeader,
+			From:            cfg.Hooks.From,
+			Rules:           cfg.Hooks.Rules,
+			Unmatched:       cfg.Hooks.Unmatched,
+			MaxBody:         cfg.Hooks.MaxBody,
+			Log:             h.Log(),
+			Trace:           trace,
+			Send: func(from, target, body string) error {
+				_, err := h.Send(from, target, body, nil)
+				return err
+			},
+		})
+		if err != nil {
+			return err
+		}
+		if err := hookSrv.Start(); err != nil {
+			return err
+		}
+		defer func() { _ = hookSrv.Close() }()
+		h.Log().Emit(event.KindInfo, "", fmt.Sprintf("webhooks on %s (%d rules)", hookSrv.URL(), len(cfg.Hooks.Rules)))
+	}
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigs)
