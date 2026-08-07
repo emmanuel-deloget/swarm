@@ -1,6 +1,6 @@
-<img src="assets/icon.png" alt="" width="88" align="right">
-
 # swarm
+
+<img src="assets/icon.png" alt="" width="88" align="right">
 
 [![CI](https://github.com/emmanuel-deloget/swarm/actions/workflows/ci.yml/badge.svg)](https://github.com/emmanuel-deloget/swarm/actions/workflows/ci.yml)
 
