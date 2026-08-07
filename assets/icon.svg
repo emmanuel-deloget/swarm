@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="swarm">
+  <!-- The word mark, still: same five agents and same wiring as the logo in
+       the header, with thicker nodes and links so it survives 16px. -->
+  <rect width="32" height="32" rx="7.5" fill="#0b1220" />
+  <g stroke="#2dd4bf" stroke-opacity=".42" stroke-width="1.5" stroke-linecap="round" fill="none">
+    <path d="M16 8.5 8.5 14M16 8.5l7.5 5.5M8.5 14l2.5 8.5M23.5 14 21 22.5M11 22.5h10" />
+  </g>
+  <g fill="#2dd4bf">
+    <circle cx="16" cy="8.5" r="3.4" />
+    <circle cx="8.5" cy="14" r="2.8" />
+    <circle cx="23.5" cy="14" r="2.8" />
+    <circle cx="11" cy="22.5" r="2.8" />
+    <circle cx="21" cy="22.5" r="2.8" />
+  </g>
+</svg>
