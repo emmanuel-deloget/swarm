@@ -111,6 +111,17 @@ type Terminal struct {
 	bracketed  atomic.Bool
 	stopping   atomic.Bool
 
+	// focused is what swarm tells the agent about the focus of the window
+	// showing it. It starts true, and that is a deliberate policy rather than a
+	// simplification: swarm renders every agent all the time — in the grid, in
+	// the web page, in `swarm screen` — so an agent that believed itself
+	// unfocused would draw a degraded interface nobody asked for.
+	focused atomic.Bool
+
+	// focusPending records that the application has just enabled focus
+	// reporting and is owed the current state.
+	focusPending atomic.Bool
+
 	// modeCarry holds the tail of a mode sequence split across two reads. It
 	// is only touched from the reader goroutine.
 	modeCarry []byte
@@ -177,6 +188,7 @@ func Start(o Options) (*Terminal, error) {
 	})
 	t.emu = emu
 	t.curVisible.Store(true)
+	t.focused.Store(true)
 
 	cmd := exec.Command(o.Command[0], o.Command[1:]...)
 	cmd.Dir = o.Dir
@@ -231,6 +243,11 @@ func (t *Terminal) consume(chunk []byte) {
 	_, _ = t.emu.Write(chunk)
 	for _, s := range t.subs {
 		s.push(chunk)
+	}
+	// After the write, never before: the emulator drops a focus event unless it
+	// has already parsed the sequence that enabled the mode.
+	if t.focusPending.Swap(false) {
+		t.sendFocusLocked()
 	}
 	t.mu.Unlock()
 

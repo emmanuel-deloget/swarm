@@ -11,6 +11,12 @@ package vterm
 
 const modeBracketedPaste = 2004
 
+// modeFocusEvent is DECSET 1004: the application asks to be told when its
+// terminal gains or loses the focus. Agent CLIs use it to decide how much of
+// their interface to draw — and one that enabled it and never hears back can
+// stay in its unfocused rendering forever.
+const modeFocusEvent = 1004
+
 // carryMax is how many bytes of a possibly-truncated sequence we keep between
 // reads: ESC [ ? then a few parameters is well under this.
 const carryMax = 32
@@ -58,6 +64,11 @@ func (t *Terminal) scanModes(chunk []byte) []byte {
 			if hasParam(buf[start:j], modeBracketedPaste) {
 				t.bracketed.Store(final == 'h')
 			}
+			if final == 'h' && hasParam(buf[start:j], modeFocusEvent) {
+				// Answer once the emulator has seen the sequence too,
+				// otherwise the mode is not set yet and the event is dropped.
+				t.focusPending.Store(true)
+			}
 		}
 		i = j + 1
 		lastComplete = i
@@ -98,3 +109,29 @@ func hasParam(params []byte, want int) bool {
 // BracketedPaste reports whether the application running in this terminal has
 // asked for pasted text to be delimited.
 func (t *Terminal) BracketedPaste() bool { return t.bracketed.Load() }
+
+// SetFocus tells the agent whether the window showing it has the focus. It is a
+// no-op until the application enables focus reporting, and the state is resent
+// when it does.
+func (t *Terminal) SetFocus(focused bool) {
+	if t.focused.Swap(focused) == focused {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.sendFocusLocked()
+}
+
+// Focused reports what swarm last told the agent.
+func (t *Terminal) Focused() bool { return t.focused.Load() }
+
+// sendFocusLocked hands the focus state to the emulator, which forwards it to
+// the child only if focus reporting is on. The caller holds mu; the emulator
+// writes into a pipe drained by replyReadLoop, which does not take mu.
+func (t *Terminal) sendFocusLocked() {
+	if t.focused.Load() {
+		t.emu.Focus()
+	} else {
+		t.emu.Blur()
+	}
+}

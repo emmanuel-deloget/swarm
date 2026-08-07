@@ -322,3 +322,63 @@ func TestKeyNamesAreAllUsable(t *testing.T) {
 		}
 	}
 }
+
+// TestFocusEventIsDeliveredWhenTheAgentAsksForIt covers a gap that is invisible
+// until an agent CLI relies on it: swarm lets the application enable focus
+// reporting (DECSET 1004) and then never sends an event, so the agent stays in
+// whatever it draws for an unfocused window — forever, since the focus it is
+// waiting for never arrives.
+//
+// The child enables the mode, then echoes its input with control characters
+// made visible, so the focus event comes back as "^[[I" in the output.
+func TestFocusEventIsDeliveredWhenTheAgentAsksForIt(t *testing.T) {
+	term, err := Start(Options{
+		Command: []string{"sh", "-c", `printf '\033[?1004hready\n'; exec cat -v`},
+		Cols:    80,
+		Rows:    24,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer func() { _ = term.Stop(time.Second) }()
+
+	waitFor(t, "the child to enable focus reporting", func() bool {
+		return strings.Contains(term.Text(), "ready")
+	})
+	waitFor(t, "the focus event to reach the child", func() bool {
+		return strings.Contains(term.Text(), "^[[I")
+	})
+
+	// Losing the focus is reported too.
+	term.SetFocus(false)
+	waitFor(t, "the blur event to reach the child", func() bool {
+		return strings.Contains(term.Text(), "^[[O")
+	})
+	if term.Focused() {
+		t.Error("Focused() should follow SetFocus")
+	}
+}
+
+// TestNoFocusEventWithoutTheMode: a terminal must not volunteer events the
+// application never asked for. That is the same rule that keeps bracketed paste
+// delimiters out of agents that never enabled 2004.
+func TestNoFocusEventWithoutTheMode(t *testing.T) {
+	term, err := Start(Options{
+		Command: []string{"sh", "-c", `printf 'ready\n'; exec cat -v`},
+		Cols:    80,
+		Rows:    24,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer func() { _ = term.Stop(time.Second) }()
+
+	waitFor(t, "the child", func() bool { return strings.Contains(term.Text(), "ready") })
+	term.SetFocus(false)
+	term.SetFocus(true)
+	time.Sleep(200 * time.Millisecond)
+
+	if got := term.Text(); strings.Contains(got, "^[[I") || strings.Contains(got, "^[[O") {
+		t.Errorf("focus events reached a child that never enabled the mode:\n%s", got)
+	}
+}
