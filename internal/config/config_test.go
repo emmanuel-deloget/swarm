@@ -483,3 +483,76 @@ func TestSecretEnvIsTrimmed(t *testing.T) {
 		t.Errorf("secret = %q, want it trimmed", cfg.Hooks.Secret)
 	}
 }
+
+// TestADisabledListenerDoesNotBlockTheConfig: a hooks block that is switched off
+// must not make the whole file unloadable because its secret has not been
+// created yet. Otherwise `swarm ls` fails over a listener nobody asked to run —
+// and a config shipped as a template cannot be read at all.
+func TestADisabledListenerDoesNotBlockTheConfig(t *testing.T) {
+	body := `
+hooks:
+  enabled: false
+  secret_path: .swarm/hook-secret
+  signature_header: X-Hub-Signature-256
+  rules:
+    - when: {event: pull_request.review_requested}
+      to: review-1
+      message: "a review was asked of you"
+agents:
+  - name: review-1
+    command: [claude]
+`
+	cfg, err := Load(write(t, body))
+	if err != nil {
+		t.Fatalf("a disabled listener should not fail the load: %v", err)
+	}
+	if cfg.Hooks.Secret != "" {
+		t.Error("nothing should have been read")
+	}
+
+	// The shape is still checked, though: a rule that could never work is worth
+	// reporting whether or not the listener runs today.
+	broken := `
+hooks:
+  enabled: false
+  rules:
+    - when: {event: x}
+      to: "@nobody"
+      message: "x"
+agents:
+  - name: review-1
+    command: [claude]
+`
+	if _, err := Load(write(t, broken)); err == nil {
+		t.Error("an unknown target should be refused even when hooks are off")
+	}
+
+	// And so are the secret sources, which cost nothing to check.
+	both := `
+hooks:
+  enabled: false
+  secret: a
+  secret_path: b
+  signature_header: X-Sig
+agents:
+  - name: review-1
+    command: [claude]
+`
+	if _, err := Load(write(t, both)); err == nil {
+		t.Error("two secret sources should be refused even when hooks are off")
+	}
+
+	// Enabled, the secret is read — and a missing file is fatal.
+	enabled := `
+hooks:
+  enabled: true
+  secret_path: .swarm/hook-secret
+  signature_header: X-Hub-Signature-256
+agents:
+  - name: review-1
+    command: [claude]
+`
+	if _, err := Load(write(t, enabled)); err == nil {
+		t.Error("an enabled listener with no secret file should be refused")
+	}
+}

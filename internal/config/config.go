@@ -490,16 +490,19 @@ func (c *Config) normalizeHooks() error {
 	if h.Log == nil {
 		h.Log = ptr(true)
 	}
-	if err := h.resolveSecret(c.Dir()); err != nil {
-		return err
-	}
 	// Fail closed, both ways round: a secret nobody looks for verifies nothing,
-	// and a header nobody can check is worse than no header at all.
-	if h.Secret != "" && h.SignatureHeader == "" {
+	// and a header nobody can check is worse than no header at all. This looks
+	// at what was declared, not at what could be read — the two are checked
+	// apart so that a listener that is switched off stays out of the way.
+	declared := h.Secret != "" || h.SecretEnv != "" || h.SecretPath != ""
+	if declared && h.SignatureHeader == "" {
 		return fmt.Errorf("hooks: signature_header is required with a secret")
 	}
-	if h.SignatureHeader != "" && h.Secret == "" {
+	if h.SignatureHeader != "" && !declared {
 		return fmt.Errorf("hooks: signature_header is set but no secret is")
+	}
+	if err := h.resolveSecret(c.Dir(), h.Enabled); err != nil {
+		return err
 	}
 	check := func(what string, r *hook.Rule) error {
 		if err := r.Compile(); err != nil {
@@ -538,7 +541,12 @@ func (c *Config) HookLogEnabled() bool { return c.Hooks.Log != nil && *c.Hooks.L
 // leaves it in Secret. Exactly one source may be named: silently preferring one
 // over another is how a swarm ends up verifying signatures against a secret its
 // owner thought they had replaced.
-func (h *HookConfig) resolveSecret(base string) error {
+//
+// load says whether to go and fetch it. A disabled listener still has its
+// sources checked for coherence, but nothing is read: a hooks block that is
+// switched off must not make the whole config unloadable because its secret
+// file has not been created yet — that would take `swarm ls` down with it.
+func (h *HookConfig) resolveSecret(base string, load bool) error {
 	named := make([]string, 0, 3)
 	for _, s := range []struct{ name, value string }{
 		{"secret", h.Secret},
@@ -551,6 +559,9 @@ func (h *HookConfig) resolveSecret(base string) error {
 	}
 	if len(named) > 1 {
 		return fmt.Errorf("hooks: set only one of %s", strings.Join(named, ", "))
+	}
+	if !load {
+		return nil
 	}
 
 	switch {
