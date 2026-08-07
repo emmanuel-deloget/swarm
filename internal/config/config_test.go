@@ -1,8 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -272,5 +274,212 @@ func TestDetachKey(t *testing.T) {
 	// A name nobody can type is refused at load time, not at detach time.
 	if _, err := Load(write(t, "detach_key: \"ctrl+nonsense\"\nagents:\n  - name: a\n    command: [x]\n")); err == nil {
 		t.Error("an unknown key name should be rejected")
+	}
+}
+
+func TestHookRulesAreValidatedAtLoad(t *testing.T) {
+	valid := `
+hooks:
+  enabled: true
+  rules:
+    - name: new-pr
+      when:
+        event: pull_request
+      to: "@review"
+      message: "PR {number}"
+agents:
+  - name: review-1
+    role: review
+    command: [claude]
+`
+	cfg, err := Load(write(t, valid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Hooks.Addr != "127.0.0.1:7778" {
+		t.Errorf("addr = %q, want the loopback default", cfg.Hooks.Addr)
+	}
+	if cfg.Hooks.From != "webhook" {
+		t.Errorf("from = %q, want webhook", cfg.Hooks.From)
+	}
+	if cfg.Hooks.MaxBody == 0 {
+		t.Error("max_body should have a default")
+	}
+
+	// A rule naming a target nobody serves is worth reporting when the file is
+	// read, not when the event arrives at three in the morning.
+	bad := `
+hooks:
+  enabled: true
+  rules:
+    - to: "@nobody"
+      message: "x"
+agents:
+  - name: review-1
+    role: review
+    command: [claude]
+`
+	if _, err := Load(write(t, bad)); err == nil {
+		t.Error("a rule with an unknown target should be refused")
+	}
+
+	// So is a rule that cannot produce anything.
+	noMessage := `
+hooks:
+  enabled: true
+  rules:
+    - to: review-1
+agents:
+  - name: review-1
+    command: [claude]
+`
+	if _, err := Load(write(t, noMessage)); err == nil {
+		t.Error("a rule with no message should be refused")
+	}
+
+	// And a condition whose regexp does not compile.
+	badRegexp := `
+hooks:
+  enabled: true
+  rules:
+    - when:
+        ref: "~[unclosed"
+      to: review-1
+      message: "x"
+agents:
+  - name: review-1
+    command: [claude]
+`
+	if _, err := Load(write(t, badRegexp)); err == nil {
+		t.Error("a broken regexp should be refused")
+	}
+}
+
+// writeSecret drops a secret file with the given mode next to a config.
+func writeSecret(t *testing.T, dir, name, body string, mode os.FileMode) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(body), mode); err != nil {
+		t.Fatal(err)
+	}
+	// WriteFile applies the umask; force the mode we are testing.
+	if err := os.Chmod(path, mode); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func hookConfig(secretLine string) string {
+	return `
+hooks:
+  enabled: true
+  signature_header: X-Reqwire-Signature
+` + secretLine + `
+  rules:
+    - to: review-1
+      message: "x"
+agents:
+  - name: review-1
+    command: [claude]
+`
+}
+
+func TestSecretPathIsReadFromAFileOnlyItsOwnerCanRead(t *testing.T) {
+	path := write(t, hookConfig("  secret_path: secret.txt"))
+	dir := filepath.Dir(path)
+	// A trailing newline is what `openssl rand -hex 32 > file` leaves behind,
+	// and it must not become part of the secret.
+	writeSecret(t, dir, "secret.txt", "un-secret-partage\n", 0o600)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Hooks.Secret != "un-secret-partage" {
+		t.Errorf("secret = %q, want the file contents without the newline", cfg.Hooks.Secret)
+	}
+	if !filepath.IsAbs(cfg.Hooks.SecretPath) {
+		t.Errorf("secret_path = %q, want it resolved against the config file", cfg.Hooks.SecretPath)
+	}
+}
+
+func TestSecretPathRefusesAReadableFile(t *testing.T) {
+	for _, mode := range []os.FileMode{0o644, 0o640, 0o604, 0o660, 0o666} {
+		t.Run(fmt.Sprintf("%#o", mode), func(t *testing.T) {
+			path := write(t, hookConfig("  secret_path: secret.txt"))
+			writeSecret(t, filepath.Dir(path), "secret.txt", "s3cret", mode)
+
+			_, err := Load(path)
+			if err == nil {
+				t.Fatalf("mode %#o should have been refused", mode)
+			}
+			if !strings.Contains(err.Error(), "chmod 600") {
+				t.Errorf("the error should say how to fix it, got %v", err)
+			}
+		})
+	}
+}
+
+func TestSecretPathAcceptsAReadOnlyFile(t *testing.T) {
+	// 0400 is stricter than 0600, not weaker: refusing it would be pedantry.
+	path := write(t, hookConfig("  secret_path: secret.txt"))
+	writeSecret(t, filepath.Dir(path), "secret.txt", "s3cret", 0o400)
+	if _, err := Load(path); err != nil {
+		t.Errorf("mode 0400 should be accepted: %v", err)
+	}
+}
+
+func TestSecretPathRejectsTheUnusable(t *testing.T) {
+	t.Run("missing", func(t *testing.T) {
+		path := write(t, hookConfig("  secret_path: nowhere.txt"))
+		if _, err := Load(path); err == nil {
+			t.Error("a missing secret file should be refused")
+		}
+	})
+	t.Run("empty", func(t *testing.T) {
+		path := write(t, hookConfig("  secret_path: secret.txt"))
+		writeSecret(t, filepath.Dir(path), "secret.txt", "\n \n", 0o600)
+		if _, err := Load(path); err == nil {
+			t.Error("a blank secret file should be refused")
+		}
+	})
+	t.Run("a directory", func(t *testing.T) {
+		path := write(t, hookConfig("  secret_path: sub"))
+		if err := os.Mkdir(filepath.Join(filepath.Dir(path), "sub"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(path); err == nil {
+			t.Error("a directory should be refused")
+		}
+	})
+}
+
+// TestOnlyOneSecretSource: preferring one source over another in silence is how
+// a swarm keeps verifying against a secret its owner thought they had replaced.
+func TestOnlyOneSecretSource(t *testing.T) {
+	pairs := [][2]string{
+		{"  secret: a", "  secret_env: SWARM_TEST_SECRET"},
+		{"  secret: a", "  secret_path: secret.txt"},
+		{"  secret_env: SWARM_TEST_SECRET", "  secret_path: secret.txt"},
+	}
+	for _, p := range pairs {
+		path := write(t, hookConfig(p[0]+"\n"+p[1]))
+		writeSecret(t, filepath.Dir(path), "secret.txt", "s3cret", 0o600)
+		t.Setenv("SWARM_TEST_SECRET", "s3cret")
+		if _, err := Load(path); err == nil {
+			t.Errorf("%s with %s should be refused", strings.TrimSpace(p[0]), strings.TrimSpace(p[1]))
+		}
+	}
+}
+
+func TestSecretEnvIsTrimmed(t *testing.T) {
+	t.Setenv("SWARM_TEST_SECRET", "  s3cret\n")
+	path := write(t, hookConfig("  secret_env: SWARM_TEST_SECRET"))
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Hooks.Secret != "s3cret" {
+		t.Errorf("secret = %q, want it trimmed", cfg.Hooks.Secret)
 	}
 }

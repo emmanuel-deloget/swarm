@@ -3,12 +3,14 @@ package config
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/emmanuel-deloget/swarm/internal/hook"
 	"github.com/emmanuel-deloget/swarm/internal/vterm"
 	"gopkg.in/yaml.v3"
 )
@@ -58,6 +60,9 @@ type Config struct {
 
 	// Bus configures inter-agent messaging.
 	Bus BusConfig `yaml:"bus"`
+
+	// Hooks configures the inbound webhook listener.
+	Hooks HookConfig `yaml:"hooks"`
 
 	// Agents is the fleet itself.
 	Agents []AgentConfig `yaml:"agents"`
@@ -198,6 +203,60 @@ type BusConfig struct {
 	History int `yaml:"history"`
 	// AllowSelfInject lets an agent inject into its own terminal.
 	AllowSelfInject bool `yaml:"allow_self_inject"`
+}
+
+// HookConfig configures the inbound webhook listener: HTTP in, bus messages
+// out. It listens on its own address rather than sharing the web remote
+// control, whose token can type into every terminal.
+type HookConfig struct {
+	// Enabled turns the listener on. Off by default: it opens a port.
+	Enabled bool `yaml:"enabled"`
+
+	// Addr is where to listen. Loopback by default — put a reverse proxy or a
+	// tunnel in front rather than binding this to the world.
+	Addr string `yaml:"addr"`
+
+	// Token, when set, is required on every request as "X-Swarm-Token", as a
+	// bearer token, or as ?t= in the query.
+	Token string `yaml:"token"`
+
+	// Secret enables HMAC-SHA256 verification of the raw body. Prefer
+	// SecretEnv: a secret written in the config file is a secret in your
+	// history, your backups and any screenshot of the file.
+	Secret string `yaml:"secret"`
+
+	// SecretEnv names an environment variable holding the secret.
+	SecretEnv string `yaml:"secret_env"`
+
+	// SecretPath reads the secret from a file, which must not be readable by
+	// anyone but its owner. Relative paths are resolved against the config
+	// file.
+	SecretPath string `yaml:"secret_path"`
+
+	// SignatureHeader carries the digest, "X-Reqwire-Signature". Required when
+	// a secret is set — there is no universal name for it.
+	SignatureHeader string `yaml:"signature_header"`
+
+	// From is the sender name the agents see. Defaults to "webhook".
+	From string `yaml:"from"`
+
+	// MaxBody caps the request body in bytes.
+	MaxBody int64 `yaml:"max_body"`
+
+	// Log records every delivery in full — headers, payload, the verdict of
+	// each rule and what was sent — in <state>/logs/webhooks.log. On by
+	// default: a webhook that does nothing looks identical whether it never
+	// arrived, was refused, or matched no rule, and nothing outside the
+	// listener can tell those apart. The file is 0600, since a payload carries
+	// whatever the sender put in it.
+	Log *bool `yaml:"log"`
+
+	// Rules are tried against every payload; each match sends a message.
+	Rules []hook.Rule `yaml:"rules"`
+
+	// Unmatched fires only when no rule matched — route it at a triage agent
+	// and the swarm stops being blind to events nobody anticipated.
+	Unmatched *hook.Rule `yaml:"unmatched"`
 }
 
 // Delivery modes.
@@ -409,11 +468,147 @@ func (c *Config) normalize() error {
 			}
 		}
 	}
+
+	return c.normalizeHooks()
+}
+
+// normalizeHooks validates the webhook rules. It runs after the agents and the
+// groups, because a rule names a target and an unknown target is worth
+// reporting when the file is read rather than when the event arrives — by then
+// nobody is watching.
+func (c *Config) normalizeHooks() error {
+	h := &c.Hooks
+	if h.Addr == "" {
+		h.Addr = "127.0.0.1:7778"
+	}
+	if h.From == "" {
+		h.From = "webhook"
+	}
+	if h.MaxBody == 0 {
+		h.MaxBody = 1 << 20
+	}
+	if h.Log == nil {
+		h.Log = ptr(true)
+	}
+	if err := h.resolveSecret(c.Dir()); err != nil {
+		return err
+	}
+	// Fail closed, both ways round: a secret nobody looks for verifies nothing,
+	// and a header nobody can check is worse than no header at all.
+	if h.Secret != "" && h.SignatureHeader == "" {
+		return fmt.Errorf("hooks: signature_header is required with a secret")
+	}
+	if h.SignatureHeader != "" && h.Secret == "" {
+		return fmt.Errorf("hooks: signature_header is set but no secret is")
+	}
+	check := func(what string, r *hook.Rule) error {
+		if err := r.Compile(); err != nil {
+			return fmt.Errorf("hook %s: %w", what, err)
+		}
+		if _, err := c.Resolve(r.To); err != nil {
+			return fmt.Errorf("hook %s: to: %w", what, err)
+		}
+		return nil
+	}
+	for i := range h.Rules {
+		r := &h.Rules[i]
+		what := fmt.Sprintf("rule #%d", i+1)
+		if r.Name != "" {
+			what = fmt.Sprintf("rule %q", r.Name)
+		}
+		if err := check(what, r); err != nil {
+			return err
+		}
+	}
+	if h.Unmatched != nil {
+		if err := check("unmatched", h.Unmatched); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 // BusEnabled reports whether inter-agent messaging is allowed.
 func (c *Config) BusEnabled() bool { return c.Bus.Enabled != nil && *c.Bus.Enabled }
+
+// HookLogEnabled reports whether every webhook delivery is recorded in full.
+func (c *Config) HookLogEnabled() bool { return c.Hooks.Log != nil && *c.Hooks.Log }
+
+// resolveSecret loads the HMAC secret from whichever source was configured and
+// leaves it in Secret. Exactly one source may be named: silently preferring one
+// over another is how a swarm ends up verifying signatures against a secret its
+// owner thought they had replaced.
+func (h *HookConfig) resolveSecret(base string) error {
+	named := make([]string, 0, 3)
+	for _, s := range []struct{ name, value string }{
+		{"secret", h.Secret},
+		{"secret_env", h.SecretEnv},
+		{"secret_path", h.SecretPath},
+	} {
+		if s.value != "" {
+			named = append(named, s.name)
+		}
+	}
+	if len(named) > 1 {
+		return fmt.Errorf("hooks: set only one of %s", strings.Join(named, ", "))
+	}
+
+	switch {
+	case h.SecretEnv != "":
+		h.Secret = strings.TrimSpace(os.Getenv(h.SecretEnv))
+		if h.Secret == "" {
+			return fmt.Errorf("hooks: secret_env names %s, which is empty", h.SecretEnv)
+		}
+	case h.SecretPath != "":
+		h.SecretPath = resolve(base, h.SecretPath)
+		secret, err := readSecretFile(h.SecretPath)
+		if err != nil {
+			return fmt.Errorf("hooks: secret_path: %w", err)
+		}
+		h.Secret = secret
+	default:
+		// A trailing newline from an editor is invisible and changes the digest
+		// completely, which is indistinguishable from a wrong secret.
+		h.Secret = strings.TrimSpace(h.Secret)
+	}
+	return nil
+}
+
+// readSecretFile reads a secret from a file that nobody but its owner may read.
+// A shared secret in a group-readable file is not shared with the sender: it is
+// shared with everyone on the machine, and the whole point of the signature is
+// that only the two ends can produce it.
+//
+// The mode is checked through the open file rather than by stat-ing the path,
+// so what was verified is what was read.
+func readSecretFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+
+	st, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	if !st.Mode().IsRegular() {
+		return "", fmt.Errorf("%s is not a regular file", path)
+	}
+	if perm := st.Mode().Perm(); perm&0o077 != 0 {
+		return "", fmt.Errorf("%s is mode %#o: it must not be readable by group or others (chmod 600 %s)", path, perm, path)
+	}
+
+	raw, err := io.ReadAll(io.LimitReader(f, 4096))
+	if err != nil {
+		return "", err
+	}
+	secret := strings.TrimSpace(string(raw))
+	if secret == "" {
+		return "", fmt.Errorf("%s is empty", path)
+	}
+	return secret, nil
+}
 
 // Agent returns the config of the named agent.
 func (c *Config) Agent(name string) (*AgentConfig, bool) {
