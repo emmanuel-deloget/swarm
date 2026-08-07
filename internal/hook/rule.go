@@ -90,12 +90,20 @@ type Rule struct {
 	paths []string
 }
 
-// Label names the rule for a human, falling back to its target.
-func (r *Rule) Label() string {
+// Label names the rule for a human, in the delivery log and in
+// `swarm hook test`. An unnamed rule is identified by its position, the same
+// way the config reports one, rather than by its target: "rule #3 → triage-1"
+// says which line to go and look at, "triage-1 → triage-1" says nothing.
+//
+// at is the rule's index; -1 marks the unmatched fallback.
+func (r *Rule) Label(at int) string {
 	if r.Name != "" {
 		return r.Name
 	}
-	return "→ " + r.To
+	if at < 0 {
+		return "unmatched"
+	}
+	return fmt.Sprintf("rule #%d", at+1)
 }
 
 // Compile validates the rule and prepares its regexps.
@@ -223,17 +231,17 @@ func ApplyVerbose(rules []Rule, unmatched *Rule, p Payload) ([]Delivery, []Verdi
 	for i := range rules {
 		r := &rules[i]
 		ok, why := r.Explain(p)
-		verdicts = append(verdicts, Verdict{Rule: r.Label(), Matched: ok, Why: why})
+		verdicts = append(verdicts, Verdict{Rule: r.Label(i), Matched: ok, Why: why})
 		if !ok {
 			continue
 		}
 		body, missing := r.Render(p)
-		out = append(out, Delivery{Rule: r.Label(), To: r.To, Body: body, Missing: missing})
+		out = append(out, Delivery{Rule: r.Label(i), To: r.To, Body: body, Missing: missing})
 	}
 	if len(out) == 0 && unmatched != nil {
 		body, missing := unmatched.Render(p)
-		out = append(out, Delivery{Rule: unmatched.Label(), To: unmatched.To, Body: body, Missing: missing})
-		verdicts = append(verdicts, Verdict{Rule: unmatched.Label(), Matched: true, Why: "no other rule matched"})
+		out = append(out, Delivery{Rule: unmatched.Label(-1), To: unmatched.To, Body: body, Missing: missing})
+		verdicts = append(verdicts, Verdict{Rule: unmatched.Label(-1), Matched: true, Why: "no other rule matched"})
 	}
 	return out, verdicts
 }
