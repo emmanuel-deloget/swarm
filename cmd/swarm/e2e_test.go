@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emmanuel-deloget/swarm/internal/version"
 	"github.com/emmanuel-deloget/swarm/internal/vterm"
 )
 
@@ -120,6 +121,10 @@ func TestTUIRendersFleetAndAcceptsCommands(t *testing.T) {
 	// match before they had started.
 	waitScreen(t, term, "the agent list", "swarm", "tui-test", "alpha", "beta")
 	waitScreen(t, term, "both agents up and quiet", "2 idle")
+
+	// The header says which build this is, so a screenshot in a bug report
+	// carries the version without anyone having to ask for it.
+	waitScreen(t, term, "the version in the header", version.Short())
 
 	// Moving down selects the second agent, whose terminal is then shown.
 	typeText(t, term, "j")

@@ -16,6 +16,7 @@ import (
 	"github.com/emmanuel-deloget/swarm/internal/config"
 	"github.com/emmanuel-deloget/swarm/internal/event"
 	"github.com/emmanuel-deloget/swarm/internal/hub"
+	"github.com/emmanuel-deloget/swarm/internal/version"
 	"github.com/emmanuel-deloget/swarm/internal/vterm"
 )
 
@@ -652,6 +653,7 @@ func (m *model) headerLine() string {
 	}
 	parts := []string{
 		styHeader.Render("swarm"),
+		styMuted.Render(version.Short()),
 		styMuted.Render(cfg.Session),
 		fmt.Sprintf("%d agents", len(m.infos)),
 	}
