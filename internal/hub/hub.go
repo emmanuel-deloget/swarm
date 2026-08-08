@@ -84,9 +84,12 @@ func New(o Options) (*Hub, error) {
 		opts := agent.Options{
 			Config:    ac,
 			CloneFrom: cfg.Workdir,
-			Log:       h.log,
-			Env:       h.agentEnv(ac, shimDir),
-			LogFile:   filepath.Join(stateDir, "logs", ac.Name+".log"),
+			OnIdle: func() {
+				h.flushDeferred(ac.Name)
+			},
+			Log:     h.log,
+			Env:     h.agentEnv(ac, shimDir),
+			LogFile: filepath.Join(stateDir, "logs", ac.Name+".log"),
 		}
 		if cfg.LogInput {
 			opts.InputLogFile = filepath.Join(stateDir, "logs", ac.Name+".input.log")
@@ -328,6 +331,46 @@ func freePort() int {
 	return ln.Addr().(*net.TCPAddr).Port
 }
 
+// flushDeferred types everything waiting for an agent, as one injection.
+//
+// Coalescing is the point as much as the deferral: three messages that arrived
+// while the agent worked are one interruption when it stops, not three.
+func (h *Hub) flushDeferred(name string) {
+	a, err := h.Agent(name)
+	if err != nil || a.Config().DeliveryMode != config.DeliveryDefer {
+		return
+	}
+	pending := h.bus.Collect(name, true)
+	if len(pending) == 0 {
+		return
+	}
+
+	tmpl := a.Config().MessageTemplate
+	var b strings.Builder
+	if len(pending) > 1 {
+		fmt.Fprintf(&b, "[swarm] %d messages arrived while you were working\n\n", len(pending))
+	}
+	for i, m := range pending {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(m.Render(tmpl))
+	}
+
+	if _, err := a.Inject(b.String(), agent.InjectOptions{Submit: true}); err != nil {
+		h.log.Emit(event.KindError, name, "deferred delivery failed: "+err.Error())
+		return
+	}
+	for _, m := range pending {
+		h.bus.MarkPushed(name, m.ID)
+	}
+	h.log.Publish(event.Event{
+		Kind:  event.KindMessage,
+		Agent: name,
+		Text:  fmt.Sprintf("delivered %d deferred message(s)", len(pending)),
+	})
+}
+
 // StartAll launches every agent marked autostart.
 func (h *Hub) StartAll() {
 	var wg sync.WaitGroup
@@ -469,6 +512,12 @@ func (h *Hub) Send(from, target, body string, files []string) ([]bus.Message, er
 			Body:   body,
 			Files:  files,
 		})
+		// A deferred recipient that is already quiet gets it now: waiting for a
+		// transition that has already happened would hold the message until the
+		// agent next did some work, which is the opposite of the intent.
+		if a.Config().DeliveryMode == config.DeliveryDefer && a.Info().State == agent.StateIdle {
+			go h.flushDeferred(a.Name())
+		}
 		if a.Config().DeliveryMode == config.DeliveryPush {
 			rendered := msg.Render(a.Config().MessageTemplate)
 			if _, err := a.Inject(rendered, agent.InjectOptions{Submit: true}); err != nil {

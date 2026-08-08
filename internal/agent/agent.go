@@ -72,6 +72,9 @@ type Options struct {
 	// Config is the agent description; it is not copied, so it must outlive
 	// the agent.
 	Config *config.AgentConfig
+	// OnIdle is called when the agent falls quiet, which is when it is safe to
+	// hand it something without cutting across what it was doing.
+	OnIdle func()
 	// CloneFrom is the repository a "clone" workspace is provisioned from: the
 	// fleet's own working directory, which the agent does not otherwise know.
 	CloneFrom string
@@ -91,6 +94,7 @@ type Agent struct {
 	log       *event.Log
 	env       []string
 	cloneFrom string
+	onIdle    func()
 	// exitDone is closed when the exit path has finished, hook and all.
 	exitDone chan struct{}
 	// git is the last look at the working copy, refreshed on a timer rather
@@ -126,6 +130,7 @@ func New(o Options) *Agent {
 		log:          o.Log,
 		env:          o.Env,
 		cloneFrom:    o.CloneFrom,
+		onIdle:       o.OnIdle,
 		logPath:      o.LogFile,
 		inputLogPath: o.InputLogFile,
 		state:        StateStopped,
@@ -551,6 +556,11 @@ func (a *Agent) refresh(term *vterm.Terminal) {
 
 	if next != prev {
 		a.log.Publish(event.Event{Kind: event.KindState, Agent: a.cfg.Name, Text: string(next)})
+		if next == StateIdle && a.onIdle != nil {
+			// On its own goroutine: whoever listens is going to type into this
+			// very terminal, and refresh runs on the watch loop.
+			go a.onIdle()
+		}
 	}
 
 	if len(a.cfg.Patterns) == 0 {

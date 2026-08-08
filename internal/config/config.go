@@ -296,6 +296,11 @@ type HookConfig struct {
 const (
 	DeliveryPush = "push"
 	DeliveryPull = "pull"
+	// DeliveryDefer holds a message until the agent falls quiet, then types it
+	// in. A pushed message interrupts whatever the agent was doing, becomes the
+	// salient thing, and gets answered — which interrupts the sender in turn.
+	// Deferring means a conversation can follow work but never cut into it.
+	DeliveryDefer = "defer"
 )
 
 // Workspace modes.
@@ -505,9 +510,10 @@ func (c *Config) normalize() error {
 			a.DeliveryMode = d.DeliveryMode
 		}
 		switch a.DeliveryMode {
-		case DeliveryPush, DeliveryPull:
+		case DeliveryPush, DeliveryPull, DeliveryDefer:
 		default:
-			return fmt.Errorf("agent %q: delivery must be %q or %q", a.Name, DeliveryPush, DeliveryPull)
+			return fmt.Errorf("agent %q: delivery must be %q, %q or %q",
+				a.Name, DeliveryPush, DeliveryPull, DeliveryDefer)
 		}
 		if a.MessageTemplate == "" {
 			a.MessageTemplate = d.MessageTemplate

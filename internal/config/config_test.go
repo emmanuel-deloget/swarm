@@ -627,3 +627,13 @@ func TestWorkspaceRejectsAnythingElse(t *testing.T) {
 		t.Error("an unknown workspace mode should be refused at load")
 	}
 }
+
+func TestDeliveryDeferIsAccepted(t *testing.T) {
+	cfg, err := Load(write(t, "agents:\n  - name: a\n    command: [x]\n    delivery: defer\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := cfg.Agent("a"); a.DeliveryMode != DeliveryDefer {
+		t.Errorf("delivery = %q, want defer", a.DeliveryMode)
+	}
+}
