@@ -692,3 +692,21 @@ func TestDeliveryDeferIsAccepted(t *testing.T) {
 		t.Errorf("delivery = %q, want defer", a.DeliveryMode)
 	}
 }
+
+func TestDeliveryByKind(t *testing.T) {
+	cfg, err := Load(write(t, "delivery_by_kind:\n  fyi: pull\n  decision: push\nagents:\n  - name: a\n    command: [x]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeliveryByKind["fyi"] != DeliveryPull {
+		t.Errorf("delivery_by_kind = %v", cfg.DeliveryByKind)
+	}
+	for _, bad := range []string{
+		"delivery_by_kind:\n  nonsense: pull\nagents:\n  - name: a\n    command: [x]\n",
+		"delivery_by_kind:\n  fyi: telepathy\nagents:\n  - name: a\n    command: [x]\n",
+	} {
+		if _, err := Load(write(t, bad)); err == nil {
+			t.Errorf("should have been refused:\n%s", bad)
+		}
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emmanuel-deloget/swarm/internal/bus"
 	"github.com/emmanuel-deloget/swarm/internal/config"
 )
 
@@ -163,5 +164,42 @@ func TestNoMessageMeansNoInjection(t *testing.T) {
 	h.brief("silent")
 	if n := h.Bus().Pending("silent"); n != 0 {
 		t.Errorf("an agent without a message should be left alone, %d pending", n)
+	}
+}
+
+// TestDeliveryByKindOverridesTheAgent: a notice nobody must act on can wait in a
+// mailbox even for an agent that takes everything else at once.
+func TestDeliveryByKindOverridesTheAgent(t *testing.T) {
+	h := fleet(t, `
+log_input: true
+web: {enabled: false}
+delivery_by_kind:
+  fyi: pull
+agents:
+  - name: dev-1
+    command: [cat]
+    delivery: push
+`)
+	a, _ := h.Agent("dev-1")
+	if err := a.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.SendKind("user", "dev-1", bus.KindFYI, "the build is green", nil); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if n := h.Bus().Pending("dev-1"); n != 1 {
+		t.Errorf("%d pending: an fyi should have stayed in the mailbox", n)
+	}
+
+	if _, err := h.SendKind("user", "dev-1", bus.KindDecision, "we go with B", nil); err != nil {
+		t.Fatal(err)
+	}
+	log := readInputLog(t, h, "dev-1")
+	if strings.Contains(log, "build is green") {
+		t.Errorf("the fyi was typed in anyway:\n%s", log)
+	}
+	if !strings.Contains(log, "we go with B") {
+		t.Errorf("the decision did not arrive:\n%s", log)
 	}
 }

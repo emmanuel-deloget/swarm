@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/emmanuel-deloget/swarm/internal/agent"
+	"github.com/emmanuel-deloget/swarm/internal/bus"
 	"github.com/emmanuel-deloget/swarm/internal/hub"
 	"github.com/emmanuel-deloget/swarm/internal/sockpath"
 )
@@ -238,7 +239,7 @@ func (s *Server) handle(req Request) Response {
 		return targetResponse(res, err)
 
 	case CmdSend:
-		msgs, err := h.Send(req.From, target(req), req.Text, req.Files)
+		msgs, err := h.SendKind(req.From, target(req), bus.Kind(req.Kind), req.Text, req.Files)
 		if err != nil {
 			return errorResponse(err)
 		}

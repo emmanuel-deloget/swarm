@@ -12,6 +12,46 @@ import (
 	"time"
 )
 
+// Kind classifies a message by what it asks of the reader.
+type Kind string
+
+// The kinds. They are deliberately few: a vocabulary nobody can remember is one
+// nobody uses, and every extra name is another thing an agent gets wrong.
+const (
+	// KindNote is the default: something said, with nothing expected back.
+	KindNote Kind = ""
+	// KindQuestion expects an answer, KindAnswer is one.
+	KindQuestion Kind = "question"
+	KindAnswer   Kind = "answer"
+	// KindFYI expects nothing at all, and saying so is the point: an agent that
+	// acknowledges every notice has doubled the traffic for nothing.
+	KindFYI Kind = "fyi"
+	// KindRequest asks for work, KindDecision closes a matter, KindBlocked says
+	// the sender cannot go on.
+	KindRequest  Kind = "request"
+	KindDecision Kind = "decision"
+	KindBlocked  Kind = "blocked"
+)
+
+// Kinds lists every kind a message may carry, for validation and for help.
+func Kinds() []Kind {
+	return []Kind{KindQuestion, KindAnswer, KindFYI, KindRequest, KindDecision, KindBlocked}
+}
+
+// ValidKind reports whether k is one swarm understands. The empty kind is
+// valid: not every message is worth classifying.
+func ValidKind(k Kind) bool {
+	if k == KindNote {
+		return true
+	}
+	for _, v := range Kinds() {
+		if v == k {
+			return true
+		}
+	}
+	return false
+}
+
 // Message is one note from a sender to one recipient. A broadcast becomes one
 // Message per recipient, all sharing the same Thread.
 type Message struct {
@@ -20,7 +60,10 @@ type Message struct {
 	At     time.Time `json:"at"`
 	From   string    `json:"from"`
 	To     string    `json:"to"`
-	Body   string    `json:"body"`
+	// Kind says what the message is for. It is what turns a count into a
+	// verdict: twelve questions and no decisions in an hour is not a statistic.
+	Kind Kind   `json:"kind,omitempty"`
+	Body string `json:"body"`
 	// Files are absolute paths staged in the shared directory, reachable by
 	// every agent.
 	Files []string `json:"files,omitempty"`
@@ -41,6 +84,7 @@ func (m Message) Render(tmpl string) string {
 		"{body}", m.Body,
 		"{files}", strings.Join(m.Files, " "),
 		"{time}", m.At.Format(time.RFC3339),
+		"{kind}", string(m.Kind),
 	)
 	out := r.Replace(tmpl)
 	if len(m.Files) > 0 && !strings.Contains(tmpl, "{files}") {

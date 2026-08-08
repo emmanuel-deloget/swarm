@@ -463,9 +463,14 @@ func cmdSend(args []string, broadcast bool) error {
 	cf.register(fs)
 	from := fs.String("from", os.Getenv("SWARM_AGENT"), "sender name (defaults to $SWARM_AGENT, else 'user')")
 	textFile := fs.String("text-file", "", "read the message body from a file (- for stdin)")
+	kind := fs.String("kind", "", "what the message is for: question, answer, fyi, request, decision, blocked")
 	var files stringList
 	fs.Var(&files, "file", "attach a file: it is staged in the shared directory (repeatable)")
 	_ = parseArgs(fs, args, textAfter)
+
+	if *kind != "" && !bus.ValidKind(bus.Kind(*kind)) {
+		return fmt.Errorf("unknown kind %q; try one of: %s", *kind, kindNames())
+	}
 
 	rest := fs.Args()
 	target := "all"
@@ -504,6 +509,7 @@ func cmdSend(args []string, broadcast bool) error {
 		Cmd:    ipc.CmdSend,
 		Target: target,
 		From:   *from,
+		Kind:   *kind,
 		Text:   body,
 		Files:  staged,
 	})
@@ -783,4 +789,14 @@ func (s *stringList) String() string { return strings.Join(*s, ",") }
 func (s *stringList) Set(v string) error {
 	*s = append(*s, v)
 	return nil
+}
+
+// kindNames lists the message kinds, for an error that teaches rather than
+// merely refuses.
+func kindNames() string {
+	var out []string
+	for _, k := range bus.Kinds() {
+		out = append(out, string(k))
+	}
+	return strings.Join(out, ", ")
 }

@@ -371,10 +371,15 @@ func (h *Hub) brief(name string) {
 // while the agent worked are one interruption when it stops, not three.
 func (h *Hub) flushDeferred(name string) {
 	a, err := h.Agent(name)
-	if err != nil || a.Config().DeliveryMode != config.DeliveryDefer {
+	if err != nil {
 		return
 	}
-	pending := h.bus.Collect(name, true)
+	var pending []bus.Message
+	for _, m := range h.bus.Collect(name, true) {
+		if h.deliveryFor(a, m.Kind) == config.DeliveryDefer {
+			pending = append(pending, m)
+		}
+	}
 	if len(pending) == 0 {
 		return
 	}
@@ -523,6 +528,20 @@ func (h *Hub) Keys(target, keys string) ([]TargetResult, error) {
 // Recipients in push mode get it typed into their terminal right away; those in
 // pull mode keep it pending until they run `swarm inbox`.
 func (h *Hub) Send(from, target, body string, files []string) ([]bus.Message, error) {
+	return h.SendKind(from, target, bus.KindNote, body, files)
+}
+
+// deliveryFor is how a message reaches an agent: what the agent asked for,
+// unless the kind of message overrides it.
+func (h *Hub) deliveryFor(a *agent.Agent, kind bus.Kind) string {
+	if mode, ok := h.cfg.DeliveryByKind[string(kind)]; ok && mode != "" {
+		return mode
+	}
+	return a.Config().DeliveryMode
+}
+
+// SendKind delivers a classified message.
+func (h *Hub) SendKind(from, target string, kind bus.Kind, body string, files []string) ([]bus.Message, error) {
 	if !h.cfg.BusEnabled() {
 		return nil, fmt.Errorf("the bus is disabled in the configuration")
 	}
@@ -543,16 +562,18 @@ func (h *Hub) Send(from, target, body string, files []string) ([]bus.Message, er
 			Thread: thread,
 			From:   from,
 			To:     a.Name(),
+			Kind:   kind,
 			Body:   body,
 			Files:  files,
 		})
+		mode := h.deliveryFor(a, kind)
 		// A deferred recipient that is already quiet gets it now: waiting for a
 		// transition that has already happened would hold the message until the
 		// agent next did some work, which is the opposite of the intent.
-		if a.Config().DeliveryMode == config.DeliveryDefer && a.Info().State == agent.StateIdle {
+		if mode == config.DeliveryDefer && a.Info().State == agent.StateIdle {
 			go h.flushDeferred(a.Name())
 		}
-		if a.Config().DeliveryMode == config.DeliveryPush {
+		if mode == config.DeliveryPush {
 			rendered := msg.Render(a.Config().MessageTemplate)
 			if _, err := a.Inject(rendered, agent.InjectOptions{Submit: true}); err != nil {
 				h.log.Publish(event.Event{

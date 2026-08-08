@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/emmanuel-deloget/swarm/internal/bus"
 	"github.com/emmanuel-deloget/swarm/internal/hook"
 	"github.com/emmanuel-deloget/swarm/internal/vterm"
 	"gopkg.in/yaml.v3"
@@ -66,6 +67,17 @@ type Config struct {
 
 	// Bus configures inter-agent messaging.
 	Bus BusConfig `yaml:"bus"`
+
+	// DeliveryByKind overrides the recipient's delivery mode for a kind of
+	// message. A notice nobody has to act on can wait for a mailbox even when
+	// the agent takes everything else at once; a decision can interrupt an
+	// agent that otherwise batches.
+	//
+	//	delivery_by_kind:
+	//	  fyi: pull
+	//	  question: defer
+	//	  decision: push
+	DeliveryByKind map[string]string `yaml:"delivery_by_kind"`
 
 	// Hooks configures the inbound webhook listener.
 	Hooks HookConfig `yaml:"hooks"`
@@ -451,6 +463,17 @@ func (c *Config) normalize() error {
 	}
 	c.Web.TLSCert = resolveEmpty(base, c.Web.TLSCert)
 	c.Web.TLSKey = resolveEmpty(base, c.Web.TLSKey)
+	for kind, mode := range c.DeliveryByKind {
+		if !bus.ValidKind(bus.Kind(kind)) {
+			return fmt.Errorf("delivery_by_kind: unknown kind %q", kind)
+		}
+		switch mode {
+		case DeliveryPush, DeliveryPull, DeliveryDefer:
+		default:
+			return fmt.Errorf("delivery_by_kind[%s]: must be %q, %q or %q",
+				kind, DeliveryPush, DeliveryPull, DeliveryDefer)
+		}
+	}
 	if c.Bus.History == 0 {
 		c.Bus.History = 200
 	}

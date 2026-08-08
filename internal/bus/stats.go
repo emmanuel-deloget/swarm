@@ -61,6 +61,11 @@ type Stats struct {
 	// Pairs are the directed exchanges, busiest first.
 	Pairs []Pair
 
+	// Kinds counts what the messages were for. Twelve questions and no
+	// decisions in an hour is a verdict, not a statistic — which is the whole
+	// reason kinds exist.
+	Kinds map[Kind]int
+
 	// Deepest is the longest conversation in the window, measured in messages
 	// on one thread. A thread nobody can end is the shape the trouble takes.
 	Deepest int
@@ -78,6 +83,7 @@ func (b *Bus) StatsSince(t time.Time) Stats {
 		Since:    t,
 		Sent:     map[string]int{},
 		Received: map[string]int{},
+		Kinds:    map[Kind]int{},
 		Unread:   b.PendingAll(),
 	}
 
@@ -89,6 +95,9 @@ func (b *Bus) StatsSince(t time.Time) Stats {
 		}
 		s.Messages++
 		s.Sent[m.From]++
+		if m.Kind != KindNote {
+			s.Kinds[m.Kind]++
+		}
 		s.Received[m.To]++
 		threads[m.Thread]++
 		pairs[Pair{From: m.From, To: m.To}]++

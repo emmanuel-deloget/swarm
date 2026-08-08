@@ -290,3 +290,30 @@ func TestSentSince(t *testing.T) {
 		t.Errorf("SentSince for an unknown agent = %d, want 0", n)
 	}
 }
+
+func TestStatsCountsKinds(t *testing.T) {
+	b := New(100)
+	b.Post(Message{From: "a", To: "b", Kind: KindQuestion})
+	b.Post(Message{From: "a", To: "b", Kind: KindQuestion})
+	b.Post(Message{From: "b", To: "a", Kind: KindAnswer})
+	b.Post(Message{From: "a", To: "b"}) // a plain note, deliberately uncounted
+
+	s := b.StatsSince(time.Now().Add(-time.Minute))
+	if s.Kinds[KindQuestion] != 2 || s.Kinds[KindAnswer] != 1 {
+		t.Errorf("Kinds = %v", s.Kinds)
+	}
+	if _, ok := s.Kinds[KindNote]; ok {
+		t.Error("an unclassified message should not appear as a kind of its own")
+	}
+}
+
+func TestValidKind(t *testing.T) {
+	for _, k := range append(Kinds(), KindNote) {
+		if !ValidKind(k) {
+			t.Errorf("%q should be valid", k)
+		}
+	}
+	if ValidKind(Kind("nonsense")) {
+		t.Error("an invented kind should not be valid")
+	}
+}

@@ -50,6 +50,10 @@ type Request struct {
 	// Text is the payload of inject and send.
 	Text string `json:"text,omitempty"`
 
+	// Kind classifies a bus message: question, answer, fyi, request, decision,
+	// blocked. Empty is a plain note.
+	Kind string `json:"kind,omitempty"`
+
 	// Keys is a whitespace-separated list of key names for CmdKeys.
 	Keys string `json:"keys,omitempty"`
 

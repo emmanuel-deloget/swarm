@@ -76,8 +76,12 @@ func tailLine(m bus.Message) string {
 	if len(m.Files) > 0 {
 		files = fmt.Sprintf(" (+%d file)", len(m.Files))
 	}
-	return fmt.Sprintf("%s  #%-4d %-10s %s %-10s %s%s",
-		m.At.Format("15:04:05"), m.Thread, m.From, mark, m.To, body, files)
+	kind := ""
+	if m.Kind != bus.KindNote {
+		kind = " [" + string(m.Kind) + "]"
+	}
+	return fmt.Sprintf("%s  #%-4d %-10s %s %-10s%s %s%s",
+		m.At.Format("15:04:05"), m.Thread, m.From, mark, m.To, kind, body, files)
 }
 
 func cmdBusStats(args []string) error {
@@ -114,6 +118,15 @@ func printStats(s bus.Stats) {
 	}
 	if s.Messages == 0 {
 		return
+	}
+
+	if len(s.Kinds) > 0 {
+		fmt.Println("\nby kind")
+		for _, k := range bus.Kinds() {
+			if n := s.Kinds[k]; n > 0 {
+				fmt.Printf("  %-10s %d\n", k, n)
+			}
+		}
 	}
 
 	if len(s.Pairs) > 0 {
