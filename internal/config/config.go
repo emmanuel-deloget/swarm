@@ -95,6 +95,7 @@ type AgentDefaults struct {
 	FollowWindow    *bool         `yaml:"follow_window"`
 	DeliveryMode    string        `yaml:"delivery"`
 	MessageTemplate string        `yaml:"message_template"`
+	Workspace       string        `yaml:"workspace"`
 }
 
 // AgentConfig describes one agent process running in its own virtual terminal.
@@ -158,6 +159,18 @@ type AgentConfig struct {
 	// MessageTemplate renders a bus message before injection. Placeholders:
 	// {from}, {to}, {body}, {id}.
 	MessageTemplate string `yaml:"message_template"`
+
+	// Workspace says what swarm does about this agent's working copy.
+	//
+	//	shared  nothing: the agent runs in Workdir, like everyone else
+	//	clone   swarm provisions a durable clone and points Workdir at it
+	//	none    nothing, and swarm presumes nothing — the agent manages its
+	//	        own isolation and is free to move
+	//
+	// Workdir and Workspace are orthogonal: the first says where, the second
+	// says what swarm does there. With "clone" and no Workdir, the clone lands
+	// in <state_dir>/workspaces/<name>.
+	Workspace string `yaml:"workspace"`
 
 	// Patterns classify the agent state from what it prints.
 	Patterns []PatternConfig `yaml:"patterns"`
@@ -271,6 +284,13 @@ const (
 	DeliveryPull = "pull"
 )
 
+// Workspace modes.
+const (
+	WorkspaceShared = "shared"
+	WorkspaceClone  = "clone"
+	WorkspaceNone   = "none"
+)
+
 // DefaultMessageTemplate is what a pushed bus message looks like in a terminal.
 const DefaultMessageTemplate = "[swarm] message from {from}: {body}"
 
@@ -374,6 +394,9 @@ func (c *Config) normalize() error {
 	if d.MessageTemplate == "" {
 		d.MessageTemplate = DefaultMessageTemplate
 	}
+	if d.Workspace == "" {
+		d.Workspace = WorkspaceShared
+	}
 
 	if c.DetachKey == "" {
 		c.DetachKey = DefaultDetachKey
@@ -416,7 +439,24 @@ func (c *Config) normalize() error {
 		if len(a.Command) == 0 {
 			return fmt.Errorf("agent %q: command is required", a.Name)
 		}
-		a.Workdir = resolve(base, orString(a.Workdir, c.Workdir))
+		if a.Workspace == "" {
+			a.Workspace = d.Workspace
+		}
+		switch a.Workspace {
+		case WorkspaceShared, WorkspaceClone, WorkspaceNone:
+		default:
+			return fmt.Errorf("agent %q: workspace must be %q, %q or %q",
+				a.Name, WorkspaceShared, WorkspaceClone, WorkspaceNone)
+		}
+		// Where, and what swarm does there, are separate questions. A clone
+		// with nowhere named goes under the state directory; one with a workdir
+		// is provisioned in place, which is what an existing fleet of
+		// hand-made clones already looks like.
+		if a.Workspace == WorkspaceClone && a.Workdir == "" {
+			a.Workdir = filepath.Join(c.StateDir, "workspaces", a.Name)
+		} else {
+			a.Workdir = resolve(base, orString(a.Workdir, c.Workdir))
+		}
 		if a.Cols == 0 {
 			a.Cols = d.Cols
 		}

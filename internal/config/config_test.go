@@ -556,3 +556,74 @@ agents:
 		t.Error("an enabled listener with no secret file should be refused")
 	}
 }
+
+func TestWorkspaceModes(t *testing.T) {
+	path := write(t, `
+state_dir: .state
+workdir: .
+agents:
+  - name: a                       # default: shared, in the common workdir
+    command: [x]
+  - name: b
+    command: [x]
+    workspace: clone              # nowhere named: under the state directory
+  - name: c
+    command: [x]
+    workspace: clone
+    workdir: ../clones/c          # named: provisioned in place
+  - name: d
+    command: [x]
+    workspace: none
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := filepath.Dir(path)
+	rel := func(p string) string {
+		r, err := filepath.Rel(base, p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	for _, c := range []struct{ name, mode, workdir string }{
+		{"a", WorkspaceShared, "."},
+		{"b", WorkspaceClone, ".state/workspaces/b"},
+		{"c", WorkspaceClone, "../clones/c"},
+		{"d", WorkspaceNone, "."},
+	} {
+		got, ok := cfg.Agent(c.name)
+		if !ok {
+			t.Fatalf("%s not found", c.name)
+		}
+		if got.Workspace != c.mode {
+			t.Errorf("%s: workspace = %q, want %q", c.name, got.Workspace, c.mode)
+		}
+		if rel(got.Workdir) != c.workdir {
+			t.Errorf("%s: workdir = %q, want %q", c.name, rel(got.Workdir), c.workdir)
+		}
+	}
+}
+
+func TestWorkspaceIsInherited(t *testing.T) {
+	cfg, err := Load(write(t, "defaults:\n  workspace: clone\nagents:\n  - name: a\n    command: [x]\n"+
+		"  - name: b\n    command: [x]\n    workspace: shared\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := cfg.Agent("a")
+	b, _ := cfg.Agent("b")
+	if a.Workspace != WorkspaceClone {
+		t.Errorf("a should inherit clone, got %q", a.Workspace)
+	}
+	if b.Workspace != WorkspaceShared {
+		t.Errorf("b should override to shared, got %q", b.Workspace)
+	}
+}
+
+func TestWorkspaceRejectsAnythingElse(t *testing.T) {
+	if _, err := Load(write(t, "agents:\n  - name: a\n    command: [x]\n    workspace: worktree\n")); err == nil {
+		t.Error("an unknown workspace mode should be refused at load")
+	}
+}

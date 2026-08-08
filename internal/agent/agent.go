@@ -14,6 +14,7 @@ import (
 	"github.com/emmanuel-deloget/swarm/internal/config"
 	"github.com/emmanuel-deloget/swarm/internal/event"
 	"github.com/emmanuel-deloget/swarm/internal/vterm"
+	"github.com/emmanuel-deloget/swarm/internal/workspace"
 )
 
 // State is the coarse lifecycle state of an agent.
@@ -62,6 +63,9 @@ type Options struct {
 	// Config is the agent description; it is not copied, so it must outlive
 	// the agent.
 	Config *config.AgentConfig
+	// CloneFrom is the repository a "clone" workspace is provisioned from: the
+	// fleet's own working directory, which the agent does not otherwise know.
+	CloneFrom string
 	// Log receives the agent's events.
 	Log *event.Log
 	// Env is the complete environment handed to the process.
@@ -77,6 +81,7 @@ type Agent struct {
 	cfg          *config.AgentConfig
 	log          *event.Log
 	env          []string
+	cloneFrom    string
 	logPath      string
 	inputLogPath string
 
@@ -104,6 +109,7 @@ func New(o Options) *Agent {
 		cfg:          o.Config,
 		log:          o.Log,
 		env:          o.Env,
+		cloneFrom:    o.CloneFrom,
 		logPath:      o.LogFile,
 		inputLogPath: o.InputLogFile,
 		state:        StateStopped,
@@ -143,6 +149,15 @@ func (a *Agent) Start() error {
 				a.mu.Unlock()
 				_, _ = fmt.Fprintf(f, "\n\x1b[0m--- swarm: %s started at %s ---\r\n", a.cfg.Name, time.Now().Format(time.RFC3339))
 			}
+		}
+	}
+
+	// A clone is provisioned before the process is launched, never after: an
+	// agent started in a half-prepared directory would do real work in the
+	// wrong place. Already-provisioned is the common case and costs a stat.
+	if a.cfg.Workspace == config.WorkspaceClone {
+		if err := workspace.Provision(a.cfg.Workdir, a.cloneFrom); err != nil {
+			return fmt.Errorf("agent %s: %w", a.cfg.Name, err)
 		}
 	}
 

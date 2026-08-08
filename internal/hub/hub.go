@@ -77,10 +77,11 @@ func New(o Options) (*Hub, error) {
 	for i := range cfg.Agents {
 		ac := &cfg.Agents[i]
 		opts := agent.Options{
-			Config:  ac,
-			Log:     h.log,
-			Env:     h.agentEnv(ac, shimDir),
-			LogFile: filepath.Join(stateDir, "logs", ac.Name+".log"),
+			Config:    ac,
+			CloneFrom: cfg.Workdir,
+			Log:       h.log,
+			Env:       h.agentEnv(ac, shimDir),
+			LogFile:   filepath.Join(stateDir, "logs", ac.Name+".log"),
 		}
 		if cfg.LogInput {
 			opts.InputLogFile = filepath.Join(stateDir, "logs", ac.Name+".input.log")
