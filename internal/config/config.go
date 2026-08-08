@@ -29,6 +29,12 @@ type Config struct {
 	// are staged so that every agent can reach them by path.
 	Shared string `yaml:"shared"`
 
+	// StateDir holds everything swarm writes: the control socket, the logs, the
+	// CLI shim and the shared files. Relative to this file, ".swarm" by
+	// default. It is worth putting in .gitignore, which `swarm init` offers to
+	// do.
+	StateDir string `yaml:"state_dir"`
+
 	// Env is added to the environment of every agent.
 	Env map[string]string `yaml:"env"`
 
@@ -271,6 +277,9 @@ const DefaultMessageTemplate = "[swarm] message from {from}: {body}"
 // DefaultDetachKey leaves an attached terminal when nothing else is configured.
 const DefaultDetachKey = "ctrl+\\"
 
+// DefaultStateDir is where swarm writes everything, relative to the config file.
+const DefaultStateDir = ".swarm"
+
 // Load reads and validates a config file.
 func Load(path string) (*Config, error) {
 	raw, err := os.ReadFile(path)
@@ -319,8 +328,12 @@ func (c *Config) normalize() error {
 		c.Workdir = base
 	}
 	c.Workdir = resolve(base, c.Workdir)
+	if c.StateDir == "" {
+		c.StateDir = DefaultStateDir
+	}
+	c.StateDir = resolve(base, c.StateDir)
 	if c.Shared == "" {
-		c.Shared = filepath.Join(base, ".swarm", "shared")
+		c.Shared = filepath.Join(c.StateDir, "shared")
 	}
 	c.Shared = resolve(base, c.Shared)
 

@@ -125,3 +125,115 @@ func mustLoad(t *testing.T, body string) {
 		t.Errorf("uncommenting this block breaks the config: %v", err)
 	}
 }
+
+// TestIgnoresPattern: people write the same rule several ways, and adding a
+// second line that means the same thing is worse than adding nothing.
+func TestIgnoresPattern(t *testing.T) {
+	for _, body := range []string{".swarm/", ".swarm", "/.swarm/", "/.swarm", "build/\n.swarm/\n"} {
+		if !ignoresPattern(body, ".swarm/") {
+			t.Errorf("ignoresPattern(%q) = false, want true", body)
+		}
+	}
+	for _, body := range []string{"", "build/", ".swarmish/", "# .swarm/", ".swarm/logs"} {
+		if ignoresPattern(body, ".swarm/") {
+			t.Errorf("ignoresPattern(%q) = true, want false", body)
+		}
+	}
+}
+
+func TestOfferGitignore(t *testing.T) {
+	// Outside a repository there is nothing to ignore, and no file is made.
+	t.Run("outside a git repository", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := offerGitignore(dir, ".swarm", true); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, ".gitignore")); !os.IsNotExist(err) {
+			t.Error("a .gitignore was created outside a repository")
+		}
+	})
+
+	t.Run("creates the file", func(t *testing.T) {
+		dir := gitRepo(t)
+		if err := offerGitignore(dir, ".swarm", true); err != nil {
+			t.Fatal(err)
+		}
+		if got := read(t, filepath.Join(dir, ".gitignore")); !strings.Contains(got, ".swarm/") {
+			t.Errorf(".gitignore = %q", got)
+		}
+	})
+
+	t.Run("keeps what was there", func(t *testing.T) {
+		dir := gitRepo(t)
+		path := filepath.Join(dir, ".gitignore")
+		// No trailing newline: appending naively would corrupt the last rule.
+		if err := os.WriteFile(path, []byte("/build"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := offerGitignore(dir, ".swarm", true); err != nil {
+			t.Fatal(err)
+		}
+		got := read(t, path)
+		if !strings.HasPrefix(got, "/build\n") {
+			t.Errorf("the existing rule was damaged: %q", got)
+		}
+		if !strings.Contains(got, "\n.swarm/\n") {
+			t.Errorf(".gitignore = %q", got)
+		}
+	})
+
+	t.Run("adds nothing twice", func(t *testing.T) {
+		dir := gitRepo(t)
+		path := filepath.Join(dir, ".gitignore")
+		if err := os.WriteFile(path, []byte(".swarm\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := offerGitignore(dir, ".swarm", true); err != nil {
+			t.Fatal(err)
+		}
+		if got := read(t, path); got != ".swarm\n" {
+			t.Errorf("an equivalent rule was already there, got %q", got)
+		}
+	})
+
+	t.Run("honours -swarm-dir", func(t *testing.T) {
+		dir := gitRepo(t)
+		if err := offerGitignore(dir, ".agents", true); err != nil {
+			t.Fatal(err)
+		}
+		got := read(t, filepath.Join(dir, ".gitignore"))
+		if !strings.Contains(got, ".agents/") || strings.Contains(got, ".swarm") {
+			t.Errorf(".gitignore = %q", got)
+		}
+	})
+
+	// Without -yes and with nothing to read on stdin, the answer is no rather
+	// than a wait nobody can end.
+	t.Run("declines when it cannot ask", func(t *testing.T) {
+		dir := gitRepo(t)
+		if err := offerGitignore(dir, ".swarm", false); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, ".gitignore")); !os.IsNotExist(err) {
+			t.Error("the file was written without an answer")
+		}
+	})
+}
+
+func gitRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func read(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}

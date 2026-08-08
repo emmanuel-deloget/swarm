@@ -17,7 +17,7 @@ to each other without you relaying messages.
 swarm knows nothing about any particular agent. An agent is a command line.
 
 ```
-swarm init          # write a starter swarm.yaml
+swarm init          # write a starter swarm.yaml, and offer to .gitignore .swarm/
 $EDITOR swarm.yaml  # list your agents
 swarm run           # start the fleet + the TUI + the web remote
 ```

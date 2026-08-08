@@ -27,7 +27,8 @@ against your working directory. `~/` and `$VAR` are expanded.
 |---|---|---|
 | `session` | `default` | Names this swarm. It picks the control socket, so two swarms with different session names run side by side. No slashes or spaces. |
 | `workdir` | the config's directory | Working directory for every agent that does not override it. |
-| `shared` | `.swarm/shared` | Where injected files are staged so every agent can reach them by path. Agents get it as `$SWARM_SHARED`. |
+| `state_dir` | `.swarm` | Everything swarm writes: the control socket, the logs, the CLI shim, the staged files. `swarm init` offers to add it to `.gitignore`. |
+| `shared` | `<state_dir>/shared` | Where injected files are staged so every agent can reach them by path. Agents get it as `$SWARM_SHARED`. |
 | `env` | `{}` | Added to the environment of every agent. Per-agent `env` wins. |
 | `detach_key` | `ctrl+\` | Leaves an attached agent, in the TUI and in `swarm attach`. Any name `swarm keys -list` marks as bindable: `ctrl+g`, `ctrl+]`, `f12`, `esc esc`. Configurable because the default is what tmux, screen and asciinema like to grab. |
 | `log_input` | `false` | Record everything swarm *sends* to an agent in `.swarm/logs/<agent>.input.log`. Off by default and written 0600: it holds what you typed. |
