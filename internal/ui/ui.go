@@ -91,6 +91,10 @@ type model struct {
 	completeIdx int
 	completeAt  string
 
+	// delivered stamps when an agent last had a message handed over, so the
+	// envelope can be faded out instead of disappearing between two frames.
+	delivered map[string]time.Time
+
 	// visibleLines is the rendered window into the selected agent's output, and
 	// maxOffset how far back its scrollback still goes. Both come from the last
 	// refresh, so scrolling can be bounded by what actually exists.
@@ -124,6 +128,7 @@ func newModel(h *hub.Hub, events <-chan event.Event, quit <-chan struct{}) *mode
 		log:       h.Log().History(200),
 		input:     in,
 		status:    "press ? for help",
+		delivered: map[string]time.Time{},
 		detachKey: key,
 		detachSeq: seq,
 		mouse:     h.Config().Mouse,
@@ -137,8 +142,64 @@ type resultMsg struct {
 	isErr bool
 }
 
-func tick() tea.Cmd {
-	return tea.Tick(120*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
+func tick() tea.Cmd { return tickEvery(120 * time.Millisecond) }
+
+func tickEvery(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
+
+// tick paces the refresh. It runs faster while an envelope is fading, because
+// half a second at the usual cadence is four frames and a staircase; it drops
+// back as soon as nothing is fading, which is almost always.
+func (m *model) tick() tea.Cmd {
+	if m.anyFading() {
+		return tickEvery(40 * time.Millisecond)
+	}
+	return tick()
+}
+
+// noteDeliveries replaces the fleet snapshot, stamping every agent whose unread
+// count has just reached zero. That covers both ways a message leaves a
+// mailbox: typed into a push agent's terminal, or collected by a pull agent.
+func (m *model) noteDeliveries(fresh []agent.Info) {
+	was := make(map[string]int, len(m.infos))
+	for _, in := range m.infos {
+		was[in.Name] = in.Unread
+	}
+	now := time.Now()
+	for _, in := range fresh {
+		if in.Unread == 0 && was[in.Name] > 0 {
+			m.delivered[in.Name] = now
+		}
+	}
+	m.infos = fresh
+}
+
+func (m *model) anyFading() bool {
+	for name := range m.delivered {
+		if _, ok := msgFadeStyle(time.Since(m.delivered[name])); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// messageBadge is what follows an agent's name: the count while messages are
+// waiting, then an envelope dimming away once they have gone.
+func (m *model) messageBadge(in agent.Info) string {
+	if in.Unread > 0 {
+		return styMsg.Render(fmt.Sprintf(" %d✉", in.Unread))
+	}
+	at, ok := m.delivered[in.Name]
+	if !ok {
+		return ""
+	}
+	style, fading := msgFadeStyle(time.Since(at))
+	if !fading {
+		delete(m.delivered, in.Name)
+		return ""
+	}
+	return style.Render(" ✉")
 }
 
 func (m *model) waitEvent() tea.Cmd {
@@ -187,12 +248,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
-		m.infos = m.h.Infos()
+		m.noteDeliveries(m.h.Infos())
 		m.fitSelected()
 		m.refreshScreen()
-		return m, tick()
+		return m, m.tick()
 
 	case eventMsg:
+		if e := event.Event(msg); e.Kind == event.KindMessage && e.Agent != "" {
+			m.delivered[e.Agent] = time.Now()
+		}
 		m.log = append(m.log, event.Event(msg))
 		if len(m.log) > 500 {
 			m.log = m.log[len(m.log)-500:]
@@ -702,10 +766,7 @@ func (m *model) sidebarLines(height int) []string {
 		in := m.infos[i]
 		glyph := lipgloss.NewStyle().Foreground(stateColor(in)).Render(stateGlyph(in))
 		name := in.Name
-		badge := ""
-		if in.Unread > 0 {
-			badge = styMsg.Render(fmt.Sprintf(" %d✉", in.Unread))
-		}
+		badge := m.messageBadge(in)
 		prefix := "  "
 		style := styBase
 		if i == m.sel {
@@ -896,9 +957,7 @@ func (m *model) mosaicCell(i, width, height int) []string {
 	if in.Attention != "" {
 		title += styAttn.Render(" ▲")
 	}
-	if in.Unread > 0 {
-		title += styMsg.Render(fmt.Sprintf(" %d✉", in.Unread))
-	}
+	title += m.messageBadge(in)
 	lines := []string{padRight(title, width)}
 
 	var screen string

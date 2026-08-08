@@ -1,7 +1,11 @@
 package ui
 
 import (
+	"fmt"
+	"math"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -187,4 +191,66 @@ func joinColumns(sep string, cols ...[]string) []string {
 		out[i] = b.String()
 	}
 	return out
+}
+
+// A delivered message shows for as long as it takes the hub to hand it over,
+// which in push mode is a frame or two — you catch it going past rather than
+// see it. Instead of vanishing between two renders, the envelope now dims
+// toward the background over half a second, so the eye has something to follow.
+const (
+	msgFadeFor   = 500 * time.Millisecond
+	msgFadeSteps = 12
+)
+
+// msgFadeStyles is colMsg dimmed step by step. Each step stays an AdaptiveColor
+// so lipgloss still picks the variant matching the terminal at render time: the
+// light one fades to white, the dark one to black, and swarm never has to ask
+// what the background actually is.
+var msgFadeStyles = fadeStyles(colMsg, msgFadeSteps)
+
+func fadeStyles(c lipgloss.AdaptiveColor, steps int) []lipgloss.Style {
+	out := make([]lipgloss.Style, steps)
+	for i := range steps {
+		t := float64(i) / float64(steps-1)
+		out[i] = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{
+			Light: mixHex(c.Light, "#ffffff", t),
+			Dark:  mixHex(c.Dark, "#000000", t),
+		})
+	}
+	return out
+}
+
+// msgFadeStyle returns how to draw the envelope at a given age, and whether it
+// is still worth drawing at all.
+func msgFadeStyle(age time.Duration) (lipgloss.Style, bool) {
+	if age < 0 || age >= msgFadeFor {
+		return lipgloss.Style{}, false
+	}
+	i := int(float64(msgFadeSteps) * float64(age) / float64(msgFadeFor))
+	if i >= msgFadeSteps {
+		i = msgFadeSteps - 1
+	}
+	return msgFadeStyles[i], true
+}
+
+// mixHex blends two "#rrggbb" colours, t running from a to b.
+func mixHex(a, b string, t float64) string {
+	ar, ag, ab := parseHex(a)
+	br, bg, bb := parseHex(b)
+	// math.Round, not a +0.5 truncation: the latter rounds the wrong way for a
+	// negative delta, and the fade would stop one unit short of the background.
+	lerp := func(x, y int) int { return x + int(math.Round(float64(y-x)*t)) }
+	return fmt.Sprintf("#%02x%02x%02x", lerp(ar, br), lerp(ag, bg), lerp(ab, bb))
+}
+
+func parseHex(s string) (r, g, b int) {
+	s = strings.TrimPrefix(s, "#")
+	if len(s) != 6 {
+		return 0, 0, 0
+	}
+	v, err := strconv.ParseUint(s, 16, 32)
+	if err != nil {
+		return 0, 0, 0
+	}
+	return int(v>>16) & 0xff, int(v>>8) & 0xff, int(v) & 0xff
 }
