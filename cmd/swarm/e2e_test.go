@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/emmanuel-deloget/swarm/internal/version"
 	"github.com/emmanuel-deloget/swarm/internal/vterm"
 )
 
@@ -123,8 +122,11 @@ func TestTUIRendersFleetAndAcceptsCommands(t *testing.T) {
 	waitScreen(t, term, "both agents up and quiet", "2 idle")
 
 	// The header says which build this is, so a screenshot in a bug report
-	// carries the version without anyone having to ask for it.
-	waitScreen(t, term, "the version in the header", version.Short())
+	// carries the version without anyone having to ask for it. The version has
+	// to come from the binary under test rather than from this test binary:
+	// `go test` stamps no VCS information, so version.Short() here says "devel"
+	// while the built swarm says what it was built from.
+	waitScreen(t, term, "the version in the header", binVersion(t, bin))
 
 	// Moving down selects the second agent, whose terminal is then shown.
 	typeText(t, term, "j")
@@ -1264,4 +1266,19 @@ func TestInputLogIsOffByDefault(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, ".swarm", "logs", "alpha.input.log")); !os.IsNotExist(err) {
 		t.Error("no input log should be written unless log_input is set")
 	}
+}
+
+// binVersion asks the built binary what it calls itself, which is what the TUI
+// header must agree with.
+func binVersion(t *testing.T, bin string) string {
+	t.Helper()
+	out, err := exec.Command(bin, "version", "-short").Output()
+	if err != nil {
+		t.Fatalf("asking %s for its version: %v", bin, err)
+	}
+	v := strings.TrimSpace(string(out))
+	if v == "" {
+		t.Fatal("the binary reported an empty version")
+	}
+	return v
 }

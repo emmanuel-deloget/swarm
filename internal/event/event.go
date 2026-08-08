@@ -63,22 +63,26 @@ func NewLog(size int) *Log {
 
 // Publish records an event and hands it to every subscriber. Subscribers that
 // are not draining fast enough lose events rather than blocking the swarm.
+//
+// The sends happen with the lock still held, and that is the point: a
+// subscriber's cancel closes its channel under the same lock, so letting go of
+// it first left a window where Publish would send on a channel cancel had just
+// closed — a panic, not merely a race. The window is widest at shutdown, when
+// the UI drops its subscription while agents are still reporting that they
+// stopped. Holding the lock is safe because none of these sends can block: the
+// default arm drops the event instead.
 func (l *Log) Publish(e Event) {
 	if e.At.IsZero() {
 		e.At = time.Now()
 	}
 	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	l.entries = append(l.entries, e)
 	if len(l.entries) > l.max {
 		l.entries = l.entries[len(l.entries)-l.max:]
 	}
-	subs := make([]chan Event, 0, len(l.subs))
 	for _, ch := range l.subs {
-		subs = append(subs, ch)
-	}
-	l.mu.Unlock()
-
-	for _, ch := range subs {
 		select {
 		case ch <- e:
 		default:
