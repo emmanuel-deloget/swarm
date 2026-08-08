@@ -11,5 +11,8 @@
 # terminal recordings made while testing
 *.cast
 
+# scratch: notes and drafts that are not the project
+/IDEAS/
+
 # built binary
 /swarm
