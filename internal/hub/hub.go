@@ -5,6 +5,7 @@ package hub
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -552,6 +553,21 @@ func (h *Hub) SendKind(from, target string, kind bus.Kind, body string, files []
 	if from == "" {
 		from = "user"
 	}
+	// Refused before anything is delivered, so a message either reaches all its
+	// recipients or none: half a broadcast is worse than none.
+	var refused []string
+	for _, a := range agents {
+		if a.Name() == from {
+			continue
+		}
+		if ok, why := h.cfg.MayReach(from, a.Name()); !ok {
+			refused = append(refused, why)
+		}
+	}
+	if len(refused) > 0 {
+		return nil, errors.New(refused[0])
+	}
+
 	thread := h.bus.NewThread()
 	out := make([]bus.Message, 0, len(agents))
 	for _, a := range agents {

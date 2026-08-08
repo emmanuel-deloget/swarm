@@ -203,3 +203,30 @@ agents:
 		t.Errorf("the decision did not arrive:\n%s", log)
 	}
 }
+
+// TestCanSendRefusesBeforeDelivering: a broadcast that is partly allowed must
+// not be half delivered — half a broadcast is worse than none.
+func TestCanSendRefusesBeforeDelivering(t *testing.T) {
+	h := fleet(t, `
+web: {enabled: false}
+agents:
+  - name: dev-1
+    command: [cat]
+    can_send: [lead-1]
+  - name: dev-2
+    command: [cat]
+  - name: lead-1
+    command: [cat]
+`)
+	if _, err := h.Send("dev-1", "all", "everyone listen", nil); err == nil {
+		t.Fatal("dev-1 should not be able to reach everyone")
+	}
+	for _, name := range []string{"dev-2", "lead-1"} {
+		if n := h.Bus().Pending(name); n != 0 {
+			t.Errorf("%s got %d messages from a refused broadcast", name, n)
+		}
+	}
+	if _, err := h.Send("dev-1", "lead-1", "just you", nil); err != nil {
+		t.Errorf("the allowed target was refused: %v", err)
+	}
+}

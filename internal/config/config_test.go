@@ -710,3 +710,55 @@ func TestDeliveryByKind(t *testing.T) {
 		}
 	}
 }
+
+func TestMayReach(t *testing.T) {
+	cfg, err := Load(write(t, `
+groups:
+  leads: [lead-1]
+agents:
+  - name: dev-1
+    role: dev
+    command: [x]
+    can_send: ["@leads"]
+  - name: dev-2
+    role: dev
+    command: [x]
+  - name: lead-1
+    role: lead
+    command: [x]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		from, to string
+		want     bool
+	}{
+		{"dev-1", "lead-1", true},  // named through a group
+		{"dev-1", "dev-2", false},  // sideways, which is the point
+		{"dev-2", "dev-1", true},   // no restriction declared
+		{"lead-1", "dev-1", true},  // ditto
+		{"user", "dev-1", true},    // you are not an agent, and not restricted
+		{"webhook", "dev-1", true}, // nor is a webhook
+	}
+	for _, c := range cases {
+		if got, _ := cfg.MayReach(c.from, c.to); got != c.want {
+			t.Errorf("MayReach(%s, %s) = %v, want %v", c.from, c.to, got, c.want)
+		}
+	}
+
+	// The refusal is read by an agent, so it has to say where to go instead.
+	_, why := cfg.MayReach("dev-1", "dev-2")
+	for _, want := range []string{"dev-1", "dev-2", "@leads"} {
+		if !strings.Contains(why, want) {
+			t.Errorf("the refusal should mention %q, got %q", want, why)
+		}
+	}
+}
+
+func TestCanSendIsCheckedAtLoad(t *testing.T) {
+	body := "agents:\n  - name: a\n    command: [x]\n    can_send: [\"@nobody\"]\n"
+	if _, err := Load(write(t, body)); err == nil {
+		t.Error("can_send naming an unknown target should be refused at load")
+	}
+}

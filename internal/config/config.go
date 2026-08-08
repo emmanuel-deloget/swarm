@@ -112,6 +112,7 @@ type AgentDefaults struct {
 	OnExit          []string      `yaml:"on_exit"`
 	Message         string        `yaml:"message"`
 	MessageFile     string        `yaml:"message_file"`
+	CanSend         []string      `yaml:"can_send"`
 }
 
 // AgentConfig describes one agent process running in its own virtual terminal.
@@ -216,6 +217,20 @@ type AgentConfig struct {
 	// loses the text.
 	Message     string `yaml:"message"`
 	MessageFile string `yaml:"message_file"`
+
+	// CanSend limits who this agent may reach on the bus, in the usual target
+	// syntax: names, "@group", "@role", "all". Empty means everyone.
+	//
+	// Left open, the bus is the complete graph — the worst case for how many
+	// conversations can be going at once. Fifteen lines of configuration turn
+	// it into a star and a whole class of noise disappears:
+	//
+	//	can_send: [lead-1]     a dev reports upward, and not sideways
+	//
+	// This is the config deciding rather than the content, which is the same
+	// rule that forbids templating a webhook's target: an agent should not
+	// choose freely who it wakes.
+	CanSend []string `yaml:"can_send"`
 
 	// Patterns classify the agent state from what it prints.
 	Patterns []PatternConfig `yaml:"patterns"`
@@ -569,6 +584,9 @@ func (c *Config) normalize() error {
 		if a.Message == "" && a.MessageFile == "" {
 			a.Message, a.MessageFile = d.Message, d.MessageFile
 		}
+		if a.CanSend == nil {
+			a.CanSend = d.CanSend
+		}
 		if a.Message != "" && a.MessageFile != "" {
 			return fmt.Errorf("agent %q: set message or message_file, not both", a.Name)
 		}
@@ -589,6 +607,15 @@ func (c *Config) normalize() error {
 				return fmt.Errorf("agent %q pattern #%d: %w", a.Name, j+1, err)
 			}
 			p.re = re
+		}
+	}
+
+	for i := range c.Agents {
+		a := &c.Agents[i]
+		for _, target := range a.CanSend {
+			if _, err := c.Resolve(target); err != nil {
+				return fmt.Errorf("agent %q: can_send: %w", a.Name, err)
+			}
 		}
 	}
 
@@ -663,6 +690,31 @@ func (c *Config) normalizeHooks() error {
 		}
 	}
 	return nil
+}
+
+// MayReach reports whether an agent is allowed to put a message in another's
+// mailbox, and if not, where to go instead. The reason is written for the agent
+// that will read it: a refusal that does not say what to do next only costs a
+// turn.
+func (c *Config) MayReach(from, to string) (bool, string) {
+	sender, ok := c.Agent(from)
+	if !ok || len(sender.CanSend) == 0 {
+		// The user, a webhook, or an agent with no restriction.
+		return true, ""
+	}
+	for _, target := range sender.CanSend {
+		names, err := c.Resolve(target)
+		if err != nil {
+			continue
+		}
+		for _, n := range names {
+			if n == to {
+				return true, ""
+			}
+		}
+	}
+	return false, fmt.Sprintf("%s cannot reach %s; it may write to %s",
+		from, to, strings.Join(sender.CanSend, ", "))
 }
 
 // BusEnabled reports whether inter-agent messaging is allowed.
