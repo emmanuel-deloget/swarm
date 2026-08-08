@@ -144,3 +144,64 @@ func TestCarriedIsAnAllowList(t *testing.T) {
 		}
 	}
 }
+
+func TestReadReportsTheWorkingCopy(t *testing.T) {
+	src := source(t)
+
+	st, ok := Read(src)
+	if !ok {
+		t.Fatal("a repository should be readable")
+	}
+	if st.Branch == "" {
+		t.Error("no branch reported")
+	}
+	if st.Dirty {
+		t.Error("a fresh checkout should be clean")
+	}
+	if st.Upstream {
+		t.Error("there is no tracking branch here")
+	}
+
+	// A tracked file changed makes it dirty; an untracked one must not, or an
+	// agent's scratch output would mark every workspace forever.
+	if err := os.WriteFile(filepath.Join(src, "untracked.tmp"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := Read(src); st.Dirty {
+		t.Error("an untracked file should not count as dirty")
+	}
+	if err := os.WriteFile(filepath.Join(src, "README"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := Read(src); !st.Dirty {
+		t.Error("a changed tracked file should count as dirty")
+	}
+}
+
+func TestReadSaysNoOutsideARepository(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, ok := Read(t.TempDir()); ok {
+		t.Error("a directory that is not a repository should report nothing")
+	}
+}
+
+func TestSummary(t *testing.T) {
+	cases := []struct {
+		in   State
+		want string
+	}{
+		{State{}, ""},
+		{State{Branch: "main"}, "main"},
+		{State{Branch: "main", Dirty: true}, "main*"},
+		{State{Branch: "fix/x", Ahead: 3}, "fix/x 3↑"},
+		{State{Branch: "main", Behind: 12}, "main 12↓"},
+		{State{Branch: "main", Dirty: true, Ahead: 1, Behind: 2}, "main* 1↑ 2↓"},
+	}
+	for _, c := range cases {
+		if got := c.in.Summary(); got != c.want {
+			t.Errorf("Summary(%+v) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

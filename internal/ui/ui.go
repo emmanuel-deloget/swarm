@@ -957,6 +957,9 @@ func (m *model) mosaicCell(i, width, height int) []string {
 	if in.Attention != "" {
 		title += styAttn.Render(" ▲")
 	}
+	if in.Git != "" {
+		title += " " + styMuted.Render(in.Git)
+	}
 	title += m.messageBadge(in)
 	lines := []string{padRight(title, width)}
 

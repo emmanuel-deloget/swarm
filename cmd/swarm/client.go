@@ -94,20 +94,21 @@ func cmdList(args []string, detailed bool) error {
 func printAgents(infos []agent.Info, detailed bool) {
 	var rows [][]string
 	if detailed {
-		rows = append(rows, []string{"AGENT", "ROLE", "STATE", "PID", "UPTIME", "QUIET", "OUT", "MSG", "SIZE", "COMMAND"})
+		rows = append(rows, []string{"AGENT", "ROLE", "STATE", "PID", "UPTIME", "QUIET", "OUT", "MSG", "GIT", "SIZE", "COMMAND"})
 	} else {
-		rows = append(rows, []string{"AGENT", "ROLE", "STATE", "PID", "UPTIME", "MSG"})
+		rows = append(rows, []string{"AGENT", "ROLE", "STATE", "PID", "UPTIME", "MSG", "GIT"})
 	}
 	for _, in := range infos {
 		if detailed {
 			rows = append(rows, []string{
 				in.Name, dash(in.Role), stateLabel(in), pidLabel(in.Pid), durLabel(in.Uptime),
-				durLabel(in.Quiet), byteLabel(in.BytesOut), msgLabel(in.Unread),
+				durLabel(in.Quiet), byteLabel(in.BytesOut), msgLabel(in.Unread), dash(in.Git),
 				fmt.Sprintf("%dx%d", in.Cols, in.Rows), strings.Join(in.Command, " "),
 			})
 		} else {
 			rows = append(rows, []string{
-				in.Name, dash(in.Role), stateLabel(in), pidLabel(in.Pid), durLabel(in.Uptime), msgLabel(in.Unread),
+				in.Name, dash(in.Role), stateLabel(in), pidLabel(in.Pid), durLabel(in.Uptime),
+				msgLabel(in.Unread), dash(in.Git),
 			})
 		}
 	}

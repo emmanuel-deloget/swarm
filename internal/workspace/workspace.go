@@ -122,3 +122,75 @@ func git(dir string, args ...string) (string, error) {
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
+
+// State is what a working copy looks like right now. swarm reports it and never
+// acts on it: no fetch, no rebase, no merge. Which agent works where, and how
+// far its base has drifted, is worth seeing; deciding what to do about it is the
+// agent's business.
+type State struct {
+	// Dir is the directory the state was read from, which for an agent free to
+	// move is where its process actually is rather than where it was started.
+	Dir string
+	// Branch is the checked-out branch, "HEAD" when detached, empty when Dir is
+	// not a repository at all.
+	Branch string
+	// Dirty reports uncommitted changes to tracked files. Untracked files do not
+	// count: an agent's scratch output would otherwise mark every workspace.
+	Dirty bool
+	// Ahead and Behind compare against the upstream — as of the last fetch,
+	// which is all a repository knows. Zero when there is no upstream.
+	Ahead, Behind int
+	// Upstream reports whether a tracking branch exists, so "0 behind" can be
+	// told from "nothing to compare against".
+	Upstream bool
+}
+
+// Read collects the state of the working copy at dir.
+//
+// One `git status` rather than three commands: branch, divergence and dirtiness
+// all come out of the same call, which matters when it runs for every agent on
+// a timer.
+func Read(dir string) (State, bool) {
+	st := State{Dir: dir}
+	out, err := git(dir, "status", "--porcelain=v2", "--branch", "--untracked-files=no")
+	if err != nil {
+		return State{}, false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(line, "# branch.head "):
+			st.Branch = strings.TrimSpace(strings.TrimPrefix(line, "# branch.head "))
+		case strings.HasPrefix(line, "# branch.upstream "):
+			st.Upstream = true
+		case strings.HasPrefix(line, "# branch.ab "):
+			// A line git only prints when there is an upstream, so a parse
+			// failure leaves both counts at zero — which is what "nothing to
+			// compare against" already looks like.
+			_, _ = fmt.Sscanf(strings.TrimPrefix(line, "# branch.ab "), "+%d -%d", &st.Ahead, &st.Behind)
+		case line == "":
+		case line[0] != '#':
+			// Any entry at all means tracked files have changed.
+			st.Dirty = true
+		}
+	}
+	return st, st.Branch != ""
+}
+
+// Summary is the state in a few characters, for a column that has to share its
+// line: "main*  3↑ 12↓". Empty when there is nothing worth saying.
+func (s State) Summary() string {
+	if s.Branch == "" {
+		return ""
+	}
+	out := s.Branch
+	if s.Dirty {
+		out += "*"
+	}
+	if s.Ahead > 0 {
+		out += fmt.Sprintf(" %d↑", s.Ahead)
+	}
+	if s.Behind > 0 {
+		out += fmt.Sprintf(" %d↓", s.Behind)
+	}
+	return out
+}

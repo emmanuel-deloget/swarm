@@ -79,6 +79,7 @@ agents:
 | `workdir` | the top-level `workdir` | Where this agent's process runs. |
 | `env` | — | Added to (and overriding) the top-level `env`. |
 | `patterns` | `[]` | Regexps classifying what the agent shows; see below. |
+| `workspace` | `shared` | What swarm does about this agent's working copy — see below. |
 
 Plus every key from [`defaults`](#defaults), which overrides the inherited value
 for this agent alone.
@@ -99,6 +100,41 @@ Agents also receive, whatever their `workdir`:
 There is one state directory per config file, shared by every agent — a
 per-agent `workdir` changes where the process runs, not which fleet it belongs
 to.
+
+### `workspace`
+
+`workdir` says *where* an agent runs; `workspace` says what swarm does there.
+
+| mode | swarm does | `workdir` |
+|---|---|---|
+| `shared` | nothing | the common one |
+| `clone` | provisions a durable clone, once | `<state_dir>/workspaces/<name>` unless you name one |
+| `none` | nothing, and presumes nothing | yours; the agent is free to move |
+
+A clone rather than a worktree, because two worktrees cannot have the same
+branch checked out — which rules them out as soon as two agents sit on the main
+branch between tasks. It is taken from the local repository, so git hardlinks
+the object store: the cost is the working tree, not the history.
+
+Two things are fixed up afterwards, since a fresh clone does not inherit them
+and cannot work without them: `origin` is pointed at what the source calls
+`origin`, and `user.*`, `gpg.*`, `commit.gpgsign`, `tag.gpgsign`,
+`credential.helper` and `init.defaultbranch` are carried over. Without those an
+agent commits under the wrong name, unsigned, or not at all.
+
+A directory that is already a checkout is left exactly as it is, so restarting
+an agent never touches its work — and a fleet of hand-made clones can adopt
+`workspace: clone` by adding one word per agent.
+
+swarm never fetches, rebases or merges. A durable clone drifts; telling agents
+about it is a job for a webhook rule on a push to the main branch, or for the
+standing instruction in `AGENTS.md`. `swarm ls` shows the drift (`main* 3↑ 12↓`,
+as of the last fetch) so you can see it without swarm acting on it.
+
+`none` differs from `shared` only in what swarm presumes: it reports the git
+state of the process's actual directory rather than the configured one, since an
+agent that manages its own isolation is expected to have moved. Reading a
+process's directory needs `/proc`, so on macOS the configured one is used.
 
 ## `patterns`
 

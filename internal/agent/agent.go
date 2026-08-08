@@ -56,6 +56,10 @@ type Info struct {
 	Exit       string        `json:"exit,omitempty"`
 	Delivery   string        `json:"delivery"`
 	Unread     int           `json:"unread"`
+	// Workspace is the declared mode, and Git what its working copy looks like
+	// as of the last look. swarm reports this and never acts on it.
+	Workspace string `json:"workspace"`
+	Git       string `json:"git,omitempty"`
 }
 
 // Options builds an Agent.
@@ -78,10 +82,15 @@ type Options struct {
 
 // Agent supervises one command inside a virtual terminal.
 type Agent struct {
-	cfg          *config.AgentConfig
-	log          *event.Log
-	env          []string
-	cloneFrom    string
+	cfg       *config.AgentConfig
+	log       *event.Log
+	env       []string
+	cloneFrom string
+	// git is the last look at the working copy, refreshed on a timer rather
+	// than per call: Info() runs for every agent several times a second, and
+	// shelling out to git that often would cost more than the fleet.
+	git          string
+	gitSeen      time.Time
 	logPath      string
 	inputLogPath string
 
@@ -377,6 +386,55 @@ func (a *Agent) onExit(gen uint64, st vterm.ExitStatus) {
 
 // watch derives the agent state from its output cadence and matches the
 // configured patterns against the screen.
+// gitEvery is how often the working copy is looked at. Often enough that a
+// commit or a branch change shows up while you are watching, rarely enough that
+// eleven agents do not keep a git process busy between them.
+const gitEvery = 3 * time.Second
+
+// refreshGit reads the working copy, from where the process actually is rather
+// than where it was started — an agent declared `workspace: none` is free to
+// move, and reporting the branch of a directory it left would be worse than
+// reporting nothing.
+func (a *Agent) refreshGit(term *vterm.Terminal) {
+	a.mu.Lock()
+	due := time.Since(a.gitSeen) >= gitEvery
+	if due {
+		a.gitSeen = time.Now()
+	}
+	dir, free := a.cfg.Workdir, a.cfg.Workspace == config.WorkspaceNone
+	a.mu.Unlock()
+	if !due {
+		return
+	}
+
+	if free {
+		if cwd, ok := processCwd(term.Pid()); ok {
+			dir = cwd
+		}
+	}
+	summary := ""
+	if st, ok := workspace.Read(dir); ok {
+		summary = st.Summary()
+	}
+
+	a.mu.Lock()
+	a.git = summary
+	a.mu.Unlock()
+}
+
+// processCwd is where a process currently is. Linux answers through /proc;
+// elsewhere nobody asks, and the configured directory is used instead.
+func processCwd(pid int) (string, bool) {
+	if pid <= 0 {
+		return "", false
+	}
+	dir, err := os.Readlink(fmt.Sprintf("/proc/%d/cwd", pid))
+	if err != nil {
+		return "", false
+	}
+	return dir, true
+}
+
 func (a *Agent) watch(term *vterm.Terminal, stop chan struct{}) {
 	tick := time.NewTicker(250 * time.Millisecond)
 	defer tick.Stop()
@@ -388,6 +446,7 @@ func (a *Agent) watch(term *vterm.Terminal, stop chan struct{}) {
 			return
 		case <-tick.C:
 			a.refresh(term)
+			a.refreshGit(term)
 		}
 	}
 }
@@ -648,6 +707,8 @@ func (a *Agent) Info() Info {
 		Restarts:  a.restarts,
 		Title:     a.title,
 		Delivery:  a.cfg.DeliveryMode,
+		Workspace: a.cfg.Workspace,
+		Git:       a.git,
 	}
 	if a.exit != nil {
 		info.Exit = a.exit.String()
