@@ -36,9 +36,21 @@ against your working directory. `~/` and `$VAR` are expanded.
 | `defaults` | — | Inherited by every agent; see below. |
 | `agents` | — | The fleet. At least one is required. |
 | `groups` | `{}` | Named sets of agents. |
+| `delivery_by_kind` | `{}` | Overrides every agent's `delivery` for one kind of message, e.g. `{blocked: push}`. |
+| `agents_template` | — | Your own template for `AGENTS.md`, rendered with the same data as the built-in one. |
 | `web` | — | The remote control. |
 | `bus` | — | Inter-agent messaging. |
 | `hooks` | — | Incoming webhooks. |
+
+`swarm run` writes `<state_dir>/AGENTS.md` — the file your agents read to learn
+how to talk to each other. It is generated from this configuration, so it
+describes the mechanisms that are actually switched on and no others: an agent
+told about a turn budget in a fleet that has none learns a rule that does not
+exist. `agents_template` replaces it with a [Go
+template](https://pkg.go.dev/text/template) getting the same data, which is what
+makes an override as informed as what it replaces (`.Agents`, `.Groups`,
+`.Kinds`, `.MaxTurns`, `.EscalateTo`, `.Deferred`, `.Restricted`, `.Workspaces`,
+`.Hooks`, `.From`, plus `join` and `dash`).
 
 ## `defaults`
 
@@ -56,11 +68,69 @@ Every key here is also an agent key. An agent that leaves one empty inherits it.
 | `submit_delay` | `120ms` | Pause between pasting text and sending the newline that submits it. Agent UIs that re-render on paste need this; too short and the newline lands before the paste has been absorbed. |
 | `bracketed_paste` | `true` | Allow injected text to be wrapped in `ESC[200~`/`ESC[201~`, so a multi-line prompt arrives as one message. It is only actually used when the agent's own UI turned the mode on, the way a real terminal behaves. |
 | `follow_window` | `true` | Resize the displayed agent to the pane showing it, so its layout adapts instead of being cropped. Turn it off to pin `cols`/`rows` — which is then what the web UI and `swarm screen` show. |
-| `delivery` | `push` | What happens to a bus message addressed to this agent. `push` types it into the terminal right away; `pull` queues it until the agent runs `swarm inbox`. |
+| `delivery` | `push` | What happens to a bus message addressed to this agent — `push`, `pull` or `defer`, see below. |
+| `can_send` | — | The only agents this one may write to. Unset means everyone. |
+| `message` | — | Sent to the agent once it is up. Multi-line, as a block scalar. |
+| `message_file` | — | Same, read from a file. One or the other, not both. |
 | `message_template` | `[swarm] message from {from}: {body}` | How a pushed bus message is rendered before injection. Placeholders: `{id}` `{thread}` `{from}` `{to}` `{body}` `{files}` `{time}`. |
 
-Pull suits an agent that should not be interrupted mid-task; push suits one that
-is waiting for work.
+### `delivery`
+
+| mode | |
+|---|---|
+| `push` | Typed into the terminal as it arrives. Suits an agent waiting for work. |
+| `pull` | Queued until the agent runs `swarm inbox`. Suits an agent that must not be interrupted at all. |
+| `defer` | Held until the agent falls quiet, then handed over. |
+
+`defer` is push without the interruption: the work in progress is not cut into,
+and nothing has to be asked for. Several messages that arrived during the same
+stretch of work are delivered as one — three interruptions collapsed into the
+one the agent was going to get anyway.
+
+The top-level `delivery_by_kind` is what makes that usable in practice: the
+fleet defers, and `blocked` still gets through. It is a fleet-wide rule rather
+than a per-agent one on purpose — "somebody is stuck" means the same thing
+whoever is being told.
+
+```yaml
+delivery_by_kind:
+  blocked: push
+  fyi: pull
+
+defaults:
+  delivery: defer
+```
+
+### `can_send`
+
+```yaml
+agents:
+  - name: dev-1
+    can_send: [triage, "@review"]
+```
+
+Groups and roles are allowed as targets. A refused send names what the sender
+*may* reach, because that error text is read by an agent: telling it "no" and
+leaving it to guess produces a retry, telling it where to go produces a route.
+
+The whole send is refused before anything is delivered — half a broadcast is
+worse than none.
+
+### `message` and `message_file`
+
+The prompt an agent gets on launch, once per run:
+
+```yaml
+agents:
+  - name: reviewer-1
+    message: |
+      You review pull requests. Start with `swarm inbox`.
+      Do not push to main.
+```
+
+It is sent when the agent first falls quiet, not the instant the process
+starts — a CLI still drawing its banner would swallow it. A restart sends it
+again; a reconnection does not.
 
 ## `agents`
 
@@ -244,6 +314,26 @@ discovering the limit. Something genuinely else to say is always allowed:
 answer. Use it for decisions, which is what `escalate_to` produces — a saturated
 thread is handed to that agent with everything that was said, and its answer is
 expected to come back final.
+
+### Kinds
+
+Every message has a kind, `note` unless `swarm send -kind` says otherwise:
+`question`, `answer`, `fyi`, `request`, `decision`, `blocked`. It is what
+`delivery_by_kind` dispatches on, and what `swarm bus stats` counts — twelve
+questions and no decisions in an hour is a verdict rather than a statistic.
+
+### When it gets away from you
+
+```sh
+swarm bus pause "shipping, stop talking"   # hold every delivery
+swarm bus status                           # whether anything is held back
+swarm bus resume -flush                    # let them through, hand over the pile
+swarm bus threads                          # the open conversations
+```
+
+A paused bus still records everything; it just stops interrupting anybody with
+it. The agents keep working — this stops the talking, not the fleet. Without
+`-flush`, resuming leaves what piled up in the mailboxes for `swarm inbox`.
 
 ## `hooks`
 

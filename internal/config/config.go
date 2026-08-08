@@ -89,6 +89,11 @@ type Config struct {
 	// expected (":send @dev fix the build").
 	Groups map[string][]string `yaml:"groups"`
 
+	// AgentsTemplate replaces the generated AGENTS.md with your own. It gets
+	// the same data the built-in one does, so an override can describe this
+	// fleet rather than a fleet in general.
+	AgentsTemplate string `yaml:"agents_template"`
+
 	// path is the file this config was loaded from, "" when synthesised.
 	path string
 }
@@ -434,6 +439,14 @@ func (c *Config) normalize() error {
 		c.Shared = filepath.Join(c.StateDir, "shared")
 	}
 	c.Shared = resolve(base, c.Shared)
+	if c.AgentsTemplate != "" {
+		c.AgentsTemplate = resolve(base, c.AgentsTemplate)
+		// Checked at load rather than at write time: a template that cannot be
+		// read would otherwise leave the fleet running with no guide at all.
+		if _, err := os.Stat(c.AgentsTemplate); err != nil {
+			return fmt.Errorf("agents_template: %w", err)
+		}
+	}
 
 	d := &c.Defaults
 	if d.Cols == 0 {

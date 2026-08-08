@@ -219,12 +219,17 @@ swarm keys -list                    # the key names swarm understands
 swarm inject dev-1 -file shot.png "what is wrong here?"
 
 swarm send @review "PR 42 is ready" # bus message
+swarm send dev-1 -kind blocked "…"  # say what it is for
+swarm send dev-1 -final "we ship A" # settled: nobody may answer
 swarm broadcast "stopping in 5 min"
 swarm inbox dev-1                   # read a mailbox
 swarm stage diff.patch              # copy a file where every agent can read it
 
 swarm bus tail -f                   # the messages agents send each other
 swarm bus stats -since 30m          # how much of the fleet's time went into talking
+swarm bus threads                   # the open conversations
+swarm bus pause "shipping"          # hold every delivery; the agents keep working
+swarm bus resume -flush             # let them through again
 swarm events -f                     # live event log
 swarm restart dev-3
 swarm shutdown
@@ -332,11 +337,22 @@ swarm inbox -wait 30s                     # block until something arrives
 ```
 
 `swarm run` writes `.swarm/AGENTS.md` describing the fleet and these commands —
-point your agents' instructions at it and they can coordinate without you.
+point your agents' instructions at it and they can coordinate without you. It is
+generated from your configuration, so it only describes what you switched on:
+message kinds, a turn budget, who may reach whom. `agents_template` replaces it
+with your own.
 
 Push recipients get messages typed into their prompt; pull recipients keep them
-queued until they ask. Pull suits an agent that should not be interrupted
-mid-task, push suits one that is waiting for work.
+queued until they ask; `defer` recipients get theirs when they next fall quiet,
+several at once if several arrived. Pull suits an agent that must not be
+interrupted at all, push one that is waiting for work, and defer most of the
+rest — it is push without cutting into what the agent was doing.
+
+Beyond that, the configuration can bound the talking rather than hope for the
+best: `delivery_by_kind` lets the fleet defer while `blocked` still gets
+through, `can_send` says who may reach whom, `bus.max_turns` gives a
+conversation an end, and `swarm bus pause` stops all of it without stopping the
+fleet. The [configuration reference](docs/configuration.md#bus) has the detail.
 
 ## Webhooks
 

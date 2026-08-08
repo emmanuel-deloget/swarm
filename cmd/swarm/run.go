@@ -11,6 +11,7 @@ import (
 
 	"github.com/emmanuel-deloget/swarm/internal/config"
 	"github.com/emmanuel-deloget/swarm/internal/event"
+	"github.com/emmanuel-deloget/swarm/internal/guide"
 	"github.com/emmanuel-deloget/swarm/internal/hook"
 	"github.com/emmanuel-deloget/swarm/internal/hub"
 	"github.com/emmanuel-deloget/swarm/internal/ipc"
@@ -78,7 +79,7 @@ func cmdRun(args []string) error {
 	}
 	defer func() { _ = srv.Close() }()
 
-	if err := writeAgentGuide(h); err != nil {
+	if err := guide.Write(h.Config(), h.StateDir()); err != nil {
 		h.Log().Emit(event.KindError, "", "could not write the agent guide: "+err.Error())
 	}
 
@@ -191,49 +192,4 @@ func cmdRun(args []string) error {
 	fmt.Println("stopping agents...")
 	h.Shutdown(*grace)
 	return nil
-}
-
-// writeAgentGuide drops a short protocol description in the state directory.
-// Point your agents' instructions at it (or paste it in their prompt) and they
-// can talk to each other without you relaying anything.
-func writeAgentGuide(h *hub.Hub) error {
-	cfg := h.Config()
-	var b strings.Builder
-	b.WriteString("# Talking to the swarm\n\n")
-	b.WriteString("You are running inside `swarm`, next to other agents. The `swarm`\n")
-	b.WriteString("command is on your PATH and already knows who you are:\n\n")
-	b.WriteString("| variable | meaning |\n|---|---|\n")
-	b.WriteString("| `$SWARM_AGENT` | your name |\n")
-	b.WriteString("| `$SWARM_ROLE` | your role |\n")
-	b.WriteString("| `$SWARM_PEERS` | the other agents, comma separated |\n")
-	b.WriteString("| `$SWARM_SHARED` | a directory every agent can read and write |\n\n")
-	b.WriteString("## Commands\n\n")
-	b.WriteString("```sh\n")
-	b.WriteString("swarm ls                        # who is here and what they are doing\n")
-	b.WriteString("swarm send <agent> \"message\"    # write to one agent\n")
-	b.WriteString("swarm send @review \"message\"    # write to a whole group\n")
-	b.WriteString("swarm broadcast \"message\"       # write to everyone\n")
-	b.WriteString("swarm inbox                     # read the messages addressed to you\n")
-	b.WriteString("swarm inbox -wait 30s           # ... or wait for one\n")
-	b.WriteString("swarm send <agent> -file diff.patch \"have a look\"   # attach a file\n")
-	b.WriteString("swarm stage <file>              # copy a file where everyone can read it\n")
-	b.WriteString("```\n\n")
-	b.WriteString("Messages you receive appear either directly in your prompt (push) or\n")
-	b.WriteString("when you run `swarm inbox` (pull), depending on how you are configured.\n\n")
-	b.WriteString("## This fleet\n\n")
-	b.WriteString("| agent | role | delivery |\n|---|---|---|\n")
-	for i := range cfg.Agents {
-		a := &cfg.Agents[i]
-		fmt.Fprintf(&b, "| `%s` | %s | %s |\n", a.Name, dash(a.Role), a.DeliveryMode)
-	}
-	if len(cfg.Groups) > 0 {
-		b.WriteString("\nGroups: ")
-		var groups []string
-		for name := range cfg.Groups {
-			groups = append(groups, "`@"+name+"`")
-		}
-		b.WriteString(strings.Join(groups, ", "))
-		b.WriteString("\n")
-	}
-	return os.WriteFile(filepath.Join(h.StateDir(), "AGENTS.md"), []byte(b.String()), 0o644)
 }
