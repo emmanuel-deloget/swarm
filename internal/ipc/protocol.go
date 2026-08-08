@@ -31,6 +31,7 @@ const (
 	CmdEvents   = "events"
 	CmdBusTail  = "bus-tail"
 	CmdBusStats = "bus-stats"
+	CmdBusPause = "bus-pause"
 	CmdAttach   = "attach"
 	CmdShutdown = "shutdown"
 )
@@ -77,6 +78,9 @@ type Request struct {
 	// Follow keeps the connection open and streams new frames.
 	Follow bool `json:"follow,omitempty"`
 
+	// Flush hands over what piled up while the bus was paused.
+	Flush bool `json:"flush,omitempty"`
+
 	// Since bounds a bus summary, as a duration back from now.
 	Since time.Duration `json:"since,omitempty"`
 	// Plain asks for unstyled text instead of an ANSI rendering.
@@ -106,6 +110,7 @@ type Response struct {
 	Agents   []agent.Info       `json:"agents,omitempty"`
 	Messages []bus.Message      `json:"messages,omitempty"`
 	Stats    *bus.Stats         `json:"stats,omitempty"`
+	Paused   string             `json:"paused,omitempty"`
 	Events   []event.Event      `json:"events,omitempty"`
 	Event    *event.Event       `json:"event,omitempty"`
 

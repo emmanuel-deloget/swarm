@@ -230,3 +230,59 @@ agents:
 		t.Errorf("the allowed target was refused: %v", err)
 	}
 }
+
+// TestPauseHoldsAndResumeDelivers: pausing is a circuit breaker, not a stop —
+// the agents keep working, and what they say to each other waits. Resuming with
+// a flush has to undo the whole of it, including for a push agent, or a message
+// sent during the pause waits for an inbox nobody will run.
+func TestPauseHoldsAndResumeDelivers(t *testing.T) {
+	h := fleet(t, `
+log_input: true
+web: {enabled: false}
+agents:
+  - name: dev-1
+    command: [cat]
+    delivery: push
+`)
+	a, _ := h.Agent("dev-1")
+	if err := a.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	h.Pause("looking into something")
+	if h.Paused() == "" {
+		t.Fatal("the bus should report itself paused")
+	}
+	if _, err := h.Send("user", "dev-1", "during the pause", nil); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if n := h.Bus().Pending("dev-1"); n != 1 {
+		t.Errorf("%d pending: a paused bus should queue rather than type", n)
+	}
+	if log, _ := os.ReadFile(filepath.Join(h.StateDir(), "logs", "dev-1.input.log")); strings.Contains(string(log), "during the pause") {
+		t.Error("something was typed while the bus was paused")
+	}
+
+	h.Resume(true)
+	if got := readInputLog(t, h, "dev-1"); !strings.Contains(got, "during the pause") {
+		t.Errorf("resume -flush did not hand over what piled up:\n%s", got)
+	}
+}
+
+func TestResumeWithoutFlushLeavesTheMailbox(t *testing.T) {
+	h := fleet(t, "web: {enabled: false}\nagents:\n  - name: dev-1\n    command: [cat]\n    delivery: push\n")
+	a, _ := h.Agent("dev-1")
+	if err := a.Start(); err != nil {
+		t.Fatal(err)
+	}
+	h.Pause("")
+	if _, err := h.Send("user", "dev-1", "held", nil); err != nil {
+		t.Fatal(err)
+	}
+	h.Resume(false)
+	time.Sleep(300 * time.Millisecond)
+	if n := h.Bus().Pending("dev-1"); n != 1 {
+		t.Errorf("%d pending: without a flush it should stay for the agent to collect", n)
+	}
+}

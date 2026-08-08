@@ -34,6 +34,13 @@ type Hub struct {
 	portMu sync.Mutex
 	ports  map[string]int
 
+	// paused holds the reason deliveries are suspended, empty when they are not.
+	// A circuit breaker rather than a stop: the agents keep working, and what
+	// they say to each other waits — which is what you want at the moment you
+	// have stopped understanding what the fleet is doing.
+	pauseMu sync.RWMutex
+	paused  string
+
 	// briefed records which launch of an agent has already had its opening
 	// message, keyed by generation so a restart gets a fresh brief and a second
 	// quiet spell does not.
@@ -339,12 +346,49 @@ func freePort() int {
 	return ln.Addr().(*net.TCPAddr).Port
 }
 
+// Pause suspends delivery. Messages are still accepted and still queued; what
+// stops is anything being typed into a terminal.
+func (h *Hub) Pause(reason string) {
+	if reason == "" {
+		reason = "paused"
+	}
+	h.pauseMu.Lock()
+	h.paused = reason
+	h.pauseMu.Unlock()
+	h.log.Emit(event.KindInfo, "", "bus paused: "+reason)
+}
+
+// Resume lets delivery start again. With flush, everything that piled up is
+// handed over; without, it stays in the mailboxes for the agents to collect.
+func (h *Hub) Resume(flush bool) {
+	h.pauseMu.Lock()
+	h.paused = ""
+	h.pauseMu.Unlock()
+	h.log.Emit(event.KindInfo, "", "bus resumed")
+	if !flush {
+		return
+	}
+	for _, a := range h.Agents() {
+		// Everything that would have been typed had the bus been running:
+		// pausing turned push into a queue, and resuming has to undo that, or a
+		// message sent during the pause waits for an inbox nobody will run.
+		go h.flushPending(a.Name(), config.DeliveryPush, config.DeliveryDefer)
+	}
+}
+
+// Paused reports the reason deliveries are held, empty when they are not.
+func (h *Hub) Paused() string {
+	h.pauseMu.RLock()
+	defer h.pauseMu.RUnlock()
+	return h.paused
+}
+
 // brief types an agent's standing message, once per launch, when it first falls
 // quiet. Waiting matters: at the moment a process starts, an agent CLI has not
 // drawn its prompt, and text typed into one still painting is lost.
 func (h *Hub) brief(name string) {
 	a, err := h.Agent(name)
-	if err != nil || a.Config().Message == "" {
+	if err != nil || a.Config().Message == "" || h.Paused() != "" {
 		return
 	}
 	h.briefMu.Lock()
@@ -371,13 +415,30 @@ func (h *Hub) brief(name string) {
 // Coalescing is the point as much as the deferral: three messages that arrived
 // while the agent worked are one interruption when it stops, not three.
 func (h *Hub) flushDeferred(name string) {
+	h.flushPending(name, config.DeliveryDefer)
+}
+
+// flushPending types everything waiting for an agent whose delivery is one of
+// modes, as a single injection.
+func (h *Hub) flushPending(name string, modes ...string) {
+	if h.Paused() != "" {
+		return
+	}
 	a, err := h.Agent(name)
 	if err != nil {
 		return
 	}
+	wanted := func(mode string) bool {
+		for _, m := range modes {
+			if m == mode {
+				return true
+			}
+		}
+		return false
+	}
 	var pending []bus.Message
 	for _, m := range h.bus.Collect(name, true) {
-		if h.deliveryFor(a, m.Kind) == config.DeliveryDefer {
+		if wanted(h.deliveryFor(a, m.Kind)) {
 			pending = append(pending, m)
 		}
 	}
@@ -586,6 +647,11 @@ func (h *Hub) SendKind(from, target string, kind bus.Kind, body string, files []
 		// A deferred recipient that is already quiet gets it now: waiting for a
 		// transition that has already happened would hold the message until the
 		// agent next did some work, which is the opposite of the intent.
+		if h.Paused() != "" {
+			// Queued and left there: a paused bus still records what happened,
+			// it just stops interrupting anybody with it.
+			mode = config.DeliveryPull
+		}
 		if mode == config.DeliveryDefer && a.Info().State == agent.StateIdle {
 			go h.flushDeferred(a.Name())
 		}

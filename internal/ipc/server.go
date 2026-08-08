@@ -245,6 +245,15 @@ func (s *Server) handle(req Request) Response {
 		}
 		return Response{OK: true, Messages: msgs}
 
+	case CmdBusPause:
+		switch req.Text {
+		case "pause":
+			h.Pause(req.Keys)
+		case "resume":
+			h.Resume(req.Flush)
+		}
+		return Response{OK: true, Paused: h.Paused()}
+
 	case CmdBusStats:
 		since := req.Since
 		if since <= 0 {

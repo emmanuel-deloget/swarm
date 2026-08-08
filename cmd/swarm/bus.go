@@ -14,6 +14,9 @@ const busUsage = `swarm bus — what the agents say to each other
 
   swarm bus tail [-f] [-n 50]   the messages, as they are carried
   swarm bus stats [-since 1h]   how much of the fleet's time went into talking
+  swarm bus pause "reason"      hold every delivery; the agents keep working
+  swarm bus resume [-flush]     let them through again
+  swarm bus status              whether the bus is holding anything back
 `
 
 func cmdBus(args []string) error {
@@ -26,6 +29,12 @@ func cmdBus(args []string) error {
 		return cmdBusTail(args[1:])
 	case "stats":
 		return cmdBusStats(args[1:])
+	case "pause":
+		return cmdBusPause("pause", args[1:])
+	case "resume":
+		return cmdBusPause("resume", args[1:])
+	case "status":
+		return cmdBusPause("status", args[1:])
 	case "help", "-h", "--help":
 		fmt.Print(busUsage)
 		return nil
@@ -178,4 +187,38 @@ func names(sets ...map[string]int) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// cmdBusPause works the circuit breaker. Pausing is what you reach for when you
+// have stopped understanding what the fleet is doing: the agents keep working
+// and keep their terminals, and only what they say to each other waits.
+func cmdBusPause(action string, args []string) error {
+	var cf clientFlags
+	fs := newFlagSet("bus " + action)
+	cf.register(fs)
+	flush := fs.Bool("flush", false, "on resume, hand over what piled up instead of leaving it in the mailboxes")
+	if err := parseArgs(fs, args, 0); err != nil {
+		return err
+	}
+	c, err := cf.dial()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = c.Close() }()
+
+	resp, err := c.Do(ipc.Request{
+		Cmd:   ipc.CmdBusPause,
+		Text:  action,
+		Keys:  joinArgs(fs.Args()),
+		Flush: *flush,
+	})
+	if err != nil {
+		return err
+	}
+	if resp.Paused == "" {
+		fmt.Println("the bus is delivering")
+		return nil
+	}
+	fmt.Printf("the bus is holding messages back: %s\n", resp.Paused)
+	return nil
 }
