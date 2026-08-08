@@ -3,6 +3,8 @@
 <img src="assets/icon.svg" alt="" width="88" align="right">
 
 [![CI](https://github.com/emmanuel-deloget/swarm/actions/workflows/ci.yml/badge.svg)](https://github.com/emmanuel-deloget/swarm/actions/workflows/ci.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Go 1.25+](https://img.shields.io/badge/go-1.25%2B-00ADD8.svg)](go.mod)
 
 **[emmanueldeloget.com/swarm](https://www.emmanueldeloget.com/swarm/)** — what it
 looks like, in fewer words than this page.
