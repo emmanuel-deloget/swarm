@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -27,6 +28,10 @@ type Hub struct {
 	log      *event.Log
 	bus      *bus.Bus
 	stateDir string
+
+	// ports remembers what {alloc_port} resolved to, so a restart keeps it.
+	portMu sync.Mutex
+	ports  map[string]int
 
 	mu     sync.RWMutex
 	agents map[string]*agent.Agent
@@ -178,6 +183,16 @@ func (h *Hub) agentEnv(ac *config.AgentConfig, shimDir string) []string {
 		merged[k] = v
 	}
 
+	// {alloc_port} in any value becomes a port nobody else is listening on,
+	// picked once per agent so a restart keeps it. This is the other half of
+	// preparing an environment: two agents running a dev server both want 3000,
+	// and no amount of talking to each other settles that.
+	for k, v := range merged {
+		if strings.Contains(v, "{alloc_port}") {
+			merged[k] = strings.ReplaceAll(v, "{alloc_port}", fmt.Sprint(h.portFor(ac.Name, k)))
+		}
+	}
+
 	merged["SWARM_AGENT"] = ac.Name
 	merged["SWARM_ROLE"] = ac.Role
 	merged["SWARM_SESSION"] = h.cfg.Session
@@ -281,6 +296,37 @@ const (
 	TalkWindow = 10 * time.Minute
 	TalkNoisy  = 8
 )
+
+// portFor hands out a free TCP port, remembering it per agent and variable so
+// that a restart does not move the agent's server from under whatever was
+// pointing at it.
+func (h *Hub) portFor(agent, key string) int {
+	h.portMu.Lock()
+	defer h.portMu.Unlock()
+	if h.ports == nil {
+		h.ports = map[string]int{}
+	}
+	id := agent + "\x00" + key
+	if p, ok := h.ports[id]; ok {
+		return p
+	}
+	p := freePort()
+	h.ports[id] = p
+	return p
+}
+
+// freePort asks the kernel for one and lets it go again. There is a window
+// between letting go and the agent binding it, which nothing can close from
+// out here — the alternative is asking people to pick ports by hand, which
+// collides far more often than this races.
+func freePort() int {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0
+	}
+	defer func() { _ = ln.Close() }()
+	return ln.Addr().(*net.TCPAddr).Port
+}
 
 // StartAll launches every agent marked autostart.
 func (h *Hub) StartAll() {

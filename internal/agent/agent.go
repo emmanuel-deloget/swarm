@@ -3,8 +3,10 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -89,6 +91,8 @@ type Agent struct {
 	log       *event.Log
 	env       []string
 	cloneFrom string
+	// exitDone is closed when the exit path has finished, hook and all.
+	exitDone chan struct{}
 	// git is the last look at the working copy, refreshed on a timer rather
 	// than per call: Info() runs for every agent several times a second, and
 	// shelling out to git that often would cost more than the fleet.
@@ -173,6 +177,19 @@ func (a *Agent) Start() error {
 		}
 	}
 
+	// After the workspace, before the process: a hook that prepares a directory
+	// has to run once the directory exists, and its failure has to stop the
+	// launch rather than let the agent loose in a half-prepared one.
+	if err := a.runHook("on_start", a.cfg.OnStart); err != nil {
+		return err
+	}
+
+	a.mu.Lock()
+	a.exitDone = make(chan struct{})
+	exitDone := a.exitDone
+	a.mu.Unlock()
+	_ = exitDone
+
 	a.openInputLog()
 
 	term, err := vterm.Start(vterm.Options{
@@ -235,7 +252,23 @@ func (a *Agent) Stop(grace time.Duration) error {
 	if grace <= 0 {
 		grace = 5 * time.Second
 	}
-	return term.Stop(grace)
+	err := term.Stop(grace)
+
+	// The process is gone; the exit hook may not be. Waiting for it is the
+	// point of having one — a hook that takes down a container or frees a port
+	// is worthless if swarm exits from under it. Bounded by the same grace, so
+	// a hung script delays a shutdown rather than preventing it.
+	a.mu.Lock()
+	done := a.exitDone
+	a.mu.Unlock()
+	if done != nil {
+		select {
+		case <-done:
+		case <-time.After(grace):
+			a.log.Emit(event.KindError, a.cfg.Name, "on_exit did not finish within the grace period; leaving it running")
+		}
+	}
+	return err
 }
 
 // Restart stops then starts the agent.
@@ -340,6 +373,14 @@ func (a *Agent) onExit(gen uint64, st vterm.ExitStatus) {
 		a.mu.Unlock()
 		return
 	}
+	// Closed once everything that follows a death is done, the exit hook
+	// included, so a shutdown can wait for the tearing down it asked for.
+	done := a.exitDone
+	defer func() {
+		if done != nil {
+			close(done)
+		}
+	}()
 	a.state = StateExited
 	a.exit = &st
 	stopping := a.stopping
@@ -366,6 +407,13 @@ func (a *Agent) onExit(gen uint64, st vterm.ExitStatus) {
 		Data:  map[string]string{"code": fmt.Sprint(st.Code)},
 	})
 
+	// After the process is gone, so a hook can take down whatever the agent was
+	// running. A failure here is reported and nothing more: the agent has
+	// already exited, and there is no launch left to stop.
+	if err := a.runHook("on_exit", a.cfg.OnExit); err != nil {
+		a.log.Emit(event.KindError, a.cfg.Name, err.Error())
+	}
+
 	if stopping || !a.cfg.RestartEnabled() {
 		return
 	}
@@ -389,6 +437,40 @@ func (a *Agent) onExit(gen uint64, st vterm.ExitStatus) {
 
 // watch derives the agent state from its output cadence and matches the
 // configured patterns against the screen.
+// hookTimeout bounds a start or exit hook. Installing dependencies is slow, so
+// this is generous; unbounded would let one hung script hold the whole fleet.
+const hookTimeout = 10 * time.Minute
+
+// runHook runs one of the agent's lifecycle commands, in its working directory
+// and with its environment — so $SWARM_AGENT and any allocated port are already
+// set, and the script needs to know nothing about swarm.
+func (a *Agent) runHook(name string, argv []string) error {
+	if len(argv) == 0 {
+		return nil
+	}
+	a.log.Emit(event.KindInfo, a.cfg.Name, name+": "+strings.Join(argv, " "))
+
+	ctx, cancel := context.WithTimeout(context.Background(), hookTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Dir = a.cfg.Workdir
+	cmd.Env = a.env
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("agent %s: %s failed: %w\n%s", a.cfg.Name, name, err, tail(string(out), 20))
+	}
+	return nil
+}
+
+// tail keeps the last n lines, which is where a script says what went wrong.
+func tail(s string, n int) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}
+
 // gitEvery is how often the working copy is looked at. Often enough that a
 // commit or a branch change shows up while you are watching, rarely enough that
 // eleven agents do not keep a git process busy between them.

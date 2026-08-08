@@ -96,6 +96,8 @@ type AgentDefaults struct {
 	DeliveryMode    string        `yaml:"delivery"`
 	MessageTemplate string        `yaml:"message_template"`
 	Workspace       string        `yaml:"workspace"`
+	OnStart         []string      `yaml:"on_start"`
+	OnExit          []string      `yaml:"on_exit"`
 }
 
 // AgentConfig describes one agent process running in its own virtual terminal.
@@ -171,6 +173,18 @@ type AgentConfig struct {
 	// says what swarm does there. With "clone" and no Workdir, the clone lands
 	// in <state_dir>/workspaces/<name>.
 	Workspace string `yaml:"workspace"`
+
+	// OnStart runs before the agent process is launched, and OnExit after it
+	// has gone. Each is an argv, run in the agent's working directory with the
+	// agent's environment — so $SWARM_AGENT and any allocated port are already
+	// there.
+	//
+	// This is swarm's answer to preparing an environment, which is the part of
+	// isolation no agent can arrange for itself: installing dependencies,
+	// copying a .env, pointing at a dedicated test database. A failing OnStart
+	// stops the agent rather than launching it into a half-prepared directory.
+	OnStart []string `yaml:"on_start"`
+	OnExit  []string `yaml:"on_exit"`
 
 	// Patterns classify the agent state from what it prints.
 	Patterns []PatternConfig `yaml:"patterns"`
@@ -497,6 +511,12 @@ func (c *Config) normalize() error {
 		}
 		if a.MessageTemplate == "" {
 			a.MessageTemplate = d.MessageTemplate
+		}
+		if a.OnStart == nil {
+			a.OnStart = d.OnStart
+		}
+		if a.OnExit == nil {
+			a.OnExit = d.OnExit
 		}
 		for j := range a.Patterns {
 			p := &a.Patterns[j]

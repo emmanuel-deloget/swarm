@@ -80,6 +80,8 @@ agents:
 | `env` | — | Added to (and overriding) the top-level `env`. |
 | `patterns` | `[]` | Regexps classifying what the agent shows; see below. |
 | `workspace` | `shared` | What swarm does about this agent's working copy — see below. |
+| `on_start` | — | An argv run before the process is launched. A failure stops the agent rather than launching it into a half-prepared directory. |
+| `on_exit` | — | An argv run after the process has gone. A stop waits for it, bounded by the grace period. |
 
 Plus every key from [`defaults`](#defaults), which overrides the inherited value
 for this agent alone.
@@ -100,6 +102,38 @@ Agents also receive, whatever their `workdir`:
 There is one state directory per config file, shared by every agent — a
 per-agent `workdir` changes where the process runs, not which fleet it belongs
 to.
+
+### `on_start` and `on_exit`
+
+The part of isolation no agent can arrange for itself: installing dependencies,
+copying a `.env`, pointing at a dedicated test database, taking down whatever
+was started. Each is an argv, run in the agent's working directory with the
+agent's environment, so a script needs to know nothing about swarm.
+
+```yaml
+defaults:
+  on_start: ["./scripts/prepare-agent.sh"]
+  on_exit:  ["./scripts/cleanup-agent.sh"]
+
+agents:
+  - name: dev-1
+    workspace: clone
+    env:
+      PORT: "{alloc_port}"
+```
+
+`{alloc_port}` in any environment value becomes a port nobody is listening on,
+picked once per agent so a restart does not move the server from under whatever
+was pointing at it. Two agents both running a dev server both want 3000, and no
+amount of talking to each other settles that.
+
+They run per **agent**, not per swarm: at autostart, at `swarm start`, at
+`swarm restart`, and on every automatic restart. `on_exit` runs whenever the
+process dies, whatever killed it.
+
+A stop waits for `on_exit` before returning — a hook that frees a port is
+worthless if swarm exits from under it — bounded by the grace period, so a hung
+script delays a shutdown rather than preventing one.
 
 ### `workspace`
 
