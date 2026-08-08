@@ -98,6 +98,8 @@ type AgentDefaults struct {
 	Workspace       string        `yaml:"workspace"`
 	OnStart         []string      `yaml:"on_start"`
 	OnExit          []string      `yaml:"on_exit"`
+	Message         string        `yaml:"message"`
+	MessageFile     string        `yaml:"message_file"`
 }
 
 // AgentConfig describes one agent process running in its own virtual terminal.
@@ -185,6 +187,23 @@ type AgentConfig struct {
 	// stops the agent rather than launching it into a half-prepared directory.
 	OnStart []string `yaml:"on_start"`
 	OnExit  []string `yaml:"on_exit"`
+
+	// Message is typed into the agent once, when it first falls quiet after
+	// starting — its standing brief. YAML block scalars make it readable:
+	//
+	//	message: |
+	//	  You review Go. Read the open pull requests assigned to you
+	//	  and comment on the ones that touch the parser.
+	//
+	// MessageFile reads it from a file instead, for a brief long enough to
+	// deserve its own document. Naming both is an error rather than a
+	// precedence rule.
+	//
+	// It waits for quiet because an agent CLI has not drawn its prompt at the
+	// moment its process starts, and typing into one that is still painting
+	// loses the text.
+	Message     string `yaml:"message"`
+	MessageFile string `yaml:"message_file"`
 
 	// Patterns classify the agent state from what it prints.
 	Patterns []PatternConfig `yaml:"patterns"`
@@ -523,6 +542,19 @@ func (c *Config) normalize() error {
 		}
 		if a.OnExit == nil {
 			a.OnExit = d.OnExit
+		}
+		if a.Message == "" && a.MessageFile == "" {
+			a.Message, a.MessageFile = d.Message, d.MessageFile
+		}
+		if a.Message != "" && a.MessageFile != "" {
+			return fmt.Errorf("agent %q: set message or message_file, not both", a.Name)
+		}
+		if a.MessageFile != "" {
+			body, err := os.ReadFile(resolve(base, a.MessageFile))
+			if err != nil {
+				return fmt.Errorf("agent %q: message_file: %w", a.Name, err)
+			}
+			a.Message = string(body)
 		}
 		for j := range a.Patterns {
 			p := &a.Patterns[j]

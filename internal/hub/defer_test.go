@@ -119,3 +119,49 @@ func readInputLog(t *testing.T, h *Hub, name string) string {
 	b, _ := os.ReadFile(path)
 	return string(b)
 }
+
+// TestOpeningMessageIsSentOncePerLaunch: the brief is the agent's standing
+// instruction, so it belongs at the start of each run — and only there. A second
+// quiet spell must not repeat it.
+func TestOpeningMessageIsSentOncePerLaunch(t *testing.T) {
+	h := fleet(t, `
+log_input: true
+web: {enabled: false}
+agents:
+  - name: briefed
+    command: [cat]
+    message: |
+      read the open pull requests
+
+      and comment on the ones that touch the parser
+`)
+	a, _ := h.Agent("briefed")
+	if err := a.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	h.brief("briefed")
+	h.brief("briefed")
+	h.brief("briefed")
+
+	log := readInputLog(t, h, "briefed")
+	if got := strings.Count(log, "\tinject\t"); got != 1 {
+		t.Errorf("%d injections, want exactly one per launch", got)
+	}
+	// The block scalar has to survive as it was written, newlines and all.
+	if !strings.Contains(log, `read the open pull requests\n\nand comment on the ones that touch the parser`) {
+		t.Errorf("the multi-line brief did not arrive intact:\n%s", log)
+	}
+}
+
+func TestNoMessageMeansNoInjection(t *testing.T) {
+	h := fleet(t, "web: {enabled: false}\nagents:\n  - name: silent\n    command: [cat]\n")
+	a, _ := h.Agent("silent")
+	if err := a.Start(); err != nil {
+		t.Fatal(err)
+	}
+	h.brief("silent")
+	if n := h.Bus().Pending("silent"); n != 0 {
+		t.Errorf("an agent without a message should be left alone, %d pending", n)
+	}
+}

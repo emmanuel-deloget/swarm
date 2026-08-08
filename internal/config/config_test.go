@@ -628,6 +628,61 @@ func TestWorkspaceRejectsAnythingElse(t *testing.T) {
 	}
 }
 
+func TestOpeningMessage(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "brief.txt"), []byte("from a file\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "swarm.yaml")
+	body := `
+agents:
+  - name: inline
+    command: [x]
+    message: |
+      first line
+
+      third line
+  - name: fromfile
+    command: [x]
+    message_file: brief.txt
+  - name: silent
+    command: [x]
+`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inline, _ := cfg.Agent("inline")
+	if inline.Message != "first line\n\nthird line\n" {
+		t.Errorf("the block scalar came out as %q", inline.Message)
+	}
+	fromfile, _ := cfg.Agent("fromfile")
+	if fromfile.Message != "from a file\n" {
+		t.Errorf("message_file gave %q", fromfile.Message)
+	}
+	silent, _ := cfg.Agent("silent")
+	if silent.Message != "" {
+		t.Errorf("an agent with no message got %q", silent.Message)
+	}
+}
+
+func TestOpeningMessageRejectsBothSources(t *testing.T) {
+	body := "agents:\n  - name: a\n    command: [x]\n    message: hello\n    message_file: brief.txt\n"
+	if _, err := Load(write(t, body)); err == nil {
+		t.Error("naming both message and message_file should be refused")
+	}
+}
+
+func TestOpeningMessageFileMustExist(t *testing.T) {
+	body := "agents:\n  - name: a\n    command: [x]\n    message_file: nowhere.txt\n"
+	if _, err := Load(write(t, body)); err == nil {
+		t.Error("a missing message_file should be refused at load")
+	}
+}
+
 func TestDeliveryDeferIsAccepted(t *testing.T) {
 	cfg, err := Load(write(t, "agents:\n  - name: a\n    command: [x]\n    delivery: defer\n"))
 	if err != nil {

@@ -138,6 +138,14 @@ func New(o Options) *Agent {
 	}
 }
 
+// Generation counts launches. It tells one run of an agent from the next, which
+// is what lets a once-per-launch action happen again after a restart.
+func (a *Agent) Generation() uint64 {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.generation
+}
+
 // Name returns the agent handle.
 func (a *Agent) Name() string { return a.cfg.Name }
 

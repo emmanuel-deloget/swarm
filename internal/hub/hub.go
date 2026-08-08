@@ -33,6 +33,12 @@ type Hub struct {
 	portMu sync.Mutex
 	ports  map[string]int
 
+	// briefed records which launch of an agent has already had its opening
+	// message, keyed by generation so a restart gets a fresh brief and a second
+	// quiet spell does not.
+	briefMu sync.Mutex
+	briefed map[string]uint64
+
 	mu     sync.RWMutex
 	agents map[string]*agent.Agent
 	order  []string
@@ -85,6 +91,7 @@ func New(o Options) (*Hub, error) {
 			Config:    ac,
 			CloneFrom: cfg.Workdir,
 			OnIdle: func() {
+				h.brief(ac.Name)
 				h.flushDeferred(ac.Name)
 			},
 			Log:     h.log,
@@ -329,6 +336,33 @@ func freePort() int {
 	}
 	defer func() { _ = ln.Close() }()
 	return ln.Addr().(*net.TCPAddr).Port
+}
+
+// brief types an agent's standing message, once per launch, when it first falls
+// quiet. Waiting matters: at the moment a process starts, an agent CLI has not
+// drawn its prompt, and text typed into one still painting is lost.
+func (h *Hub) brief(name string) {
+	a, err := h.Agent(name)
+	if err != nil || a.Config().Message == "" {
+		return
+	}
+	h.briefMu.Lock()
+	if h.briefed == nil {
+		h.briefed = map[string]uint64{}
+	}
+	gen := a.Generation()
+	if h.briefed[name] == gen {
+		h.briefMu.Unlock()
+		return
+	}
+	h.briefed[name] = gen
+	h.briefMu.Unlock()
+
+	if _, err := a.Inject(a.Config().Message, agent.InjectOptions{Submit: true}); err != nil {
+		h.log.Emit(event.KindError, name, "opening message failed: "+err.Error())
+		return
+	}
+	h.log.Emit(event.KindInfo, name, "sent the opening message")
 }
 
 // flushDeferred types everything waiting for an agent, as one injection.
