@@ -51,8 +51,12 @@ func (m Message) Render(tmpl string) string {
 
 // Bus holds every mailbox.
 type Bus struct {
-	mu       sync.Mutex
-	boxes    map[string]*mailbox
+	mu    sync.Mutex
+	boxes map[string]*mailbox
+	// recent is every message the bus has carried, newest last, bounded. The
+	// per-mailbox histories cannot answer for the fleet: each is capped on its
+	// own, so a chatty pair would push a quiet one out of a merged view.
+	recent   []Message
 	history  int
 	nextID   uint64
 	nextThrd uint64
@@ -104,6 +108,10 @@ func (b *Bus) Post(m Message) Message {
 	if m.Thread == 0 {
 		b.nextThrd++
 		m.Thread = b.nextThrd
+	}
+	b.recent = append(b.recent, m)
+	if keep := b.history * 20; len(b.recent) > keep {
+		b.recent = b.recent[len(b.recent)-keep:]
 	}
 	box := b.box(m.To)
 	box.pending = append(box.pending, m)

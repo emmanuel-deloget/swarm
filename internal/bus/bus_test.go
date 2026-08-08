@@ -185,3 +185,108 @@ func TestRenderExpandsPlaceholders(t *testing.T) {
 		t.Errorf("Render = %q, want hi", out)
 	}
 }
+
+func TestRecentSpansEveryMailbox(t *testing.T) {
+	b := New(10)
+	th := b.NewThread()
+	b.Post(Message{Thread: th, From: "user", To: "dev-1", Body: "go"})
+	b.Post(Message{Thread: th, From: "user", To: "dev-2", Body: "go"})
+	b.Post(Message{From: "dev-1", To: "dev-2", Body: "what do you think"})
+
+	got := b.Recent(0)
+	if len(got) != 3 {
+		t.Fatalf("Recent = %d messages, want 3", len(got))
+	}
+	// Oldest first, and ids increasing: a tail has to read in order.
+	for i := 1; i < len(got); i++ {
+		if got[i].ID <= got[i-1].ID {
+			t.Errorf("Recent is not ordered: %d then %d", got[i-1].ID, got[i].ID)
+		}
+	}
+	if got[2].From != "dev-1" {
+		t.Errorf("last message is from %q, want dev-1", got[2].From)
+	}
+}
+
+// TestRecentSurvivesAChattyPair: per-mailbox histories are capped on their own,
+// so merging them after the fact would lose a quiet exchange behind a loud one.
+func TestRecentSurvivesAChattyPair(t *testing.T) {
+	b := New(4)
+	b.Post(Message{From: "review-1", To: "triage", Body: "the quiet one"})
+	for range 20 {
+		b.Post(Message{From: "dev-1", To: "dev-2", Body: "and another thing"})
+	}
+	for _, m := range b.Recent(0) {
+		if m.From == "review-1" {
+			return
+		}
+	}
+	t.Error("the quiet exchange was pushed out by the chatty pair")
+}
+
+func TestSinceReturnsOnlyWhatIsNew(t *testing.T) {
+	b := New(10)
+	first := b.Post(Message{From: "a", To: "b", Body: "one"})
+	b.Post(Message{From: "a", To: "b", Body: "two"})
+
+	got := b.Since(first.ID)
+	if len(got) != 1 || got[0].Body != "two" {
+		t.Errorf("Since(%d) = %+v, want only the second", first.ID, got)
+	}
+	if got := b.Since(0); len(got) != 2 {
+		t.Errorf("Since(0) should return everything, got %d", len(got))
+	}
+}
+
+func TestStatsSince(t *testing.T) {
+	b := New(100)
+	th := b.NewThread()
+	b.Post(Message{Thread: th, From: "dev-1", To: "review-1", Body: "?"})
+	b.Post(Message{Thread: th, From: "review-1", To: "dev-1", Body: "no"})
+	b.Post(Message{Thread: th, From: "dev-1", To: "review-1", Body: "but"})
+	b.Post(Message{From: "user", To: "dev-2", Body: "unrelated"})
+
+	s := b.StatsSince(time.Now().Add(-time.Minute))
+	if s.Messages != 4 {
+		t.Errorf("Messages = %d, want 4", s.Messages)
+	}
+	if s.Threads != 2 {
+		t.Errorf("Threads = %d, want 2", s.Threads)
+	}
+	if s.Deepest != 3 {
+		t.Errorf("Deepest = %d, want 3: a thread nobody ends is the shape of the trouble", s.Deepest)
+	}
+	if s.Sent["dev-1"] != 2 || s.Received["review-1"] != 2 {
+		t.Errorf("per-agent counts are wrong: sent=%v received=%v", s.Sent, s.Received)
+	}
+	// Busiest pair first, and directed: dev-1 → review-1 is not the reverse.
+	if len(s.Pairs) == 0 || s.Pairs[0].From != "dev-1" || s.Pairs[0].To != "review-1" || s.Pairs[0].Count != 2 {
+		t.Errorf("Pairs = %+v, want dev-1 → review-1 twice at the top", s.Pairs)
+	}
+}
+
+func TestStatsSinceIgnoresWhatCameBefore(t *testing.T) {
+	b := New(100)
+	b.Post(Message{From: "a", To: "b", At: time.Now().Add(-time.Hour), Body: "old"})
+	b.Post(Message{From: "a", To: "b", Body: "new"})
+
+	if s := b.StatsSince(time.Now().Add(-time.Minute)); s.Messages != 1 {
+		t.Errorf("Messages = %d, want only the recent one", s.Messages)
+	}
+}
+
+func TestSentSince(t *testing.T) {
+	b := New(100)
+	b.Post(Message{From: "dev-1", To: "b", At: time.Now().Add(-time.Hour)})
+	for range 3 {
+		b.Post(Message{From: "dev-1", To: "b"})
+	}
+	b.Post(Message{From: "dev-2", To: "b"})
+
+	if n := b.SentSince("dev-1", time.Now().Add(-time.Minute)); n != 3 {
+		t.Errorf("SentSince = %d, want 3", n)
+	}
+	if n := b.SentSince("nobody", time.Now().Add(-time.Minute)); n != 0 {
+		t.Errorf("SentSince for an unknown agent = %d, want 0", n)
+	}
+}

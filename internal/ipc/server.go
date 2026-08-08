@@ -145,6 +145,9 @@ func (s *Server) serve(conn net.Conn) {
 		case CmdEvents:
 			s.handleEvents(req, send)
 			return
+		case CmdBusTail:
+			s.handleBusTail(req, send)
+			return
 		case CmdAttach:
 			s.handleAttach(req, dec, send)
 			return
@@ -241,6 +244,14 @@ func (s *Server) handle(req Request) Response {
 		}
 		return Response{OK: true, Messages: msgs}
 
+	case CmdBusStats:
+		since := req.Since
+		if since <= 0 {
+			since = time.Hour
+		}
+		st := h.Bus().StatsSince(time.Now().Add(-since))
+		return Response{OK: true, Stats: &st}
+
 	case CmdInbox:
 		name := req.From
 		if name == "" {
@@ -321,6 +332,43 @@ func (s *Server) handleEvents(req Request, send func(Response) error) {
 			}
 			ev := e
 			if err := send(Response{OK: true, Event: &ev}); err != nil {
+				return
+			}
+		}
+	}
+}
+
+// handleBusTail streams what the bus carries. Following polls rather than
+// subscribes: a mailbox already wakes its own waiters, and adding a second
+// fan-out to the bus for a diagnostic would be machinery the fleet pays for
+// whether or not anybody is watching.
+func (s *Server) handleBusTail(req Request, send func(Response) error) {
+	n := req.Lines
+	if n == 0 {
+		n = 50
+	}
+	msgs := s.hub.Bus().Recent(n)
+	if err := send(Response{OK: true, Messages: msgs, Done: !req.Follow}); err != nil || !req.Follow {
+		return
+	}
+	last := uint64(0)
+	if len(msgs) > 0 {
+		last = msgs[len(msgs)-1].ID
+	}
+	tick := time.NewTicker(200 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-s.closed:
+			_ = send(Response{OK: true, Done: true})
+			return
+		case <-tick.C:
+			fresh := s.hub.Bus().Since(last)
+			if len(fresh) == 0 {
+				continue
+			}
+			last = fresh[len(fresh)-1].ID
+			if err := send(Response{OK: true, Messages: fresh}); err != nil {
 				return
 			}
 		}

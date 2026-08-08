@@ -39,6 +39,11 @@ agent's terminal on the right, and the event log underneath](assets/tui.png)
 - **A message bus.** `swarm send dev-3 "..."` reaches an agent whether you type
   it or another agent does. Push mode types it into the recipient's prompt; pull
   mode leaves it for `swarm inbox`.
+- **A view of the talking.** `swarm bus tail` and `swarm bus stats` show what the
+  fleet says to itself — busiest pairs, threads, who is sending and who is only
+  receiving — and the TUI marks an agent putting a lot on the bus. Agents that
+  coordinate instead of working is the failure mode of a fleet, and it is
+  invisible from the terminals.
 - **Incoming webhooks.** Declarative rules turn an HTTP delivery into a bus
   message, so the fleet reacts to a pull request or a ticket without you
   relaying it. The listener is signature-checked and lives on its own port.
@@ -218,6 +223,8 @@ swarm broadcast "stopping in 5 min"
 swarm inbox dev-1                   # read a mailbox
 swarm stage diff.patch              # copy a file where every agent can read it
 
+swarm bus tail -f                   # the messages agents send each other
+swarm bus stats -since 30m          # how much of the fleet's time went into talking
 swarm events -f                     # live event log
 swarm restart dev-3
 swarm shutdown

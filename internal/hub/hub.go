@@ -258,15 +258,29 @@ func (h *Hub) Resolve(target string) ([]*agent.Agent, error) {
 // Infos snapshots the whole fleet, unread counts included.
 func (h *Hub) Infos() []agent.Info {
 	pending := h.bus.PendingAll()
+	since := time.Now().Add(-TalkWindow)
 	agents := h.Agents()
 	out := make([]agent.Info, 0, len(agents))
 	for _, a := range agents {
 		info := a.Info()
 		info.Unread = pending[info.Name]
+		info.Talking = h.bus.SentSince(info.Name, since)
 		out = append(out, info)
 	}
 	return out
 }
+
+// TalkWindow is how far back an agent's share of the bus is counted, and
+// TalkNoisy how many messages in that window are worth pointing at.
+//
+// The threshold is a display hint, not a policy: swarm marks an agent that is
+// talking a lot and does nothing about it. Ten minutes is long enough that a
+// burst of coordination at the start of a task does not trip it, and short
+// enough that a spiral shows up while it is still going.
+const (
+	TalkWindow = 10 * time.Minute
+	TalkNoisy  = 8
+)
 
 // StartAll launches every agent marked autostart.
 func (h *Hub) StartAll() {

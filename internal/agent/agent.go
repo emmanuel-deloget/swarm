@@ -60,6 +60,9 @@ type Info struct {
 	// as of the last look. swarm reports this and never acts on it.
 	Workspace string `json:"workspace"`
 	Git       string `json:"git,omitempty"`
+	// Talking is how many messages this agent has put on the bus recently. It
+	// is filled by the hub, which is the only place that can see the bus.
+	Talking int `json:"talking,omitempty"`
 }
 
 // Options builds an Agent.

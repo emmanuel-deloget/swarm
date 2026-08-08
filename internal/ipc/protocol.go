@@ -11,6 +11,7 @@ import (
 	"github.com/emmanuel-deloget/swarm/internal/bus"
 	"github.com/emmanuel-deloget/swarm/internal/event"
 	"github.com/emmanuel-deloget/swarm/internal/hub"
+	"time"
 )
 
 // Commands understood by the server.
@@ -28,6 +29,8 @@ const (
 	CmdScreen   = "screen"
 	CmdStage    = "stage"
 	CmdEvents   = "events"
+	CmdBusTail  = "bus-tail"
+	CmdBusStats = "bus-stats"
 	CmdAttach   = "attach"
 	CmdShutdown = "shutdown"
 )
@@ -69,6 +72,9 @@ type Request struct {
 	Lines int `json:"lines,omitempty"`
 	// Follow keeps the connection open and streams new frames.
 	Follow bool `json:"follow,omitempty"`
+
+	// Since bounds a bus summary, as a duration back from now.
+	Since time.Duration `json:"since,omitempty"`
 	// Plain asks for unstyled text instead of an ANSI rendering.
 	Plain bool `json:"plain,omitempty"`
 
@@ -95,6 +101,7 @@ type Response struct {
 	Results  []hub.TargetResult `json:"results,omitempty"`
 	Agents   []agent.Info       `json:"agents,omitempty"`
 	Messages []bus.Message      `json:"messages,omitempty"`
+	Stats    *bus.Stats         `json:"stats,omitempty"`
 	Events   []event.Event      `json:"events,omitempty"`
 	Event    *event.Event       `json:"event,omitempty"`
 

@@ -767,6 +767,9 @@ func (m *model) sidebarLines(height int) []string {
 		glyph := lipgloss.NewStyle().Foreground(stateColor(in)).Render(stateGlyph(in))
 		name := in.Name
 		badge := m.messageBadge(in)
+		if in.Talking >= hub.TalkNoisy {
+			badge += styAttn.Render(" ‼")
+		}
 		prefix := "  "
 		style := styBase
 		if i == m.sel {
@@ -792,7 +795,19 @@ func (m *model) paneLines(width, height int) []string {
 	if in.Attention != "" {
 		title += styAttn.Render(" ▲ " + in.Attention)
 	}
+	if in.Git != "" {
+		title += " " + styMuted.Render(in.Git)
+	}
 	meta := []string{}
+	// What the agent is putting on the bus, next to what it is doing: the two
+	// numbers are only worth anything side by side.
+	if in.Talking > 0 {
+		rate := fmt.Sprintf("%d msg/%dm", in.Talking, int(hub.TalkWindow.Minutes()))
+		if in.Talking >= hub.TalkNoisy {
+			rate = styAttn.Render(rate)
+		}
+		meta = append(meta, rate)
+	}
 	if in.Pid > 0 {
 		meta = append(meta, fmt.Sprintf("pid %d", in.Pid))
 	}
@@ -959,6 +974,14 @@ func (m *model) mosaicCell(i, width, height int) []string {
 	}
 	if in.Git != "" {
 		title += " " + styMuted.Render(in.Git)
+	}
+	if in.Talking > 0 {
+		rate := fmt.Sprintf(" %d msg/%dm", in.Talking, int(hub.TalkWindow.Minutes()))
+		if in.Talking >= hub.TalkNoisy {
+			title += styAttn.Render(rate)
+		} else {
+			title += styMuted.Render(rate)
+		}
 	}
 	title += m.messageBadge(in)
 	lines := []string{padRight(title, width)}

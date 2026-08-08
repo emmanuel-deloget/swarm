@@ -38,6 +38,8 @@ talking
   inbox [agent]             collect the messages addressed to you
   stage <file>              copy a file where every agent can read it
   events                    show the swarm event log
+  bus tail [-f]             the messages agents send each other, as they go
+  bus stats [-since 1h]     how much of the fleet's time went into talking
   hook test <payload.json>  show what an incoming webhook would send
   hook post <payload.json>  send a payload to the running listener
 
@@ -99,6 +101,8 @@ func main() {
 		err = cmdInfo(args)
 	case "shutdown":
 		err = cmdShutdown(args)
+	case "bus":
+		err = cmdBus(args)
 	case "config":
 		err = cmdConfig(args)
 	case "version", "-version", "--version", "-v":
