@@ -42,6 +42,7 @@ talking
   hook post <payload.json>  send a payload to the running listener
 
   info                      session, socket, web URL and token
+  config check [-fix]       report (and fix) a config that has gone stale
   version                   which build this is (also shown in the TUI header)
 
 A target is an agent name, @group, @role, "all", or a comma-separated list.
@@ -98,6 +99,8 @@ func main() {
 		err = cmdInfo(args)
 	case "shutdown":
 		err = cmdShutdown(args)
+	case "config":
+		err = cmdConfig(args)
 	case "version", "-version", "--version", "-v":
 		err = cmdVersion(args)
 	case "help", "-h", "--help":

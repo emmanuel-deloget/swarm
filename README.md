@@ -222,6 +222,7 @@ swarm events -f                     # live event log
 swarm restart dev-3
 swarm shutdown
 swarm version                       # which build this is
+swarm config check [-fix]           # a config that has gone stale
 
 swarm hook test delivery.json       # what the rules would send, offline
 swarm hook post delivery.json       # sign a payload and post it for real

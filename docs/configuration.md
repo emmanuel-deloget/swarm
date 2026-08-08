@@ -211,6 +211,16 @@ least one character — for "present and not empty".
 
 Values interpolated into a message are truncated at 400 characters.
 
+## Keeping a config current
+
+Defaults change as keys are added, and a value written when an older default was
+in force can quietly stop meaning what its author intended — without ever
+becoming an error. `swarm config check` names those, and `-fix` applies them.
+
+`swarm run` checks too. With a terminal it offers to fix; without one — under
+systemd, in a script — it warns and starts anyway, since a warning never broke
+anything. Fixes are surgical on the text, so comments survive.
+
 ## Durations
 
 `idle_after`, `restart_backoff` and `submit_delay` take Go duration strings:

@@ -63,6 +63,10 @@ func cmdRun(args []string) error {
 		cfg.DetachKey = *detachKey
 	}
 
+	if err := checkConfigAtStart(cfg); err != nil {
+		return err
+	}
+
 	h, err := hub.New(hub.Options{Config: cfg, StateDir: cfg.StateDir, EventHistory: 2000})
 	if err != nil {
 		return err
