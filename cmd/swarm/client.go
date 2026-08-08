@@ -464,6 +464,9 @@ func cmdSend(args []string, broadcast bool) error {
 	from := fs.String("from", os.Getenv("SWARM_AGENT"), "sender name (defaults to $SWARM_AGENT, else 'user')")
 	textFile := fs.String("text-file", "", "read the message body from a file (- for stdin)")
 	kind := fs.String("kind", "", "what the message is for: question, answer, fyi, request, decision, blocked")
+	final := fs.Bool("final", false, "close the matter: the bus refuses anyone the right to answer")
+	newThread := fs.Bool("new-thread", false, "start a fresh conversation instead of continuing the last one")
+	thread := fs.Uint64("thread", 0, "continue a particular conversation")
 	var files stringList
 	fs.Var(&files, "file", "attach a file: it is staged in the shared directory (repeatable)")
 	_ = parseArgs(fs, args, textAfter)
@@ -506,12 +509,15 @@ func cmdSend(args []string, broadcast bool) error {
 		return err
 	}
 	resp, err := c.Do(ipc.Request{
-		Cmd:    ipc.CmdSend,
-		Target: target,
-		From:   *from,
-		Kind:   *kind,
-		Text:   body,
-		Files:  staged,
+		Cmd:       ipc.CmdSend,
+		Target:    target,
+		From:      *from,
+		Kind:      *kind,
+		Final:     *final,
+		Thread:    *thread,
+		NewThread: *newThread,
+		Text:      body,
+		Files:     staged,
 	})
 	if err != nil {
 		return err

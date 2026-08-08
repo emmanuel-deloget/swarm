@@ -226,6 +226,24 @@ tunnel rather than binding `0.0.0.0` in the open.
 | `enabled` | `true` | Inter-agent messaging. On by default: agents reaching each other is a core feature, not an opt-in. `false` forbids `swarm send` entirely. |
 | `history` | `200` | Messages kept per mailbox, for replay and for `swarm inbox -peek`. |
 | `allow_self_inject` | `false` | Let an agent send a message to itself. |
+| `max_turns` | `0` | Messages allowed on one conversation. `0` means no bound. |
+| `escalate_to` | `""` | Who arbitrates when a conversation runs out of turns. |
+
+A *thread* is one conversation. An agent answering someone stays on the thread
+it was written to on, so nothing has to carry an identifier around; a person or
+a webhook always starts a new one. `swarm bus threads` lists them.
+
+With `max_turns` set, the message that would exceed the budget is refused, and
+the refusal is the instruction — the agent reads *this thread has used its 6
+turns; decide alone or escalate to triage*. One turn earlier, the delivery
+carries a warning, so the last turn can be spent on an answer rather than on
+discovering the limit. Something genuinely else to say is always allowed:
+`swarm send --new-thread` starts a fresh conversation with its own budget.
+
+`swarm send --final` closes a matter: the bus refuses its recipient the right to
+answer. Use it for decisions, which is what `escalate_to` produces — a saturated
+thread is handed to that agent with everything that was said, and its answer is
+expected to come back final.
 
 ## `hooks`
 

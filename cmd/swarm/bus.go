@@ -14,6 +14,7 @@ const busUsage = `swarm bus — what the agents say to each other
 
   swarm bus tail [-f] [-n 50]   the messages, as they are carried
   swarm bus stats [-since 1h]   how much of the fleet's time went into talking
+  swarm bus threads             the conversations, and how many turns they have left
   swarm bus pause "reason"      hold every delivery; the agents keep working
   swarm bus resume [-flush]     let them through again
   swarm bus status              whether the bus is holding anything back
@@ -29,6 +30,8 @@ func cmdBus(args []string) error {
 		return cmdBusTail(args[1:])
 	case "stats":
 		return cmdBusStats(args[1:])
+	case "threads":
+		return cmdBusThreads(args[1:])
 	case "pause":
 		return cmdBusPause("pause", args[1:])
 	case "resume":
@@ -91,6 +94,44 @@ func tailLine(m bus.Message) string {
 	}
 	return fmt.Sprintf("%s  #%-4d %-10s %s %-10s%s %s%s",
 		m.At.Format("15:04:05"), m.Thread, m.From, mark, m.To, kind, body, files)
+}
+
+// cmdBusThreads lists the conversations. The turn count is the point: a bus
+// with a budget makes "this has gone on long enough" a fact rather than an
+// impression, and this is where you read it.
+func cmdBusThreads(args []string) error {
+	var cf clientFlags
+	fs := newFlagSet("bus threads")
+	cf.register(fs)
+	if err := parseArgs(fs, args, -1); err != nil {
+		return err
+	}
+	c, err := cf.dial()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = c.Close() }()
+	resp, err := c.Do(ipc.Request{Cmd: ipc.CmdThreads})
+	if err != nil {
+		return err
+	}
+	if len(resp.Threads) == 0 {
+		fmt.Println("no conversations yet")
+		return nil
+	}
+	for _, t := range resp.Threads {
+		state := ""
+		switch {
+		case t.Final:
+			state = " (closed)"
+		case t.Escalate:
+			state = " (out of turns)"
+		}
+		fmt.Printf("#%-4d %2d turns  %-9s %s%s\n",
+			t.ID, t.Turns, t.Last.Format("15:04:05"), t.Subject, state)
+		fmt.Printf("      %s\n", strings.Join(t.Agents, ", "))
+	}
+	return nil
 }
 
 func cmdBusStats(args []string) error {

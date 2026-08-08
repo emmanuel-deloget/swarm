@@ -67,6 +67,10 @@ type Message struct {
 	// Files are absolute paths staged in the shared directory, reachable by
 	// every agent.
 	Files []string `json:"files,omitempty"`
+	// Final marks a message the bus refuses to let anyone answer. It is the
+	// primitive that makes a decision a decision rather than another opening.
+	Final bool `json:"final,omitempty"`
+
 	// Pushed records that the message was typed into the recipient's terminal.
 	Pushed bool `json:"pushed"`
 	// ReadAt is when the recipient collected the message with `swarm inbox`.
@@ -130,6 +134,48 @@ func (b *Bus) box(agent string) *mailbox {
 		b.boxes[agent] = m
 	}
 	return m
+}
+
+// Turns counts the messages already carried on a thread. A thread is what lets
+// a conversation end: without one, nothing can be too long, because nothing is
+// anything.
+func (b *Bus) Turns(thread uint64) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n := 0
+	for _, m := range b.recent {
+		if m.Thread == thread {
+			n++
+		}
+	}
+	return n
+}
+
+// LastOn returns the most recent message carried on a thread, and whether there
+// was one. It is how a reply learns what it is replying to.
+func (b *Bus) LastOn(thread uint64) (Message, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for i := len(b.recent) - 1; i >= 0; i-- {
+		if b.recent[i].Thread == thread {
+			return b.recent[i], true
+		}
+	}
+	return Message{}, false
+}
+
+// ThreadFor returns the thread an agent should answer on: the one carrying the
+// last message it received. Inheriting rather than asking is what makes a
+// conversation a conversation without anybody having to track an identifier.
+func (b *Bus) ThreadFor(agent string) (uint64, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for i := len(b.recent) - 1; i >= 0; i-- {
+		if b.recent[i].To == agent {
+			return b.recent[i].Thread, true
+		}
+	}
+	return 0, false
 }
 
 // NewThread allocates a thread id, shared by all copies of a broadcast.

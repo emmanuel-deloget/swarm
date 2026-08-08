@@ -32,6 +32,7 @@ const (
 	CmdBusTail  = "bus-tail"
 	CmdBusStats = "bus-stats"
 	CmdBusPause = "bus-pause"
+	CmdThreads  = "bus-threads"
 	CmdAttach   = "attach"
 	CmdShutdown = "shutdown"
 )
@@ -78,6 +79,12 @@ type Request struct {
 	// Follow keeps the connection open and streams new frames.
 	Follow bool `json:"follow,omitempty"`
 
+	// Final refuses anyone the right to answer this message.
+	Final bool `json:"final,omitempty"`
+	// Thread continues a conversation; NewThread starts one.
+	Thread    uint64 `json:"thread,omitempty"`
+	NewThread bool   `json:"new_thread,omitempty"`
+
 	// Flush hands over what piled up while the bus was paused.
 	Flush bool `json:"flush,omitempty"`
 
@@ -110,6 +117,7 @@ type Response struct {
 	Agents   []agent.Info       `json:"agents,omitempty"`
 	Messages []bus.Message      `json:"messages,omitempty"`
 	Stats    *bus.Stats         `json:"stats,omitempty"`
+	Threads  []bus.Thread       `json:"threads,omitempty"`
 	Paused   string             `json:"paused,omitempty"`
 	Events   []event.Event      `json:"events,omitempty"`
 	Event    *event.Event       `json:"event,omitempty"`

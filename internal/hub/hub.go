@@ -34,6 +34,11 @@ type Hub struct {
 	portMu sync.Mutex
 	ports  map[string]int
 
+	// escalated remembers which threads have already been handed to an arbiter,
+	// so a saturated conversation raises one alarm rather than one per attempt.
+	escalateMu sync.Mutex
+	escalated  map[uint64]bool
+
 	// paused holds the reason deliveries are suspended, empty when they are not.
 	// A circuit breaker rather than a stop: the agents keep working, and what
 	// they say to each other waits — which is what you want at the moment you
@@ -593,6 +598,92 @@ func (h *Hub) Send(from, target, body string, files []string) ([]bus.Message, er
 	return h.SendKind(from, target, bus.KindNote, body, files)
 }
 
+// threadFor decides which conversation a message belongs to, and refuses when
+// that conversation has run out of turns.
+//
+// This is the mechanism the bus was missing: a message had no thread, so
+// nothing could be too long, so nothing ended. The agent is not asked to
+// understand any of it — it reads a refusal on stderr, and the refusal says
+// what to do instead.
+func (h *Hub) threadFor(from string, o SendOptions) (uint64, error) {
+	if o.NewThread {
+		return h.bus.NewThread(), nil
+	}
+	thread := o.Thread
+	if thread == 0 {
+		// Inherited from whatever this agent was last written to on. The user
+		// and webhooks open a new conversation instead: they are starting
+		// something, not continuing it.
+		if _, isAgent := h.cfg.Agent(from); isAgent {
+			if t, ok := h.bus.ThreadFor(from); ok {
+				thread = t
+			}
+		}
+	}
+	if thread == 0 {
+		return h.bus.NewThread(), nil
+	}
+
+	if last, ok := h.bus.LastOn(thread); ok && last.Final && last.To == from {
+		return 0, fmt.Errorf("that was a final answer on this thread; act on it or escalate to %s",
+			h.escalationTarget())
+	}
+
+	max := h.cfg.Bus.MaxTurns
+	if max <= 0 {
+		return thread, nil
+	}
+	if turns := h.bus.Turns(thread); turns >= max {
+		go h.escalate(thread, from)
+		return 0, fmt.Errorf("this thread has used its %d turns; decide alone or escalate to %s",
+			max, h.escalationTarget())
+	}
+	return thread, nil
+}
+
+// escalationTarget names who arbitrates, or the user when nobody does.
+func (h *Hub) escalationTarget() string {
+	if h.cfg.Bus.EscalateTo != "" {
+		return h.cfg.Bus.EscalateTo
+	}
+	return "the user"
+}
+
+// escalate hands a saturated thread to an arbiter, with what was said. The
+// answer is expected to come back final, which is what turns an escalation into
+// an ending rather than a third opinion.
+func (h *Hub) escalate(thread uint64, from string) {
+	if h.cfg.Bus.EscalateTo == "" {
+		h.log.Emit(event.KindPattern, from,
+			fmt.Sprintf("thread #%d ran out of turns and there is no escalate_to", thread))
+		return
+	}
+	h.escalateMu.Lock()
+	if h.escalated == nil {
+		h.escalated = map[uint64]bool{}
+	}
+	if h.escalated[thread] {
+		h.escalateMu.Unlock()
+		return
+	}
+	h.escalated[thread] = true
+	h.escalateMu.Unlock()
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "[swarm] thread #%d ran out of turns and needs a decision.\n\n", thread)
+	for _, m := range h.bus.Recent(0) {
+		if m.Thread == thread {
+			fmt.Fprintf(&b, "%s → %s: %s\n", m.From, m.To, summarize(m.Body))
+		}
+	}
+	b.WriteString("\nAnswer with `swarm send --final`, to whoever should act on it.")
+
+	if _, err := h.SendOn("swarm", h.cfg.Bus.EscalateTo, bus.KindQuestion, b.String(), nil,
+		SendOptions{NewThread: true}); err != nil {
+		h.log.Emit(event.KindError, "", "escalation failed: "+err.Error())
+	}
+}
+
 // deliveryFor is how a message reaches an agent: what the agent asked for,
 // unless the kind of message overrides it.
 func (h *Hub) deliveryFor(a *agent.Agent, kind bus.Kind) string {
@@ -604,6 +695,25 @@ func (h *Hub) deliveryFor(a *agent.Agent, kind bus.Kind) string {
 
 // SendKind delivers a classified message.
 func (h *Hub) SendKind(from, target string, kind bus.Kind, body string, files []string) ([]bus.Message, error) {
+	return h.SendOn(from, target, kind, body, files, SendOptions{})
+}
+
+// SendOptions carries what is not the message itself.
+type SendOptions struct {
+	// Final refuses anyone the right to answer. A decision that can be
+	// reopened is not a decision.
+	Final bool
+	// Thread continues an existing conversation. Zero means "the one this
+	// agent was last written to on", which is what makes replies inherit a
+	// thread without anybody tracking an identifier.
+	Thread uint64
+	// NewThread starts a fresh conversation even when the sender is in one.
+	NewThread bool
+}
+
+// SendOn delivers a message on a thread, applying whatever bounds the
+// configuration puts on a conversation.
+func (h *Hub) SendOn(from, target string, kind bus.Kind, body string, files []string, o SendOptions) ([]bus.Message, error) {
 	if !h.cfg.BusEnabled() {
 		return nil, fmt.Errorf("the bus is disabled in the configuration")
 	}
@@ -629,7 +739,16 @@ func (h *Hub) SendKind(from, target string, kind bus.Kind, body string, files []
 		return nil, errors.New(refused[0])
 	}
 
-	thread := h.bus.NewThread()
+	thread, err := h.threadFor(from, o)
+	if err != nil {
+		return nil, err
+	}
+	// Said one turn early, so the recipient can spend the last one on an
+	// answer rather than discovering the budget by being refused.
+	if max := h.cfg.Bus.MaxTurns; max > 0 && h.bus.Turns(thread) == max-1 {
+		body += fmt.Sprintf("\n\n[swarm] last turn on this thread — answer, decide, or escalate to %s.",
+			h.escalationTarget())
+	}
 	out := make([]bus.Message, 0, len(agents))
 	for _, a := range agents {
 		if a.Name() == from && !h.cfg.Bus.AllowSelfInject {
@@ -640,6 +759,7 @@ func (h *Hub) SendKind(from, target string, kind bus.Kind, body string, files []
 			From:   from,
 			To:     a.Name(),
 			Kind:   kind,
+			Final:  o.Final,
 			Body:   body,
 			Files:  files,
 		})

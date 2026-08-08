@@ -2,6 +2,7 @@ package bus
 
 import (
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -141,4 +142,66 @@ func (b *Bus) SentSince(agent string, t time.Time) int {
 		}
 	}
 	return n
+}
+
+// Thread is a conversation seen from outside: who is in it, how long it has
+// run, and whether anything closed it. A thread is the only unit on the bus
+// that can be *too long*, so it is the only one worth listing on its own.
+type Thread struct {
+	ID       uint64
+	Turns    int
+	Started  time.Time
+	Last     time.Time
+	Agents   []string
+	Subject  string
+	Final    bool
+	Escalate bool
+}
+
+// Threads summarises the conversations still in the ring, busiest first. max is
+// the turn budget the bus enforces; zero means none, and Escalate stays false.
+func (b *Bus) Threads(max int) []Thread {
+	msgs := b.Recent(0)
+	byID := map[uint64]*Thread{}
+	seen := map[uint64]map[string]bool{}
+	var order []uint64
+	for _, m := range msgs {
+		t, ok := byID[m.Thread]
+		if !ok {
+			t = &Thread{ID: m.Thread, Started: m.At, Subject: summarizeBody(m.Body)}
+			byID[m.Thread] = t
+			seen[m.Thread] = map[string]bool{}
+			order = append(order, m.Thread)
+		}
+		t.Turns++
+		t.Last = m.At
+		t.Final = m.Final
+		for _, who := range []string{m.From, m.To} {
+			if !seen[m.Thread][who] {
+				seen[m.Thread][who] = true
+				t.Agents = append(t.Agents, who)
+			}
+		}
+	}
+	out := make([]Thread, 0, len(order))
+	for _, id := range order {
+		t := byID[id]
+		t.Escalate = max > 0 && t.Turns >= max
+		out = append(out, *t)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Last.After(out[j].Last) })
+	return out
+}
+
+// summarizeBody is the first line of a message, short enough to sit in a
+// column: what the conversation is about, not what was said in it.
+func summarizeBody(body string) string {
+	s := strings.TrimSpace(body)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	if len(s) > 60 {
+		s = s[:60] + "…"
+	}
+	return s
 }

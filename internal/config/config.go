@@ -282,6 +282,19 @@ type BusConfig struct {
 	History int `yaml:"history"`
 	// AllowSelfInject lets an agent inject into its own terminal.
 	AllowSelfInject bool `yaml:"allow_self_inject"`
+
+	// MaxTurns bounds a conversation. Zero means unbounded, which is what a bus
+	// is by default and why nothing on it can end.
+	//
+	// At the last turn but one, the delivery carries a warning. At the last, the
+	// send fails — and the error text is the instruction, which is the cheapest
+	// way to get a behaviour without teaching the model anything.
+	MaxTurns int `yaml:"max_turns"`
+
+	// EscalateTo is who arbitrates when a thread runs out of turns: an agent,
+	// a group, or a role. Their answer comes back as final, so it closes the
+	// matter instead of opening another.
+	EscalateTo string `yaml:"escalate_to"`
 }
 
 // HookConfig configures the inbound webhook listener: HTTP in, bus messages
@@ -495,6 +508,9 @@ func (c *Config) normalize() error {
 	if c.Bus.Enabled == nil {
 		c.Bus.Enabled = ptr(true)
 	}
+	if c.Bus.MaxTurns < 0 {
+		return fmt.Errorf("bus: max_turns must not be negative")
+	}
 
 	if len(c.Agents) == 0 {
 		return fmt.Errorf("no agents defined")
@@ -607,6 +623,12 @@ func (c *Config) normalize() error {
 				return fmt.Errorf("agent %q pattern #%d: %w", a.Name, j+1, err)
 			}
 			p.re = re
+		}
+	}
+
+	if c.Bus.EscalateTo != "" {
+		if _, err := c.Resolve(c.Bus.EscalateTo); err != nil {
+			return fmt.Errorf("bus: escalate_to: %w", err)
 		}
 	}
 

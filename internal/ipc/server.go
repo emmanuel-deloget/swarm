@@ -239,7 +239,8 @@ func (s *Server) handle(req Request) Response {
 		return targetResponse(res, err)
 
 	case CmdSend:
-		msgs, err := h.SendKind(req.From, target(req), bus.Kind(req.Kind), req.Text, req.Files)
+		msgs, err := h.SendOn(req.From, target(req), bus.Kind(req.Kind), req.Text, req.Files,
+			hub.SendOptions{Final: req.Final, Thread: req.Thread, NewThread: req.NewThread})
 		if err != nil {
 			return errorResponse(err)
 		}
@@ -253,6 +254,9 @@ func (s *Server) handle(req Request) Response {
 			h.Resume(req.Flush)
 		}
 		return Response{OK: true, Paused: h.Paused()}
+
+	case CmdThreads:
+		return Response{OK: true, Threads: h.Bus().Threads(h.Config().Bus.MaxTurns)}
 
 	case CmdBusStats:
 		since := req.Since
