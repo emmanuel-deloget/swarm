@@ -49,6 +49,38 @@ func (r *recorder) wait(t *testing.T, n int) []string {
 	return r.snapshot()
 }
 
+// waitLog reads the trace file until it holds everything expected, or gives up.
+//
+// Waiting on the recorder is not enough: the "delivered" note is written after
+// Send returns, so a test that reads the file the moment the recorder fires can
+// beat it there. That is a race the test loses only under load, which is the
+// worst kind — it passes on a laptop and fails in CI.
+func waitLog(t *testing.T, path string, wants ...string) string {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	var got string
+	for {
+		raw, err := os.ReadFile(path)
+		if err == nil {
+			got = string(raw)
+			missing := false
+			for _, w := range wants {
+				if !strings.Contains(got, w) {
+					missing = true
+					break
+				}
+			}
+			if !missing {
+				return got
+			}
+		}
+		if time.Now().After(deadline) {
+			return got
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func newTestServer(t *testing.T, o Options) (*Server, *recorder) {
 	t.Helper()
 	rec := &recorder{}
@@ -252,12 +284,7 @@ func TestTraceRecordsEveryOutcome(t *testing.T) {
 	post(t, s.URL(), payload, [2]string{"X-Sig", sig}) // accepted
 	rec.wait(t, 1)
 
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := string(raw)
-	for _, want := range []string{
+	wants := []string{
 		"refused: missing X-Sig",
 		"refused: bad signature",
 		"accepted, no rule matched",
@@ -268,8 +295,12 @@ func TestTraceRecordsEveryOutcome(t *testing.T) {
 		// The payload must be there, on one line, ready for `swarm hook test`.
 		`"action":"opened"`,
 		"send     new-pr → @review: PR https://example.invalid/pr/42",
+		// Written after Send returns, so the file has to be waited on rather
+		// than read once.
 		"delivered: new-pr → @review",
-	} {
+	}
+	got := waitLog(t, path, wants...)
+	for _, want := range wants {
 		if !strings.Contains(got, want) {
 			t.Errorf("the log should contain %q\n--- log ---\n%s", want, got)
 		}
