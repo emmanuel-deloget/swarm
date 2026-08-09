@@ -58,6 +58,10 @@ const sidebarWidth = 24
 // commandPrompt is what the command line shows when it is not searching.
 const commandPrompt = ":"
 
+// maxKeyName is the longest binding name a run of runes could be mistaken for
+// ("backspace"), with room to spare.
+const maxKeyName = 12
+
 type model struct {
 	h      *hub.Hub
 	events <-chan event.Event
@@ -604,10 +608,34 @@ func (m *model) handleCommandKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Any other key ends the completion cycle: the candidates were for what was
 	// on the line before it changed.
 	m.completions, m.completeAt = nil, ""
+	return m, m.typeInto(msg)
+}
 
+// typeInto hands a key to the input field, one rune at a time when the field
+// would otherwise mistake the text for a key press.
+//
+// bubbles matches its bindings on tea.KeyMsg.String(), and a run of runes
+// stringifies to the runes themselves: typing u then p quickly enough that they
+// arrive together produces a message whose String() is "up", which the field
+// reads as the up arrow and swallows. The same goes for down, left, right,
+// home, end, delete and backspace — every one of them a key name you would
+// want to type after `:keys`, and ordinary words you might send to an agent.
+//
+// A single rune can never collide, so splitting settles it. Only short runs are
+// split: no binding name is longer than a few characters, and a paste arrives
+// as one long run that must not be fed in character by character.
+func (m *model) typeInto(msg tea.KeyMsg) tea.Cmd {
 	var cmd tea.Cmd
+	if msg.Type == tea.KeyRunes && len(msg.Runes) > 1 && len(msg.Runes) <= maxKeyName {
+		for _, r := range msg.Runes {
+			var c tea.Cmd
+			m.input, c = m.input.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}, Alt: msg.Alt})
+			cmd = tea.Batch(cmd, c)
+		}
+		return cmd
+	}
 	m.input, cmd = m.input.Update(msg)
-	return m, cmd
+	return cmd
 }
 
 // handleSearchKey drives reverse-i-search, in the shape readline made familiar:
@@ -674,9 +702,8 @@ func (m *model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// the search, so editing can continue on the line it found.
 	h.searching = false
 	m.input.Prompt = commandPrompt
-	var cmd tea.Cmd
-	m.input, cmd = m.input.Update(msg)
-	return m, cmd
+	m.resizeInput()
+	return m, m.typeInto(msg)
 }
 
 // fullScreenAttach suspends the UI and runs `swarm attach` for real, which

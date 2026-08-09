@@ -246,3 +246,58 @@ func TestOpeningAgainStartsFromTheNewest(t *testing.T) {
 		t.Errorf("reopening then up gave %q, want the newest", got)
 	}
 }
+
+// TestKeyNamesCanBeTyped: bubbles matches its bindings on the message's
+// String(), and a run of runes stringifies to the runes themselves — so typing
+// u then p quickly produced a message the field read as the up arrow and
+// swallowed. Every name below is one you would want after `:keys`, and an
+// ordinary word you might send to an agent.
+func TestKeyNamesCanBeTyped(t *testing.T) {
+	for _, word := range []string{
+		"up", "down", "left", "right", "home", "end", "delete", "backspace",
+		"tab", "esc", "enter", "space", "pgup", "f1", "hello",
+	} {
+		m := newTestModel(t)
+		m.openCommand("keys dev-1 ")
+		press(m, runes(word))
+		if got, want := m.input.Value(), "keys dev-1 "+word; got != want {
+			t.Errorf("typing %q left %q", word, got)
+		}
+	}
+}
+
+// TestSeveralKeysInOneLine is what the K key is for.
+func TestSeveralKeysInOneLine(t *testing.T) {
+	m := newTestModel(t)
+	m.openCommand("keys dev-1 ")
+	for _, part := range []string{"up", " ", "up", " ", "down"} {
+		press(m, runes(part))
+	}
+	if got, want := m.input.Value(), "keys dev-1 up up down"; got != want {
+		t.Errorf("the line reads %q, want %q", got, want)
+	}
+}
+
+// TestTheRealArrowStillWalksTheHistory: splitting runes must not blunt the key
+// itself.
+func TestTheRealArrowStillWalksTheHistory(t *testing.T) {
+	m := newTestModel(t)
+	m.hist.add("keys dev-1 esc")
+	m.openCommand("keys dev-1 ")
+	press(m, tea.KeyMsg{Type: tea.KeyUp})
+	if got := m.input.Value(); got != "keys dev-1 esc" {
+		t.Errorf("the up arrow gave %q", got)
+	}
+}
+
+// TestAPasteIsNotSplit: a long run cannot collide with a binding, and feeding
+// it in one rune at a time would be quadratic.
+func TestAPasteIsNotSplit(t *testing.T) {
+	m := newTestModel(t)
+	m.openCommand("send dev-1 ")
+	long := strings.Repeat("some pasted text ", 20)
+	press(m, runes(long))
+	if got, want := m.input.Value(), "send dev-1 "+long; got != want {
+		t.Errorf("a paste arrived as %q", got)
+	}
+}
