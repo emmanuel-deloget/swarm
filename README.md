@@ -37,8 +37,10 @@ agent's terminal on the right, and the event log underneath](assets/tui.png)
   `swarm inject`, or from a browser. Send key presses (`esc`, `ctrl+c`, arrows).
   Stage a file or an image and inject its path.
 - **A message bus.** `swarm send dev-3 "..."` reaches an agent whether you type
-  it or another agent does. Push mode types it into the recipient's prompt; pull
-  mode leaves it for `swarm inbox`.
+  it or another agent does. Three modes: `push` types it into the recipient's
+  prompt, `pull` leaves it for `swarm inbox`, `defer` holds it until the agent
+  falls quiet. What a fleet says to itself can also be bounded — kinds,
+  `can_send`, a turn budget per conversation, and a pause switch.
 - **A view of the talking.** `swarm bus tail` and `swarm bus stats` show what the
   fleet says to itself — busiest pairs, threads, who is sending and who is only
   receiving — and the TUI marks an agent putting a lot on the bus. Agents that
@@ -79,7 +81,7 @@ The short version:
 ```yaml
 session: default          # picks the control socket; two swarms can coexist
 workdir: .                # default working directory for agents
-shared: .swarm/shared     # where injected files land, readable by every agent
+state_dir: .swarm         # everything swarm writes; `swarm init` gitignores it
 
 defaults:                 # inherited by every agent
   cols: 200               # geometry before anyone looks at the agent
@@ -87,7 +89,8 @@ defaults:                 # inherited by every agent
   follow_window: true     # resize the displayed agent to its pane
   idle_after: 3s          # quiet for this long → "idle"
   delivery: push          # bus messages are typed into the prompt
-  submit_delay: 150ms     # pause between pasting and pressing Enter
+  submit_delay: 120ms     # pause between pasting and pressing Enter
+  workspace: shared       # everyone works in workdir; see "Where an agent works"
 
 web:
   enabled: true
@@ -112,10 +115,13 @@ agents:
   - name: dev-2
     role: dev
     command: [codex]
+    workspace: clone      # its own copy of the repository
   - name: review-1
     role: review
     command: [codex]
     delivery: pull        # do not interrupt; it will run `swarm inbox`
+    message: |            # its standing brief, typed once when it starts
+      You review pull requests. Start with `swarm inbox`.
 ```
 
 Add as many agents as you have work for; nothing in swarm assumes a number.
@@ -315,6 +321,47 @@ answers the emulator gives to the agent's own queries. It settles "did swarm
 type that, or did the agent print it itself?" in one grep. Off by default, and
 written 0600: it holds what you typed.
 
+## Where an agent works
+
+Six agents on one checkout take turns at the index rather than working at once.
+`workspace:` says what swarm does about that, per agent:
+
+| mode | |
+|---|---|
+| `shared` | everyone works in `workdir`. The default, and right for agents that only read. |
+| `clone` | its own clone under `<state_dir>/workspaces/<agent>`, made once and kept between runs. |
+| `none` | swarm provisions nothing and reads the directory the process is actually in — for a worktree you manage yourself. |
+
+A clone rather than a worktree for a hard reason: two worktrees cannot have the
+same branch checked out, and several agents sitting on `main` between tasks is
+the normal case. `origin`, `user.*` and `gpg.*` are carried over, or an agent
+commits unsigned under the wrong name. A directory that is already a checkout is
+left alone.
+
+**No fetch, no rebase, no merge.** swarm reports where each agent works and how
+far its base has drifted — `main* 3↑ 12↓` in `swarm ls` and in the pane header —
+and never acts on it. Telling agents to catch up is a webhook rule or a message,
+not swarm running git behind their backs.
+
+The rest of what a working copy needs is not swarm's business either, so it
+hands it to you:
+
+```yaml
+defaults:
+  on_start: ["./scripts/prepare-agent.sh"]   # before the process is launched
+  on_exit:  ["./scripts/cleanup-agent.sh"]   # after it has gone
+
+env:                        # top level, or per agent
+  PORT: "{alloc_port}"      # a free port, one per agent, stable across restarts
+```
+
+Each is an argv run in the agent's working directory with the agent's
+environment, so a script needs to know nothing about swarm. A failing `on_start`
+stops the agent instead of launching it into a half-prepared directory, and a
+stop waits for `on_exit` within the grace period. `{alloc_port}` exists because
+two dev servers both want 3000, and no amount of talking to each other settles
+that.
+
 ## Agents talking to each other
 
 Every agent gets `swarm` on its `PATH`, already pointed at the running session:
@@ -335,6 +382,11 @@ swarm send review-2 "please review PR 42"
 swarm send @dev -file report.md "findings"
 swarm inbox -wait 30s                     # block until something arrives
 ```
+
+`message:` is what an agent is told at launch — its standing brief, written
+inline as a block scalar or kept in `message_file:`. It is typed when the agent
+first falls quiet rather than when its process starts: a CLI still drawing its
+banner would swallow it.
 
 `swarm run` writes `.swarm/AGENTS.md` describing the fleet and these commands —
 point your agents' instructions at it and they can coordinate without you. It is
@@ -514,7 +566,9 @@ with a pointer file when the project path is too long for a Unix socket.
 | `internal/vterm` | pty + terminal emulator, injection primitives |
 | `internal/agent` | one supervised agent: lifecycle, state, patterns |
 | `internal/hub` | the fleet, the environment agents get, routing |
-| `internal/bus` | mailboxes |
+| `internal/bus` | mailboxes, threads, what the fleet said |
+| `internal/workspace` | provisions an agent's clone, and reads where it stands |
+| `internal/guide` | the AGENTS.md a fleet generates for itself |
 | `internal/hook` | inbound webhooks: rules, signatures, the delivery log |
 | `internal/ipc` | the Unix socket protocol |
 | `internal/ui` | the TUI |

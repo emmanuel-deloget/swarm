@@ -23,9 +23,15 @@ agents:
   # - name: review-1
   #   role: review
   #   command: [codex]
-  #   # Reviewers are often busy reading. Pull leaves messages in a mailbox
-  #   # for "swarm inbox" instead of typing them into a prompt mid-thought.
-  #   delivery: pull
+  #   # Reviewers are often busy reading. Defer holds a message until the agent
+  #   # falls quiet, so a conversation follows work without cutting into it;
+  #   # pull leaves it in a mailbox for "swarm inbox" and interrupts nothing.
+  #   delivery: defer
+  #   # Its own clone of the repository, made once and kept between runs.
+  #   workspace: clone
+  #   # What it is told at launch, typed once when it first falls quiet.
+  #   message: |
+  #     You review pull requests. Start with "swarm inbox".
 
 # Inherited by every agent that does not override them. These are the built-in
 # values, spelled out so you can see what you would be changing.
@@ -40,8 +46,25 @@ agents:
 #   restart_on_exit: false
 #   submit_delay: 120ms   # pause between pasting text and pressing Enter
 #   bracketed_paste: true # a multi-line prompt arrives as one message
-#   delivery: push        # bus messages are typed into the prompt
+#   delivery: push        # push, pull, or defer
 #   message_template: "[swarm] message from {from}: {body}"
+#   workspace: shared     # shared, clone, or none
+#   # Run before the process starts and after it has gone, in the agent's
+#   # working directory with its environment: install dependencies, copy a
+#   # .env, take down what was started. A failing on_start stops the agent
+#   # rather than launching it into a half-prepared directory.
+#   on_start: ["./scripts/prepare-agent.sh"]
+#   on_exit: ["./scripts/cleanup-agent.sh"]
+#   # The only agents this one may write to. Unset means everyone.
+#   can_send: ["@review", triage-1]
+
+# Added to every agent's environment; a per-agent "env:" overrides it.
+# {alloc_port} in any value becomes a port nobody is listening on, picked once
+# per agent and kept across restarts — two dev servers both want 3000, and no
+# amount of talking to each other settles that.
+#
+# env:
+#   PORT: "{alloc_port}"
 
 # Named sets of agents. A target is an agent name, @group, @role, "all", or a
 # comma-separated list of those.
@@ -122,3 +145,26 @@ agents:
 #   enabled: true
 #   history: 200          # messages kept per mailbox
 #   allow_self_inject: false
+#   # A thread is one conversation. Past this many messages the bus refuses the
+#   # next one, and the refusal tells the agent to decide or escalate — because
+#   # an agent is the only thing that reads it. 0 means no bound.
+#   max_turns: 6
+#   escalate_to: triage-1 # arbitrates a thread that ran out of turns
+
+# Overrides every agent's delivery for one kind of message: the fleet can defer
+# while "somebody is stuck" still gets through. Kinds are set with
+# "swarm send -kind": question, answer, fyi, request, decision, blocked.
+#
+# delivery_by_kind:
+#   blocked: push
+#   fyi: pull
+
+# Everything swarm writes: the control socket, the logs, the CLI shim, the
+# staged files, and the per-agent clones. "swarm init" offers to gitignore it.
+#
+# state_dir: .swarm
+
+# Your own template for the AGENTS.md the fleet generates for itself. It gets
+# the same data the built-in one does; see docs/configuration.md.
+#
+# agents_template: agents.tmpl
