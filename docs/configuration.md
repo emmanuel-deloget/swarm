@@ -185,7 +185,14 @@ depends on where the agent happens to be.
 
 swarm also sets `TERM=xterm-256color` and `COLORTERM=truecolor`, because the
 emulator does support both and agent CLIs lay out far better when they can
-assume it, plus `LINES` and `COLUMNS` for the agent's geometry.
+assume it.
+
+It deliberately does **not** set `LINES` and `COLUMNS`, and removes any it
+inherited. An agent is resized to the pane showing it, and a running process's
+environment cannot be changed, so those numbers could only ever be the geometry
+at launch — wrong from the first relayout onwards. They are not harmless:
+Python's `shutil.get_terminal_size`, which Textual and Rich are built on, prefers
+them to asking the terminal. A real terminal does not export them either.
 
 There is one state directory per config file, shared by every agent — a
 per-agent `workdir` changes where the process runs, not which fleet it belongs

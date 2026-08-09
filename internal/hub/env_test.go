@@ -73,3 +73,27 @@ func TestRootIsWhereTheConfigIs(t *testing.T) {
 		}
 	}
 }
+
+// TestNoLinesOrColumns: an agent is resized to the pane showing it, and nobody
+// can change a running process's environment — so LINES and COLUMNS could only
+// ever be the geometry at launch, wrong from the first relayout onwards.
+//
+// Python's shutil.get_terminal_size, which Textual and Rich are built on,
+// prefers them to asking the terminal. Mistral Vibe kept drawing for the 40
+// rows it was started with on a 33-row pty, losing the top of every dialog.
+func TestNoLinesOrColumns(t *testing.T) {
+	t.Setenv("LINES", "40")
+	t.Setenv("COLUMNS", "160")
+
+	h := fleet(t, oneAgent)
+	a, err := h.Agent("alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kv := range h.agentEnv(a.Config(), "") {
+		k, v, _ := strings.Cut(kv, "=")
+		if k == "LINES" || k == "COLUMNS" {
+			t.Errorf("%s=%s reaches the agent; it would be a stale promise about the geometry", k, v)
+		}
+	}
+}

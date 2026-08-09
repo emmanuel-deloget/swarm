@@ -196,8 +196,20 @@ func (h *Hub) agentEnv(ac *config.AgentConfig, shimDir string) []string {
 	// and our emulator does support 256 colours and truecolor.
 	merged["TERM"] = "xterm-256color"
 	merged["COLORTERM"] = "truecolor"
-	merged["LINES"] = fmt.Sprint(ac.Rows)
-	merged["COLUMNS"] = fmt.Sprint(ac.Cols)
+	// LINES and COLUMNS are deliberately not set, and any inherited pair is
+	// removed. They are a promise swarm cannot keep: an agent is resized to the
+	// pane showing it, and no one can change a running process's environment,
+	// so the numbers would be a snapshot of the geometry at launch — wrong from
+	// the first relayout onwards.
+	//
+	// They are not harmless. Python's shutil.get_terminal_size, which Textual
+	// and Rich are built on, prefers them to asking the terminal, so an agent
+	// written with them draws for a screen it no longer has: Mistral Vibe kept
+	// addressing row 40 on a 33-row pty and lost the top of every dialog. A
+	// real terminal does not export them either — bash updates them, and keeps
+	// them to itself.
+	delete(merged, "LINES")
+	delete(merged, "COLUMNS")
 
 	for k, v := range h.cfg.Env {
 		merged[k] = v
