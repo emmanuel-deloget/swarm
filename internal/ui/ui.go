@@ -1083,10 +1083,17 @@ func (m *model) statusLine() string {
 	if m.mode == modeCommand {
 		return m.input.View()
 	}
-	if m.prefs.dialogue {
+	// Attached comes first: the keyboard belongs to the agent then, whatever
+	// the lock says, and a bar claiming otherwise would be worse than none.
+	if m.prefs.dialogue && m.mode != modeAttached {
 		// The lock is invisible otherwise, and an invisible mode is how the
 		// next surprise happens.
-		lock := styAttn.Render("⌨ DIALOGUE") +
+		//
+		// ↵ still attaches, and the arrows still select: they are not text, so
+		// the lock never sees them. Saying so costs a few columns on a line
+		// that disappears the moment you type anything.
+		lock := styKey.Render("↵") + " attach" + styMuted.Render(" · ") +
+			styAttn.Render("⌨ DIALOGUE") +
 			styMuted.Render(" — typing goes to "+m.currentName()+" · ") +
 			styKey.Render("esc") + styMuted.Render(" for a shortcut")
 		if m.escNext {

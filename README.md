@@ -205,7 +205,9 @@ key — you just type, no `i` first. `esc` reaches a shortcut for one key, the w
 a prefix does; `esc esc` leaves the lock for good, and `d` brings it back.
 
 Whether the lock is on is remembered between runs, so a fleet comes back the way
-you left it. With it off, the status bar carries `d dialogue` — the way back in.
+you left it. Each bar names the door to the other: with the lock off it carries
+`d dialogue`, with it on `↵ attach`, since attaching goes on working — `↵` is
+not text, so the lock never sees it.
 
 It matters because eighteen letters are shortcuts otherwise, three of them
 acting on an agent's life: typing *merci pour la relecture* at a fleet would

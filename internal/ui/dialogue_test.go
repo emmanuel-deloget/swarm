@@ -159,3 +159,47 @@ func TestTheBarOffersTheWayBackIn(t *testing.T) {
 		t.Errorf("the shortcut bar never mentions dialogue: %q", bar)
 	}
 }
+
+// TestTheLockStillOffersAttach: ↵ is not text, so the lock never sees it and
+// attaching goes on working — but a way in that nothing points at is a way in
+// nobody takes.
+func TestTheLockStillOffersAttach(t *testing.T) {
+	m := newTestModel(t)
+	m.prefs.dialogue = true
+
+	bar := m.statusLine()
+	if !strings.Contains(bar, "attach") {
+		t.Errorf("the dialogue bar never mentions attaching: %q", bar)
+	}
+	if !strings.Contains(bar, "DIALOGUE") {
+		t.Errorf("the dialogue bar stopped saying which mode it is: %q", bar)
+	}
+
+	// And ↵ really does reach the shortcut. The agents of a test model are not
+	// running, so attaching refuses — and that refusal is the proof: had the
+	// lock swallowed the key, there would be neither a mode change nor a word
+	// about it.
+	normal(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.mode == modeCommand {
+		t.Fatal("↵ under the lock opened the dialogue line")
+	}
+	if m.status == "" {
+		t.Error("↵ under the lock reached nothing at all")
+	}
+}
+
+// TestAttachedWinsOverTheLock: once attached the keyboard belongs to the agent,
+// whatever the lock says, and a bar claiming otherwise is worse than none.
+func TestAttachedWinsOverTheLock(t *testing.T) {
+	m := newTestModel(t)
+	m.prefs.dialogue = true
+	m.mode = modeAttached
+
+	bar := m.statusLine()
+	if strings.Contains(bar, "DIALOGUE") {
+		t.Errorf("the bar still claims dialogue while attached: %q", bar)
+	}
+	if !strings.Contains(bar, "ATTACHED") {
+		t.Errorf("the bar does not say it is attached: %q", bar)
+	}
+}
