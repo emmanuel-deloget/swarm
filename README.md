@@ -333,6 +333,13 @@ answers the emulator gives to the agent's own queries. It settles "did swarm
 type that, or did the agent print it itself?" in one grep. Off by default, and
 written 0600: it holds what you typed.
 
+Leaving an attach puts the terminal back the way it was found: alternate screen,
+cursor, scrolling region, and every mode the agent may have switched on —
+**mouse reporting above all**. An agent is never told the connection ended, so
+it never turns those off itself, and a terminal left reporting mouse events
+stops selecting text on its own. `M` in the TUI cannot help there: swarm did not
+turn it on, so it has nothing to turn off.
+
 ## Where an agent works
 
 Six agents on one checkout take turns at the index rather than working at once.

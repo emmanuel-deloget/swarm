@@ -83,6 +83,16 @@ func (s *statusBar) draw() {
 	_, _ = os.Stdout.WriteString(b.String())
 }
 
+// leaveAgentModes puts back everything an agent may have switched on in this
+// terminal: the alternate screen, the cursor, the scrolling region, attributes,
+// then mouse reporting in each of its flavours (1000 clicks, 1002 cell motion,
+// 1003 any motion, 1005/1006/1015 the encodings), bracketed paste and focus
+// events. Resetting a mode that was never set is harmless, which is why the
+// list is exhaustive rather than clever.
+const leaveAgentModes = "\x1b[?1049l\x1b[?25h\x1b[r\x1b[0m" +
+	"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1015l" +
+	"\x1b[?2004l\x1b[?1004l\r\n"
+
 // clear removes the bar and gives the whole window back.
 func (s *statusBar) clear() {
 	s.mu.Lock()
@@ -163,9 +173,14 @@ func cmdAttach(args []string) error {
 		restoreOnce.Do(func() {
 			bar.clear()
 			_ = term.Restore(stdin, oldState)
-			// Leave the local terminal in a sane state whatever the agent did:
-			// no alternate screen, visible cursor, no scrolling region.
-			fmt.Print("\x1b[?1049l\x1b[?25h\x1b[r\x1b[0m\r\n")
+			// Leave the local terminal in a sane state whatever the agent did.
+			// An attach hands the agent's raw output straight to this terminal,
+			// so every mode it turned on is on here too — and it has no idea
+			// the connection is ending, so nobody turns them off. Mouse
+			// reporting is the one that hurts: the terminal stops selecting
+			// text of its own accord, and no key in swarm can undo it, because
+			// swarm did not do it.
+			fmt.Print(leaveAgentModes)
 		})
 	}
 	defer restore()
