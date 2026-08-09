@@ -603,9 +603,9 @@ with a pointer file when the project path is too long for a Unix socket.
 
 - Unix only: it uses ptys, Unix sockets and process groups.
 - Attaching from the TUI (`↵`) reconstructs key bytes from parsed events, which
-  covers text, control keys and arrows but not exotic sequences or mouse input.
-  `A` runs the real `swarm attach` instead, which passes bytes through
-  unchanged.
+  covers text, control keys, arrows and arrows held with ctrl/shift/alt, but not
+  exotic sequences or mouse input. `A` runs the real `swarm attach` instead,
+  which passes bytes through unchanged.
 - `reply:` in a pattern answers a prompt on your behalf. Use it only for prompts
   you would always answer the same way.
 - The webhook listener holds one secret, so it trusts one sender: giving a

@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -40,17 +42,17 @@ func keyBytes(msg tea.KeyMsg) []byte {
 	case tea.KeyEsc:
 		return []byte("\x1b")
 	case tea.KeyUp:
-		return []byte("\x1b[A")
+		return csiModified('A', altBit(msg))
 	case tea.KeyDown:
-		return []byte("\x1b[B")
+		return csiModified('B', altBit(msg))
 	case tea.KeyRight:
-		return []byte("\x1b[C")
+		return csiModified('C', altBit(msg))
 	case tea.KeyLeft:
-		return []byte("\x1b[D")
+		return csiModified('D', altBit(msg))
 	case tea.KeyHome:
-		return []byte("\x1b[H")
+		return csiModified('H', altBit(msg))
 	case tea.KeyEnd:
-		return []byte("\x1b[F")
+		return csiModified('F', altBit(msg))
 	case tea.KeyPgUp:
 		return []byte("\x1b[5~")
 	case tea.KeyPgDown:
@@ -81,11 +83,84 @@ func keyBytes(msg tea.KeyMsg) []byte {
 		return []byte("\x1b[24~")
 	}
 
+	// Arrows and friends held with a modifier. bubbletea names each combination
+	// as its own key, and without these the attached mode dropped them: a
+	// ctrl+left that moves a word in the agent's editor did nothing at all.
+	if k, ok := modified[msg.Type]; ok {
+		return csiModified(k.final, k.mods|altBit(msg))
+	}
+
+	if k, ok := pagedModified[msg.Type]; ok {
+		return fmt.Appendf(nil, "\x1b[%d;%d~", k.num, (k.mods|altBit(msg))+1)
+	}
+
 	// Control combinations: bubbletea reports them as named keys.
 	if b, ok := ctrlBytes[msg.Type]; ok {
 		return []byte{b}
 	}
 	return nil
+}
+
+// The modifier bits xterm encodes in a CSI parameter. The parameter sent is
+// their sum plus one, so a plain key is 1 and ctrl alone is 5.
+const (
+	modShift = 1
+	modAlt   = 2
+	modCtrl  = 4
+)
+
+func altBit(msg tea.KeyMsg) int {
+	if msg.Alt {
+		return modAlt
+	}
+	return 0
+}
+
+// modified is every arrow-like key bubbletea names with a modifier, mapped to
+// the final byte of its escape sequence and the modifiers held.
+//
+// pgup and pgdn are not here: they take the CSI 5~ / CSI 6~ form, whose
+// modifier goes in a second parameter rather than after a leading 1.
+var modified = map[tea.KeyType]struct {
+	final byte
+	mods  int
+}{
+	tea.KeyShiftUp:        {'A', modShift},
+	tea.KeyShiftDown:      {'B', modShift},
+	tea.KeyShiftRight:     {'C', modShift},
+	tea.KeyShiftLeft:      {'D', modShift},
+	tea.KeyShiftHome:      {'H', modShift},
+	tea.KeyShiftEnd:       {'F', modShift},
+	tea.KeyCtrlUp:         {'A', modCtrl},
+	tea.KeyCtrlDown:       {'B', modCtrl},
+	tea.KeyCtrlRight:      {'C', modCtrl},
+	tea.KeyCtrlLeft:       {'D', modCtrl},
+	tea.KeyCtrlHome:       {'H', modCtrl},
+	tea.KeyCtrlEnd:        {'F', modCtrl},
+	tea.KeyCtrlShiftUp:    {'A', modCtrl | modShift},
+	tea.KeyCtrlShiftDown:  {'B', modCtrl | modShift},
+	tea.KeyCtrlShiftRight: {'C', modCtrl | modShift},
+	tea.KeyCtrlShiftLeft:  {'D', modCtrl | modShift},
+	tea.KeyCtrlShiftHome:  {'H', modCtrl | modShift},
+	tea.KeyCtrlShiftEnd:   {'F', modCtrl | modShift},
+}
+
+// pagedModified is the same for the keys that end in a tilde.
+var pagedModified = map[tea.KeyType]struct {
+	num  int
+	mods int
+}{
+	tea.KeyCtrlPgUp:   {5, modCtrl},
+	tea.KeyCtrlPgDown: {6, modCtrl},
+}
+
+// csiModified renders CSI 1 ; <mods+1> <final>, which is how xterm and every
+// terminal that follows it reports a held modifier.
+func csiModified(final byte, mods int) []byte {
+	if mods == 0 {
+		return []byte{0x1b, '[', final}
+	}
+	return fmt.Appendf(nil, "\x1b[1;%d%c", mods+1, final)
 }
 
 // ctrlBytes covers every control key bubbletea names, including the ones that
