@@ -140,7 +140,10 @@ command is on your PATH and already knows who you are:
 | ` + "`$SWARM_AGENT`" + ` | your name |
 | ` + "`$SWARM_ROLE`" + ` | your role |
 | ` + "`$SWARM_PEERS`" + ` | the other agents, comma separated |
+| ` + "`$SWARM_ROOT`" + ` | the project this fleet was started for |
 | ` + "`$SWARM_SHARED`" + ` | a directory every agent can read and write |
+| ` + "`$SWARM_SESSION`" + ` | the session name |
+| ` + "`$SWARM_STATE_DIR`" + ` | where swarm keeps its state |
 
 ## Commands
 

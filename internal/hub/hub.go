@@ -217,6 +217,10 @@ func (h *Hub) agentEnv(ac *config.AgentConfig, shimDir string) []string {
 	}
 
 	merged["SWARM_AGENT"] = ac.Name
+	// The directory holding swarm.yaml, which is what relative paths in that
+	// file resolve against. An agent free to move — or one given its own clone
+	// — otherwise has no way back to the project the fleet was started for.
+	merged["SWARM_ROOT"] = h.cfg.Dir()
 	merged["SWARM_ROLE"] = ac.Role
 	merged["SWARM_SESSION"] = h.cfg.Session
 	merged["SWARM_SOCKET"] = h.SocketPath()

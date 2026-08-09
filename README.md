@@ -371,8 +371,14 @@ Every agent gets `swarm` on its `PATH`, already pointed at the running session:
 | `$SWARM_AGENT` | its own name |
 | `$SWARM_ROLE` | its role |
 | `$SWARM_PEERS` | the other agents |
+| `$SWARM_ROOT` | the directory holding the config file |
 | `$SWARM_SHARED` | a directory every agent can read and write |
+| `$SWARM_SESSION` | the session name |
 | `$SWARM_SOCKET` | the control socket (used automatically) |
+| `$SWARM_STATE_DIR` | where swarm keeps its state |
+
+`$SWARM_ROOT` matters to an agent working in its own clone: it is the way back
+to the project the fleet was started for. The rest of the paths are absolute.
 
 So an agent can do this on its own:
 

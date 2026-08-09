@@ -161,13 +161,24 @@ Agents also receive, whatever their `workdir`:
 | variable | |
 |---|---|
 | `$SWARM_AGENT` | its own name |
-| `$SWARM_ROLE` | its role |
+| `$SWARM_ROLE` | its role, empty when it has none |
 | `$SWARM_PEERS` | the other agents, comma separated |
-| `$SWARM_SHARED` | the shared directory |
+| `$SWARM_ROOT` | the directory holding the config file — the project the fleet was started for |
+| `$SWARM_SHARED` | the shared directory, absolute |
 | `$SWARM_SESSION` | the session name |
 | `$SWARM_SOCKET` | the control socket, used automatically by the `swarm` command |
-| `$SWARM_STATE_DIR` | `.swarm` |
-| `PATH` | prefixed with `.swarm/bin`, which holds a `swarm` pointing at this session |
+| `$SWARM_STATE_DIR` | the state directory, absolute |
+| `PATH` | prefixed with `<state_dir>/bin`, which holds a `swarm` pointing at this session |
+
+`$SWARM_ROOT` is the one an agent cannot work out for itself: relative paths in
+the config resolve against it, and an agent with `workspace: clone` runs in its
+own checkout somewhere under `<state_dir>/workspaces`, with no way back to the
+project otherwise. Every other path swarm hands out is absolute, so none of them
+depends on where the agent happens to be.
+
+swarm also sets `TERM=xterm-256color` and `COLORTERM=truecolor`, because the
+emulator does support both and agent CLIs lay out far better when they can
+assume it, plus `LINES` and `COLUMNS` for the agent's geometry.
 
 There is one state directory per config file, shared by every agent — a
 per-agent `workdir` changes where the process runs, not which fleet it belongs
