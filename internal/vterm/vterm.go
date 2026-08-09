@@ -106,6 +106,13 @@ type Terminal struct {
 	exited   atomic.Bool
 	status   atomic.Pointer[ExitStatus]
 	altOn    atomic.Bool
+	// syncOn is DECSET 2026: the child is drawing a frame. A resize waits for
+	// the end of it, and pending holds what it will become.
+	syncOn      atomic.Bool
+	pendingMu   sync.Mutex
+	pendingCols int
+	pendingRows int
+	pendingAt   time.Time
 
 	curVisible atomic.Bool
 	bracketed  atomic.Bool
@@ -250,6 +257,8 @@ func (t *Terminal) consume(chunk []byte) {
 		t.sendFocusLocked()
 	}
 	t.mu.Unlock()
+
+	t.applyPendingResize()
 
 	t.bytesOut.Add(uint64(len(chunk)))
 	t.lastOut.Store(time.Now().UnixNano())
@@ -409,10 +418,53 @@ func (t *Terminal) setSize(cols, rows int) error {
 // ErrExited is returned when writing to a terminal whose child is gone.
 var ErrExited = errors.New("vterm: process has exited")
 
+// maxResizeHold bounds how long a resize waits for a frame to end. A child that
+// leaves DECSET 2026 on — because it crashed mid-frame, or never turns it off —
+// must not be able to freeze the geometry for good.
+const maxResizeHold = 250 * time.Millisecond
+
 // Resize changes the pty window size and the emulator geometry.
+//
+// A frame is computed against a geometry. A child brackets its frame with
+// DECSET 2026 and then writes absolute positions worked out from the height it
+// believes in; resizing the emulator halfway through leaves the rest of that
+// frame addressing a screen that no longer exists, and what it meant to put on
+// line 34 of 50 lands wherever line 27 of 27 clamps it — in the prompt, as far
+// as anyone watching is concerned. So a resize arriving mid-frame waits.
 func (t *Terminal) Resize(cols, rows int) error {
 	if cols <= 0 || rows <= 0 {
 		return fmt.Errorf("vterm: invalid size %dx%d", cols, rows)
+	}
+	// Nothing to do, and nothing to hold: the pane, an attach and the web page
+	// all resize the same agent without knowing what the others asked for, so
+	// the same geometry arrives repeatedly. The kernel would not send SIGWINCH
+	// for it either — this just stops the emulator being reworked for nothing.
+	if c, r := t.Size(); c == cols && r == rows {
+		return nil
+	}
+	if t.syncOn.Load() {
+		t.pendingMu.Lock()
+		t.pendingCols, t.pendingRows = cols, rows
+		t.pendingAt = time.Now()
+		t.pendingMu.Unlock()
+		// The end of the frame is what normally releases it, on the next chunk
+		// read. This timer is for the child that says nothing more: a held
+		// resize must still land.
+		time.AfterFunc(maxResizeHold, t.applyPendingResize)
+		return nil
+	}
+	return t.resizeNow(cols, rows)
+}
+
+// resizeNow applies a geometry, emulator first and then the pty — the child is
+// told last, so nothing it has already written is read against a screen it did
+// not have.
+func (t *Terminal) resizeNow(cols, rows int) error {
+	// Recorded like anything else swarm sends the child, because that is what a
+	// resize is: SIGWINCH, and a full redraw computed against a new geometry.
+	// Reading an input log without it leaves the redraws unexplained.
+	if t.opts.OnInput != nil {
+		t.opts.OnInput("resize", []byte(fmt.Sprintf("%dx%d", cols, rows)))
 	}
 	t.mu.Lock()
 	// Shrinking the height: the emulator's buffer truncates from the bottom,
@@ -650,4 +702,23 @@ func flatten(chunks [][]byte) []byte {
 		out = append(out, c...)
 	}
 	return out
+}
+
+// applyPendingResize lets a held resize through once the frame it would have
+// cut into is over — or once it has waited long enough that a child which never
+// clears DECSET 2026 stops being able to hold the geometry hostage.
+func (t *Terminal) applyPendingResize() {
+	t.pendingMu.Lock()
+	cols, rows := t.pendingCols, t.pendingRows
+	if cols == 0 || (t.syncOn.Load() && time.Since(t.pendingAt) < maxResizeHold) {
+		t.pendingMu.Unlock()
+		return
+	}
+	t.pendingCols, t.pendingRows = 0, 0
+	t.pendingMu.Unlock()
+
+	if c, r := t.Size(); c == cols && r == rows {
+		return
+	}
+	_ = t.resizeNow(cols, rows)
 }

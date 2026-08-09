@@ -17,6 +17,16 @@ const modeBracketedPaste = 2004
 // stay in its unfocused rendering forever.
 const modeFocusEvent = 1004
 
+// modeSyncUpdate is DECSET 2026: the application is drawing a frame and asks
+// that nothing be shown until it is done. Claude Code, and every other TUI that
+// redraws a whole screen, brackets each frame with it.
+//
+// swarm watches it for a different reason than displaying: a frame is computed
+// against a geometry, and resizing the emulator halfway through applies the
+// second half of that computation to a screen that is no longer the one it was
+// written for. See Terminal.Resize.
+const modeSyncUpdate = 2026
+
 // carryMax is how many bytes of a possibly-truncated sequence we keep between
 // reads: ESC [ ? then a few parameters is well under this.
 const carryMax = 32
@@ -63,6 +73,9 @@ func (t *Terminal) scanModes(chunk []byte) []byte {
 		if final == 'h' || final == 'l' {
 			if hasParam(buf[start:j], modeBracketedPaste) {
 				t.bracketed.Store(final == 'h')
+			}
+			if hasParam(buf[start:j], modeSyncUpdate) {
+				t.syncOn.Store(final == 'h')
 			}
 			if final == 'h' && hasParam(buf[start:j], modeFocusEvent) {
 				// Answer once the emulator has seen the sequence too,
