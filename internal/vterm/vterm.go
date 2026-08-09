@@ -106,6 +106,11 @@ type Terminal struct {
 	exited   atomic.Bool
 	status   atomic.Pointer[ExitStatus]
 	altOn    atomic.Bool
+	// strOpen, strBuf and strEsc carry a string sequence across chunk
+	// boundaries while oscSafe decides whether the parser may have it.
+	strOpen bool
+	strEsc  bool
+	strBuf  []byte
 	// syncOn is DECSET 2026: the child is drawing a frame. A resize waits for
 	// the end of it, and pending holds what it will become.
 	syncOn      atomic.Bool
@@ -246,8 +251,13 @@ func (t *Terminal) readLoop() {
 func (t *Terminal) consume(chunk []byte) {
 	t.scanModes(chunk)
 
+	// The emulator gets what its parser can handle; a subscriber is a real
+	// terminal on the other end, which has no such trouble and should see the
+	// output exactly as the agent wrote it.
+	safe := t.oscSafe(chunk)
+
 	t.mu.Lock()
-	_, _ = t.emu.Write(chunk)
+	_, _ = t.emu.Write(safe)
 	for _, s := range t.subs {
 		s.push(chunk)
 	}
