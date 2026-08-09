@@ -162,7 +162,7 @@ agents:
 
 	waitFor(t, func() bool { return h.Bus().Pending("chief") > 0 })
 
-	msgs := h.Bus().Recent(0)
+	msgs := h.Bus().All()
 	last := msgs[len(msgs)-1]
 	if last.To != "chief" {
 		t.Fatalf("the escalation went to %q", last.To)

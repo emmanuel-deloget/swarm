@@ -626,7 +626,7 @@ func cmdEvents(args []string) error {
 	fs := newFlagSet("events")
 	cf.register(fs)
 	follow := fs.Bool("f", false, "keep streaming new events")
-	lines := fs.Int("n", 50, "how many past events to show")
+	lines := fs.Int("n", 50, "how many past events to show; 0 for none, -1 for all")
 	_ = parseArgs(fs, args, -1)
 
 	c, err := cf.dial()

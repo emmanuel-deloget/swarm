@@ -243,6 +243,7 @@ swarm inbox dev-1                   # read a mailbox
 swarm stage diff.patch              # copy a file where every agent can read it
 
 swarm bus tail -f                   # the messages agents send each other
+swarm bus tail -n 0 -f              # ... only what happens from now on
 swarm bus stats -since 30m          # how much of the fleet's time went into talking
 swarm bus threads                   # the open conversations
 swarm bus pause "shipping"          # hold every delivery; the agents keep working

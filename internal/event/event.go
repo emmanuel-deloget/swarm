@@ -96,10 +96,13 @@ func (l *Log) Emit(kind Kind, agent, text string) {
 }
 
 // History returns the last n events, oldest first. n <= 0 means everything.
+// History returns the last n events, oldest first. A negative n means all of
+// them; zero means none, which is what `-n 0` asks for — watch what happens
+// next, without the backlog.
 func (l *Log) History(n int) []Event {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	if n <= 0 || n > len(l.entries) {
+	if n < 0 || n > len(l.entries) {
 		n = len(l.entries)
 	}
 	out := make([]Event, n)

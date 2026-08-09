@@ -675,7 +675,7 @@ func (h *Hub) escalate(thread uint64, from string) {
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "[swarm] thread #%d ran out of turns and needs a decision.\n\n", thread)
-	for _, m := range h.bus.Recent(0) {
+	for _, m := range h.bus.All() {
 		if m.Thread == thread {
 			fmt.Fprintf(&b, "%s → %s: %s\n", m.From, m.To, summarize(m.Body))
 		}

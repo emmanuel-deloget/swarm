@@ -10,18 +10,38 @@ import (
 // every mailbox. A broadcast appears once per recipient, sharing a thread —
 // which is what makes "who talks to whom" answerable at all.
 //
+// A negative n means all of them; zero means none. Zero is a real request —
+// `swarm bus tail -n 0 -f` asks to watch what happens next without being shown
+// what already did — so it must not be read as "unset".
+//
 // The bus keeps this alongside the per-mailbox histories because those cannot
 // be merged after the fact: each is capped on its own, so a chatty pair would
 // push a quiet one out of a combined view that never existed.
 func (b *Bus) Recent(n int) []Message {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if n <= 0 || n > len(b.recent) {
+	if n < 0 || n > len(b.recent) {
 		n = len(b.recent)
 	}
 	out := make([]Message, n)
 	copy(out, b.recent[len(b.recent)-n:])
 	return out
+}
+
+// All returns everything the bus still holds. It is Recent(-1) said plainly,
+// for the callers that mean the whole ring rather than a tail of it.
+func (b *Bus) All() []Message { return b.Recent(-1) }
+
+// LastID is the id of the newest message, or zero when nothing has been
+// carried. It is what a follower starts from when it asked for no history: from
+// zero it would be handed everything at the first poll.
+func (b *Bus) LastID() uint64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.recent) == 0 {
+		return 0
+	}
+	return b.recent[len(b.recent)-1].ID
 }
 
 // Since returns the messages carried after id, oldest first. It is what lets a
@@ -77,7 +97,7 @@ type Stats struct {
 
 // StatsSince summarises the messages carried after t.
 func (b *Bus) StatsSince(t time.Time) Stats {
-	msgs := b.Recent(0)
+	msgs := b.All()
 	now := time.Now()
 	s := Stats{
 		Window:   now.Sub(t),
@@ -162,7 +182,7 @@ type Thread struct {
 // is the turn allowance the bus enforces; zero means none, and Escalate stays
 // false.
 func (b *Bus) Threads(budget int) []Thread {
-	msgs := b.Recent(0)
+	msgs := b.All()
 	byID := map[uint64]*Thread{}
 	seen := map[uint64]map[string]bool{}
 	var order []uint64

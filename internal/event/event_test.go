@@ -107,7 +107,24 @@ func TestSlowSubscriberLosesEventsRatherThanBlocking(t *testing.T) {
 		t.Fatal("Publish blocked on a subscriber that was not reading")
 	}
 
-	if n := len(l.History(0)); n != 500 {
+	if n := len(l.History(-1)); n != 500 {
 		t.Errorf("the log kept %d events, want all 500 regardless of subscribers", n)
+	}
+}
+
+// TestHistoryZeroMeansNone: `swarm events -n 0 -f` watches what happens next.
+func TestHistoryZeroMeansNone(t *testing.T) {
+	l := NewLog(100)
+	for range 5 {
+		l.Publish(Event{Kind: KindInfo, Text: "x"})
+	}
+	if got := l.History(0); len(got) != 0 {
+		t.Errorf("History(0) returned %d events, want none", len(got))
+	}
+	if got := l.History(2); len(got) != 2 {
+		t.Errorf("History(2) returned %d, want 2", len(got))
+	}
+	if got := l.History(-1); len(got) != 5 {
+		t.Errorf("History(-1) returned %d, want all 5", len(got))
 	}
 }

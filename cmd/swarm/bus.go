@@ -51,7 +51,7 @@ func cmdBusTail(args []string) error {
 	fs := newFlagSet("bus tail")
 	cf.register(fs)
 	follow := fs.Bool("f", false, "keep printing as messages are carried")
-	n := fs.Int("n", 50, "how many to show first")
+	n := fs.Int("n", 50, "how many past messages to show first; 0 for none, -1 for all")
 	if err := parseArgs(fs, args, -1); err != nil {
 		return err
 	}

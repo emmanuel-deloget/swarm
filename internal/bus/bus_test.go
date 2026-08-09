@@ -193,7 +193,7 @@ func TestRecentSpansEveryMailbox(t *testing.T) {
 	b.Post(Message{Thread: th, From: "user", To: "dev-2", Body: "go"})
 	b.Post(Message{From: "dev-1", To: "dev-2", Body: "what do you think"})
 
-	got := b.Recent(0)
+	got := b.All()
 	if len(got) != 3 {
 		t.Fatalf("Recent = %d messages, want 3", len(got))
 	}
@@ -216,7 +216,7 @@ func TestRecentSurvivesAChattyPair(t *testing.T) {
 	for range 20 {
 		b.Post(Message{From: "dev-1", To: "dev-2", Body: "and another thing"})
 	}
-	for _, m := range b.Recent(0) {
+	for _, m := range b.All() {
 		if m.From == "review-1" {
 			return
 		}
@@ -315,5 +315,47 @@ func TestValidKind(t *testing.T) {
 	}
 	if ValidKind(Kind("nonsense")) {
 		t.Error("an invented kind should not be valid")
+	}
+}
+
+// TestZeroMeansNoneNotAll: `-n 0` asks to watch what happens next without being
+// shown what already did. Reading it as "unset" gave the default; reading it as
+// "no bound" gave the whole ring — both the opposite of what was asked.
+func TestZeroMeansNoneNotAll(t *testing.T) {
+	b := New(10)
+	for i := range 5 {
+		b.Post(Message{From: "user", To: "alpha", Body: string(rune('a' + i))})
+	}
+
+	if got := b.Recent(0); len(got) != 0 {
+		t.Errorf("Recent(0) returned %d messages, want none", len(got))
+	}
+	if got := b.Recent(2); len(got) != 2 {
+		t.Errorf("Recent(2) returned %d, want 2", len(got))
+	}
+	if got := b.All(); len(got) != 5 {
+		t.Errorf("All() returned %d, want 5", len(got))
+	}
+	if got := b.Recent(-1); len(got) != 5 {
+		t.Errorf("Recent(-1) returned %d, want all 5", len(got))
+	}
+}
+
+// TestLastIDIsWhereAFollowerStarts: from zero, a follower that asked for no
+// history would be handed the whole ring at its first poll.
+func TestLastIDIsWhereAFollowerStarts(t *testing.T) {
+	b := New(10)
+	if id := b.LastID(); id != 0 {
+		t.Errorf("an empty bus reports id %d", id)
+	}
+	var last uint64
+	for range 3 {
+		last = b.Post(Message{From: "user", To: "alpha", Body: "x"}).ID
+	}
+	if id := b.LastID(); id != last {
+		t.Errorf("LastID is %d, want %d", id, last)
+	}
+	if got := b.Since(b.LastID()); len(got) != 0 {
+		t.Errorf("following from the newest id already offers %d messages", len(got))
 	}
 }

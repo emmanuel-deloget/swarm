@@ -325,11 +325,10 @@ func (s *Server) handle(req Request) Response {
 }
 
 func (s *Server) handleEvents(req Request, send func(Response) error) {
-	n := req.Lines
-	if n == 0 {
-		n = 50
-	}
-	history := s.hub.Log().History(n)
+	// req.Lines is taken as it comes: the client carries the default, so zero
+	// here means the caller asked for no backlog rather than for nothing in
+	// particular.
+	history := s.hub.Log().History(req.Lines)
 	if err := send(Response{OK: true, Events: history, Done: !req.Follow}); err != nil || !req.Follow {
 		return
 	}
@@ -357,15 +356,14 @@ func (s *Server) handleEvents(req Request, send func(Response) error) {
 // fan-out to the bus for a diagnostic would be machinery the fleet pays for
 // whether or not anybody is watching.
 func (s *Server) handleBusTail(req Request, send func(Response) error) {
-	n := req.Lines
-	if n == 0 {
-		n = 50
-	}
-	msgs := s.hub.Bus().Recent(n)
+	msgs := s.hub.Bus().Recent(req.Lines)
 	if err := send(Response{OK: true, Messages: msgs, Done: !req.Follow}); err != nil || !req.Follow {
 		return
 	}
-	last := uint64(0)
+	// Where to follow from. With no history shown, the newest id already on the
+	// bus — starting from zero would hand over everything at the first tick,
+	// which is what asking for none was meant to avoid.
+	last := s.hub.Bus().LastID()
 	if len(msgs) > 0 {
 		last = msgs[len(msgs)-1].ID
 	}
