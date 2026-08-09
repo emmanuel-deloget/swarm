@@ -184,6 +184,7 @@ swarm run
 | `K` | send key presses |
 | `S` `x` `r` | start / stop / restart |
 | `:` | command line |
+| `↑` `↓` `ctrl+r` | on the command line: history, and search through it |
 | `q` | quit and stop every agent |
 
 Command line: `:inject`, `:type` (no Enter), `:keys`, `:send`, `:broadcast`,
@@ -195,6 +196,16 @@ going?` reaches the agent you are looking at.
 names after `:keys`, and file paths after `:file`. One match is filled in;
 several extend as far as they agree, then tab cycles through them and the
 candidates are listed under the line.
+
+**`↑` and `↓` walk back through what you typed before**, and `ctrl+r` searches
+it — type to narrow, `ctrl+r` again for an older match, `esc` to put back the
+line you were writing. The history is kept **per command**: opening the line
+with `s` offers what you sent, not the last file you staged, because the two
+share no shape and neither can be reused where the other was typed. The bare
+`:` line sees everything, since anything can be typed there.
+
+It is written to `<state_dir>/history`, 0600 — it holds what you typed — and
+bounded at 500 lines, since older entries name agents that no longer exist.
 
 The agent on display is resized to the pane it occupies and follows the window
 as it changes, so its own layout adapts instead of being cropped on the right.

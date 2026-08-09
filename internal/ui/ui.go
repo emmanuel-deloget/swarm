@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -54,6 +55,9 @@ const (
 
 const sidebarWidth = 24
 
+// commandPrompt is what the command line shows when it is not searching.
+const commandPrompt = ":"
+
 type model struct {
 	h      *hub.Hub
 	events <-chan event.Event
@@ -91,6 +95,11 @@ type model struct {
 	completeIdx int
 	completeAt  string
 
+	// hist is what was typed before, and verb the kind of line being edited —
+	// the key the history is filtered by.
+	hist *history
+	verb string
+
 	// delivered stamps when an agent last had a message handed over, so the
 	// envelope can be faded out instead of disappearing between two frames.
 	delivered map[string]time.Time
@@ -104,7 +113,7 @@ type model struct {
 
 func newModel(h *hub.Hub, events <-chan event.Event, quit <-chan struct{}) *model {
 	in := textinput.New()
-	in.Prompt = ":"
+	in.Prompt = commandPrompt
 	in.CharLimit = 4096
 	// Width is set from the window size; 60 is only what it starts at, before
 	// the first WindowSizeMsg arrives.
@@ -119,6 +128,7 @@ func newModel(h *hub.Hub, events <-chan event.Event, quit <-chan struct{}) *mode
 	}
 
 	return &model{
+		hist:      loadHistory(h.StateDir()),
 		h:         h,
 		events:    events,
 		quit:      quit,
@@ -527,9 +537,10 @@ func (m *model) handleAttachedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // stops halfway across the window and the rest of what you type scrolls out of
 // sight for no reason.
 func (m *model) resizeInput() {
-	// The prompt takes one column and the cursor one more; leave a third so the
-	// line never reaches the last column, which would wrap.
-	width := m.usable() - 3
+	// The prompt takes its own columns and the cursor one more; leave a third so
+	// the line never reaches the last column, which would wrap. The search
+	// prompt is much wider than ":", and it grows as the term is typed.
+	width := m.usable() - lipgloss.Width(m.input.Prompt) - 2
 	if width < 20 {
 		width = 20
 	}
@@ -540,6 +551,11 @@ func (m *model) openCommand(prefill string) {
 	m.returnTo = m.mode
 	m.mode = modeCommand
 	m.resizeInput()
+	// The verb the line was opened with is what its history is filtered by; the
+	// bare `:` line has none and sees everything.
+	m.verb, _ = cut(prefill)
+	m.hist.begin()
+	m.input.Prompt = commandPrompt
 	m.input.SetValue(prefill)
 	m.input.CursorEnd()
 	m.input.Focus()
@@ -547,7 +563,28 @@ func (m *model) openCommand(prefill string) {
 }
 
 func (m *model) handleCommandKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.hist.searching {
+		return m.handleSearchKey(msg)
+	}
 	switch msg.Type {
+	case tea.KeyCtrlR:
+		m.hist.startSearch(m.input.Value())
+		m.input.Prompt = m.hist.searchPrompt(true)
+		m.resizeInput()
+		m.input.SetValue("")
+		return m, nil
+	case tea.KeyUp:
+		if line, ok := m.hist.prev(m.verb, m.input.Value()); ok {
+			m.input.SetValue(line)
+			m.input.CursorEnd()
+		}
+		return m, nil
+	case tea.KeyDown:
+		if line, ok := m.hist.next(m.verb); ok {
+			m.input.SetValue(line)
+			m.input.CursorEnd()
+		}
+		return m, nil
 	case tea.KeyTab:
 		m.complete()
 		return m, nil
@@ -558,6 +595,7 @@ func (m *model) handleCommandKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyEnter:
 		line := strings.TrimSpace(m.input.Value())
+		m.hist.add(line)
 		m.input.SetValue("")
 		m.input.Blur()
 		m.mode = m.returnTo
@@ -567,6 +605,75 @@ func (m *model) handleCommandKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// on the line before it changed.
 	m.completions, m.completeAt = nil, ""
 
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
+// handleSearchKey drives reverse-i-search, in the shape readline made familiar:
+// typing narrows, ctrl+r steps further back, enter runs the match, and escape
+// puts back the line that was being written.
+func (m *model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	h := m.hist
+	switch msg.Type {
+	case tea.KeyCtrlR:
+		// Step past the current match rather than finding it again.
+		if line, at, ok := h.searchNext(m.verb, h.at); ok {
+			h.at = at
+			m.input.SetValue(line)
+			m.input.CursorEnd()
+		}
+		m.input.Prompt = h.searchPrompt(true)
+		return m, nil
+
+	case tea.KeyEsc, tea.KeyCtrlC, tea.KeyCtrlG:
+		// Abandon the search and the line it found.
+		h.searching = false
+		m.input.Prompt = commandPrompt
+		m.resizeInput()
+		m.input.SetValue(h.base)
+		m.input.CursorEnd()
+		return m, nil
+
+	case tea.KeyEnter:
+		h.searching = false
+		m.input.Prompt = commandPrompt
+		line := strings.TrimSpace(m.input.Value())
+		h.add(line)
+		m.input.SetValue("")
+		m.input.Blur()
+		m.mode = m.returnTo
+		return m, m.runCommand(line)
+
+	case tea.KeyRunes, tea.KeySpace, tea.KeyBackspace:
+		switch msg.Type {
+		case tea.KeyBackspace:
+			if h.term != "" {
+				_, n := utf8.DecodeLastRuneInString(h.term)
+				h.term = h.term[:len(h.term)-n]
+			}
+		case tea.KeySpace:
+			h.term += " "
+		default:
+			h.term += string(msg.Runes)
+		}
+		// Always search afresh from the newest entry: narrowing the term should
+		// not be answered with a match older than the one on screen.
+		line, at, ok := h.searchNext(m.verb, -1)
+		if ok {
+			h.at = at
+			m.input.SetValue(line)
+			m.input.CursorEnd()
+		}
+		m.input.Prompt = h.searchPrompt(ok || h.term == "")
+		m.resizeInput()
+		return m, nil
+	}
+
+	// Anything else — the arrows, a control key — accepts the match and leaves
+	// the search, so editing can continue on the line it found.
+	h.searching = false
+	m.input.Prompt = commandPrompt
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
@@ -1014,6 +1121,8 @@ func (m *model) viewHelp() string {
 		{"K", "send key presses"},
 		{"S / x / r", "start / stop / restart"},
 		{":", "command line (tab completes)"},
+		{"↑ / ↓", "on the command line: what you typed before"},
+		{"ctrl+r", "search it — narrow, ctrl+r again for older"},
 		{"?", "this screen"},
 		{"q", "quit and stop every agent"},
 	}
