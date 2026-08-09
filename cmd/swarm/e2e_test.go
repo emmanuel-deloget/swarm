@@ -51,7 +51,23 @@ agents:
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	shortcutMode(t, path)
 	return path
+}
+
+// shortcutMode turns the dialogue lock off for a test that drives the TUI by
+// its shortcuts. The lock is on by default — typing talks to the agent, which
+// is what a person wants — so a test pressing "j" or "m" has to say that it
+// means the shortcut. Tests of the lock itself leave this alone.
+func shortcutMode(t *testing.T, cfg string) {
+	t.Helper()
+	stateDir := filepath.Join(filepath.Dir(cfg), ".swarm")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "ui"), []byte("dialogue=false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // pressKey sends one key, escape sequence and all, in a single write. Splitting
@@ -280,6 +296,7 @@ agents:
 	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	shortcutMode(t, cfg)
 
 	run := exec.Command(bin, "run", "-c", cfg, "--no-tui")
 	run.Dir = dir
@@ -413,6 +430,7 @@ agents:
 	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	shortcutMode(t, cfg)
 
 	term, err := vterm.Start(vterm.Options{
 		Command: []string{bin, "run", "-c", cfg},
@@ -472,6 +490,7 @@ agents:
 	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	shortcutMode(t, cfg)
 
 	term, err := vterm.Start(vterm.Options{
 		Command: []string{bin, "run", "-c", cfg},
@@ -517,6 +536,7 @@ agents:
 	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	shortcutMode(t, cfg)
 
 	term, err := vterm.Start(vterm.Options{
 		Command: []string{bin, "run", "-c", cfg},
@@ -600,6 +620,7 @@ agents:
 	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	shortcutMode(t, cfg)
 
 	run := exec.Command(bin, "run", "-c", cfg, "--no-tui")
 	run.Dir = dir
@@ -692,6 +713,7 @@ agents:
 	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	shortcutMode(t, cfg)
 
 	term, err := vterm.Start(vterm.Options{
 		Command: []string{bin, "run", "-c", cfg},
@@ -837,6 +859,7 @@ agents:
 	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	shortcutMode(t, cfg)
 
 	var (
 		mu     sync.Mutex
@@ -913,6 +936,7 @@ agents:
 	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	shortcutMode(t, cfg)
 
 	var (
 		mu     sync.Mutex
@@ -974,6 +998,7 @@ agents:
 	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	shortcutMode(t, cfg)
 
 	// A window with room for a pane of only a few rows once the header, the
 	// status line and the event log have taken theirs.
@@ -1183,6 +1208,7 @@ agents:
 	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	shortcutMode(t, cfg)
 
 	run := exec.Command(bin, "run", "-c", cfg, "--no-tui")
 	run.Dir = dir
@@ -1281,4 +1307,45 @@ func binVersion(t *testing.T, bin string) string {
 		t.Fatal("the binary reported an empty version")
 	}
 	return v
+}
+
+// TestDialogueLockIsOnByDefault: a first run should let you talk to the agent
+// on screen without pressing anything first — that is the whole point, and the
+// shortcuts every other test relies on are what you opt back into.
+func TestDialogueLockIsOnByDefault(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the swarm binary and runs a full UI")
+	}
+	bin := buildSwarm(t)
+	cfg := writeFleet(t, "dialogue-test")
+	// Undo what writeFleet did: this test is about the default.
+	if err := os.Remove(filepath.Join(filepath.Dir(cfg), ".swarm", "ui")); err != nil {
+		t.Fatal(err)
+	}
+
+	term, err := vterm.Start(vterm.Options{
+		Command: []string{bin, "run", "-c", cfg},
+		Dir:     filepath.Dir(cfg),
+		Cols:    120,
+		Rows:    40,
+	})
+	if err != nil {
+		t.Fatalf("starting the TUI: %v", err)
+	}
+	defer func() { _ = term.Stop(3 * time.Second) }()
+
+	waitScreen(t, term, "both agents up and quiet", "2 idle")
+	waitScreen(t, term, "the lock in the status bar", "DIALOGUE")
+
+	// Typing goes to the agent, with no preamble. "m" would have been the
+	// mosaic and "j" the next agent.
+	typeText(t, term, "merci\r")
+	waitScreen(t, term, "the typed text reaching the agent", "alpha saw:merci")
+
+	// esc esc gives the keyboard back, and the shortcuts work again.
+	pressKey(t, term, "\x1b")
+	pressKey(t, term, "\x1b")
+	waitScreen(t, term, "the lock lifted", "letters are shortcuts again")
+	typeText(t, term, "m")
+	waitScreen(t, term, "the mosaic after leaving the lock", "alpha", "beta")
 }

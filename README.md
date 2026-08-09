@@ -183,6 +183,8 @@ swarm run
 | `f` | stage a file and inject its path |
 | `K` | send key presses |
 | `S` `x` `r` | start / stop / restart |
+| `d` | dialogue lock, on by default: typing talks to the agent (see below) |
+| `esc` | in dialogue: one shortcut · `esc esc` leaves the lock |
 | `:` | command line |
 | `↑` `↓` `ctrl+r` | on the command line: history, and search through it |
 | `q` | quit and stop every agent |
@@ -196,6 +198,21 @@ going?` reaches the agent you are looking at.
 names after `:keys`, and file paths after `:file`. One match is filled in;
 several extend as far as they agree, then tab cycles through them and the
 candidates are listed under the line.
+
+**The dialogue lock is on by default**: you are here to talk to the agent on
+screen, so typing does that. A printable key opens the inject line carrying that
+key — you just type, no `i` first. `esc` reaches a shortcut for one key, the way
+a prefix does; `esc esc` leaves the lock for good, and `d` brings it back.
+
+Whether the lock is on is remembered between runs, so a fleet comes back the way
+you left it. With it off, the status bar carries `d dialogue` — the way back in.
+
+It matters because eighteen letters are shortcuts otherwise, three of them
+acting on an agent's life: typing *merci pour la relecture* at a fleet would
+cycle the mosaic, restart an agent and open an inject line. Arrows and tab still
+select an agent, since they are not text, and `ctrl+` combinations are
+untouched. The status bar always says which mode you are in, and leaving the
+lock is remembered between runs.
 
 **`↑` and `↓` walk back through what you typed before**, and `ctrl+r` searches
 it — type to narrow, `ctrl+r` again for an older match, `esc` to put back the

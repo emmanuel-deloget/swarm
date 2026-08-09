@@ -104,6 +104,11 @@ type model struct {
 	hist *history
 	verb string
 
+	// prefs is what the TUI remembers between runs; escNext is set by the esc
+	// prefix, which reaches a shortcut while the dialogue lock is on.
+	prefs   *prefs
+	escNext bool
+
 	// delivered stamps when an agent last had a message handed over, so the
 	// envelope can be faded out instead of disappearing between two frames.
 	delivered map[string]time.Time
@@ -133,6 +138,7 @@ func newModel(h *hub.Hub, events <-chan event.Event, quit <-chan struct{}) *mode
 
 	return &model{
 		hist:      loadHistory(h.StateDir()),
+		prefs:     loadPrefs(h.StateDir()),
 		h:         h,
 		events:    events,
 		quit:      quit,
@@ -357,6 +363,28 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = m.returnTo
 		return m, nil
 	}
+
+	// The dialogue lock: a printable key is text meant for the agent, not a
+	// shortcut. esc reaches the shortcuts for one key, the way a prefix does,
+	// and esc twice leaves the lock for good — the difference between "let me
+	// do one thing" and "give me the keyboard back".
+	if m.prefs.dialogue {
+		switch {
+		case msg.Type == tea.KeyEsc && m.escNext:
+			m.escNext = false
+			m.prefs.dialogue = false
+			m.prefs.save()
+			m.status = "dialogue off — letters are shortcuts again, d to come back"
+			return m, nil
+		case msg.Type == tea.KeyEsc:
+			m.escNext = true
+			m.status = "esc — next key is a shortcut, esc again to leave dialogue"
+			return m, nil
+		case !m.escNext && (msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace):
+			return m.beginDialogue(msg)
+		}
+	}
+	m.escNext = false
 	return m.handleNormalKey(msg)
 }
 
@@ -418,6 +446,16 @@ func (m *model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "A":
 		return m, m.fullScreenAttach()
+
+	case "d":
+		m.prefs.dialogue = !m.prefs.dialogue
+		m.prefs.save()
+		if m.prefs.dialogue {
+			m.status = "dialogue on — what you type goes to the agent; esc reaches a shortcut"
+		} else {
+			m.status = "dialogue off — letters are shortcuts again"
+		}
+		return m, nil
 
 	case "m":
 		if m.mode == modeMosaic {
@@ -549,6 +587,23 @@ func (m *model) resizeInput() {
 		width = 20
 	}
 	m.input.Width = width
+}
+
+// beginDialogue opens the inject line for the agent on screen, carrying the key
+// that started it — inject rather than send, because this is talking to the
+// agent's own prompt, not putting a message on the bus.
+func (m *model) beginDialogue(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	name := m.currentName()
+	if name == "" {
+		m.status, m.isError = "no agent selected", true
+		return m, nil
+	}
+	typed := string(msg.Runes)
+	if msg.Type == tea.KeySpace {
+		typed = " "
+	}
+	m.openCommand("inject " + name + " ")
+	return m, m.typeInto(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(typed)})
 }
 
 func (m *model) openCommand(prefill string) {
@@ -1028,11 +1083,23 @@ func (m *model) statusLine() string {
 	if m.mode == modeCommand {
 		return m.input.View()
 	}
+	if m.prefs.dialogue {
+		// The lock is invisible otherwise, and an invisible mode is how the
+		// next surprise happens.
+		lock := styAttn.Render("⌨ DIALOGUE") +
+			styMuted.Render(" — typing goes to "+m.currentName()+" · ") +
+			styKey.Render("esc") + styMuted.Render(" for a shortcut")
+		if m.escNext {
+			lock = styAttn.Render("⌨ esc") + styMuted.Render(" — next key is a shortcut")
+		}
+		return padRight(lock, m.usable())
+	}
 	hints := []string{
 		styKey.Render("↵") + " attach",
 		styKey.Render("A") + " full",
 		styKey.Render("i") + " inject",
 		styKey.Render("s") + " send",
+		styKey.Render("d") + " dialogue",
 		styKey.Render("m") + " mosaic",
 		styKey.Render(":") + " cmd",
 		styKey.Render("?") + " help",
@@ -1140,6 +1207,8 @@ func (m *model) viewHelp() string {
 		{"↵", "attach: keys go to that agent"},
 		{"A", "attach full screen"},
 		{"pgup / pgdn", "scroll back through its output"},
+		{"d", "dialogue lock (on by default): typing talks to the agent"},
+		{"esc", "in dialogue: one shortcut; esc esc leaves the lock"},
 		{"m", "mosaic: every agent at once"},
 		{"l", "show or hide the event log"},
 		{"M", "mouse: wheel and clicks, no text selection"},
