@@ -629,14 +629,14 @@ func (h *Hub) threadFor(from string, o SendOptions) (uint64, error) {
 			h.escalationTarget())
 	}
 
-	max := h.cfg.Bus.MaxTurns
-	if max <= 0 {
+	budget := h.cfg.Bus.MaxTurns
+	if budget <= 0 {
 		return thread, nil
 	}
-	if turns := h.bus.Turns(thread); turns >= max {
+	if turns := h.bus.Turns(thread); turns >= budget {
 		go h.escalate(thread, from)
 		return 0, fmt.Errorf("this thread has used its %d turns; decide alone or escalate to %s",
-			max, h.escalationTarget())
+			budget, h.escalationTarget())
 	}
 	return thread, nil
 }
@@ -745,7 +745,7 @@ func (h *Hub) SendOn(from, target string, kind bus.Kind, body string, files []st
 	}
 	// Said one turn early, so the recipient can spend the last one on an
 	// answer rather than discovering the budget by being refused.
-	if max := h.cfg.Bus.MaxTurns; max > 0 && h.bus.Turns(thread) == max-1 {
+	if budget := h.cfg.Bus.MaxTurns; budget > 0 && h.bus.Turns(thread) == budget-1 {
 		body += fmt.Sprintf("\n\n[swarm] last turn on this thread — answer, decide, or escalate to %s.",
 			h.escalationTarget())
 	}

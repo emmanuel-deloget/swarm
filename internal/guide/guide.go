@@ -80,8 +80,7 @@ func Collect(c *config.Config) Data {
 			Workspace: a.Workspace,
 			CanSend:   a.CanSend,
 		})
-		switch {
-		case a.DeliveryMode == config.DeliveryDefer:
+		if a.DeliveryMode == config.DeliveryDefer {
 			d.Deferred = true
 		}
 		if len(a.CanSend) > 0 {

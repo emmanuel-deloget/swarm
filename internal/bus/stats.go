@@ -158,9 +158,10 @@ type Thread struct {
 	Escalate bool
 }
 
-// Threads summarises the conversations still in the ring, busiest first. max is
-// the turn budget the bus enforces; zero means none, and Escalate stays false.
-func (b *Bus) Threads(max int) []Thread {
+// Threads summarises the conversations still in the ring, busiest first. budget
+// is the turn allowance the bus enforces; zero means none, and Escalate stays
+// false.
+func (b *Bus) Threads(budget int) []Thread {
 	msgs := b.Recent(0)
 	byID := map[uint64]*Thread{}
 	seen := map[uint64]map[string]bool{}
@@ -186,7 +187,7 @@ func (b *Bus) Threads(max int) []Thread {
 	out := make([]Thread, 0, len(order))
 	for _, id := range order {
 		t := byID[id]
-		t.Escalate = max > 0 && t.Turns >= max
+		t.Escalate = budget > 0 && t.Turns >= budget
 		out = append(out, *t)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Last.After(out[j].Last) })
