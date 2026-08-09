@@ -701,7 +701,7 @@ func (a *Agent) Inject(text string, o InjectOptions) (int, error) {
 // SendKeys writes the given key names ("ctrl+c", "esc enter", ...) to the
 // terminal.
 func (a *Agent) SendKeys(names string) error {
-	seq, err := vterm.KeySequences(names)
+	keys, err := vterm.KeyList(names)
 	if err != nil {
 		return err
 	}
@@ -711,8 +711,21 @@ func (a *Agent) SendKeys(names string) error {
 	}
 	a.injectMu.Lock()
 	defer a.injectMu.Unlock()
-	_, err = term.WriteSource("keys", []byte(seq))
-	return err
+
+	// One write per key, with a pause between. Sent as one block they arrive in
+	// a single read, and an agent whose UI changes state on a key — a prompt
+	// submitted, a mode cycled — acts on the first and drops the rest along
+	// with the buffer it was holding. `enter shift+tab shift+tab shift+tab`
+	// reached five agents intact and moved each of them one step.
+	for i, seq := range keys {
+		if i > 0 && a.cfg.KeyDelay > 0 {
+			time.Sleep(a.cfg.KeyDelay)
+		}
+		if _, err := term.WriteSource("keys", []byte(seq)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // WriteRaw forwards raw input bytes, used by the attached TUI pane and by web

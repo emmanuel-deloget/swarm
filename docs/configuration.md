@@ -65,6 +65,7 @@ Every key here is also an agent key. An agent that leaves one empty inherits it.
 | `autostart` | `true` | Launch the agent with the swarm. |
 | `restart_on_exit` | `false` | Relaunch the agent when its process exits. |
 | `restart_backoff` | `2s` | Delay before an automatic restart. |
+| `key_delay` | `40ms` | Pause between one key press and the next when several are sent at once. `0` sends them as one burst. |
 | `submit_delay` | `120ms` | Pause between pasting text and sending the newline that submits it. Agent UIs that re-render on paste need this; too short and the newline lands before the paste has been absorbed. |
 | `bracketed_paste` | `true` | Allow injected text to be wrapped in `ESC[200~`/`ESC[201~`, so a multi-line prompt arrives as one message. It is only actually used when the agent's own UI turned the mode on, the way a real terminal behaves. |
 | `follow_window` | `true` | Resize the displayed agent to the pane showing it, so its layout adapts instead of being cropped. Turn it off to pin `cols`/`rows` — which is then what the web UI and `swarm screen` show. |
@@ -73,6 +74,12 @@ Every key here is also an agent key. An agent that leaves one empty inherits it.
 | `message` | — | Sent to the agent once it is up. Multi-line, as a block scalar. |
 | `message_file` | — | Same, read from a file. One or the other, not both. |
 | `message_template` | `[swarm] message from {from}: {body}` | How a pushed bus message is rendered before injection. Placeholders: `{id}` `{thread}` `{from}` `{to}` `{body}` `{files}` `{time}`. |
+
+`key_delay` is `submit_delay`'s counterpart for key presses. `swarm keys dev-1
+enter shift+tab shift+tab shift+tab` sent as one block arrives in a single read,
+and an agent whose UI changes state on a key — a prompt submitted, a mode
+cycled — acts on the first and drops the rest along with the buffer it was
+holding. Each key is its own write now, spaced by this.
 
 ### `delivery`
 
@@ -412,7 +419,8 @@ anything. Fixes are surgical on the text, so comments survive.
 
 ## Durations
 
-`idle_after`, `restart_backoff` and `submit_delay` take Go duration strings:
+`idle_after`, `restart_backoff`, `key_delay` and `submit_delay` take Go
+duration strings:
 `150ms`, `3s`, `2m`, `1h30m`. A bare number is **not** valid.
 
 ## Booleans that are three-valued

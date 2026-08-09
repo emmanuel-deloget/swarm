@@ -198,6 +198,23 @@ func ctrl(r rune) (string, error) {
 }
 
 // KeySequences translates a whitespace-separated list of key names.
+// KeyList is KeySequences without the joining: one escape sequence per key, in
+// order. A caller that means to pause between them needs them apart.
+func KeyList(names string) ([]string, error) {
+	var out []string
+	for _, n := range strings.Fields(names) {
+		seq, err := KeySequence(n)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, seq)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no keys in %q", names)
+	}
+	return out, nil
+}
+
 func KeySequences(names string) (string, error) {
 	var b strings.Builder
 	for _, n := range strings.Fields(names) {

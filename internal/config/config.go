@@ -108,6 +108,7 @@ type AgentDefaults struct {
 	RestartOnExit   *bool         `yaml:"restart_on_exit"`
 	RestartBackoff  time.Duration `yaml:"restart_backoff"`
 	SubmitDelay     time.Duration `yaml:"submit_delay"`
+	KeyDelay        time.Duration `yaml:"key_delay"`
 	BracketedPaste  *bool         `yaml:"bracketed_paste"`
 	FollowWindow    *bool         `yaml:"follow_window"`
 	DeliveryMode    string        `yaml:"delivery"`
@@ -159,6 +160,14 @@ type AgentConfig struct {
 
 	// RestartBackoff is the delay before an automatic restart.
 	RestartBackoff time.Duration `yaml:"restart_backoff"`
+
+	// KeyDelay is the pause between one key press and the next when several are
+	// sent at once. Without it they arrive in a single read, and an agent whose
+	// UI changes state on a key — a prompt submitted, a mode cycled — acts on
+	// the first and drops the rest with the buffer it was holding.
+	//
+	// It is the same reason SubmitDelay exists, for the same kind of UI.
+	KeyDelay time.Duration `yaml:"key_delay"`
 
 	// SubmitDelay is the pause between pasting text and sending the newline
 	// that submits it. Agent TUIs that re-render on paste need this.
@@ -464,6 +473,9 @@ func (c *Config) normalize() error {
 	if d.RestartBackoff == 0 {
 		d.RestartBackoff = 2 * time.Second
 	}
+	if d.KeyDelay == 0 {
+		d.KeyDelay = 40 * time.Millisecond
+	}
 	if d.SubmitDelay == 0 {
 		d.SubmitDelay = 120 * time.Millisecond
 	}
@@ -579,6 +591,9 @@ func (c *Config) normalize() error {
 		}
 		if a.SubmitDelay == 0 {
 			a.SubmitDelay = d.SubmitDelay
+		}
+		if a.KeyDelay == 0 {
+			a.KeyDelay = d.KeyDelay
 		}
 		if a.Autostart == nil {
 			a.Autostart = d.Autostart
