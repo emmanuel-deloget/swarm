@@ -206,8 +206,9 @@ func Start(o Options) (*Terminal, error) {
 	cmd.Dir = o.Dir
 	cmd.Env = o.Env
 	// A session leader with the pty as controlling terminal: this is what
-	// makes job control, SIGINT-on-^C and terminal queries work.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
+	// makes job control, SIGINT-on-^C and terminal queries work. See
+	// proc_unix.go — the answer differs per operating system.
+	setSessionLeader(cmd)
 
 	ptm, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(o.Cols), Rows: uint16(o.Rows)})
 	if err != nil {
@@ -558,11 +559,7 @@ func (t *Terminal) Signal(sig syscall.Signal) error {
 	if t.cmd == nil || t.cmd.Process == nil {
 		return ErrExited
 	}
-	pid := t.cmd.Process.Pid
-	if err := syscall.Kill(-pid, sig); err != nil {
-		return syscall.Kill(pid, sig)
-	}
-	return nil
+	return signalGroup(t.cmd.Process.Pid, sig)
 }
 
 // Stop asks the child to quit, then kills it if it outstays the grace period.

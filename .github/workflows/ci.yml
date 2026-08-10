@@ -94,9 +94,51 @@ jobs:
       - name: Dependencies verify
         run: go mod verify
 
-  lint:
-    name: golangci-lint
+  cross:
+    # Windows is not supported yet: there is no pty, no process group and no
+    # SIGWINCH, and the three stubs behind build tags say so rather than
+    # pretending. What this job protects is the distance to get there — a port
+    # is much cheaper from code that already compiles, and a single
+    # syscall.Something written on a Unix machine silently doubles that
+    # distance. It builds and vets; it runs nothing, because there is nothing
+    # to run yet.
+    name: cross-compile · windows
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch: [amd64, arm64]
+    env:
+      GOOS: windows
+      GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: Build
+        run: go build ./...
+
+      # vet type-checks the test packages too, which go build leaves out — and
+      # the test helpers are where a Unix-only call is easiest to forget.
+      - name: go vet
+        run: go vet ./...
+
+  lint:
+    name: golangci-lint · ${{ matrix.goos }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The linters type-check per target, so a file behind //go:build windows
+        # is invisible to the linux run. Without this second target the Windows
+        # side of the port would be the only code nothing ever reads.
+        goos: [linux, windows]
+    env:
+      GOOS: ${{ matrix.goos }}
     steps:
       - uses: actions/checkout@v7
 

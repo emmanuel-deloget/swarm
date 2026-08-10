@@ -10,7 +10,6 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
-	"syscall"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/term"
@@ -188,10 +187,10 @@ func cmdAttach(args []string) error {
 	fmt.Print("\x1b[2J\x1b[H")
 	bar.draw()
 
-	// Forward SIGWINCH so the agent follows this window.
+	// Follow this window, so the agent redraws for the size it is shown at.
 	if !*keepSize {
 		winch := make(chan os.Signal, 1)
-		signal.Notify(winch, syscall.SIGWINCH)
+		notifyResize(winch)
 		defer signal.Stop(winch)
 		go func() {
 			for range winch {
