@@ -450,8 +450,8 @@ rest — it is push without cutting into what the agent was doing.
 
 A `question`, a `request` or a `blocked` addressed to an agent leaves something
 outstanding until it answers or runs `swarm done` — and the message says which,
-so nobody has to guess. An agent that owes something and has been idle for
-`bus.stalled_after` is reported as **stalled** — in the agent list, the
+so nobody has to guess. An agent that has owed something for `bus.stalled_after`
+and is idle is reported as **stalled** — in the agent list, the
 pane header and `swarm ls`, with its own glyph, as well as in the event log and
 to an outgoing webhook. Both halves matter: an agent with nothing to do is quiet and
 that is normal. It is a signal only — swarm never restarts or interrupts an

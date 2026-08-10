@@ -179,3 +179,44 @@ agents:
 	}
 	waitFor(t, func() bool { return stalledEvents(t, h) > 0 })
 }
+
+// TestOutputDoesNotResetTheClock is the bug seen on a live fleet: an agent
+// parked on a configuration screen redraws every few minutes, and every redraw
+// pushed the state back to zero, so it blinked out and took a full cycle to
+// return. What is measured is how long the work has been owed — a redraw
+// settles nothing.
+func TestOutputDoesNotResetTheClock(t *testing.T) {
+	// Prints every 200ms: long enough to fall back to idle (100ms), short
+	// enough that the silence never reaches the 600ms threshold. Measured from
+	// the last byte, this agent could never be stalled however long it owed.
+	h := fleet(t, `
+web: {enabled: false}
+bus: {stalled_after: 500ms}
+defaults: {idle_after: 100ms}
+agents:
+  - name: alpha
+    command: [sh, -c, "while :; do sleep 0.2; printf .; done"]
+  - name: beta
+    command: [cat]
+`)
+	a, err := h.Agent("alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.SendKind("beta", "alpha", bus.KindRequest, "look at this", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// It falls back to idle between prints, and the debt keeps ageing.
+	waitFor(t, func() bool {
+		for _, in := range h.Infos() {
+			if in.Name == "alpha" && in.Stalled {
+				return true
+			}
+		}
+		return false
+	})
+}

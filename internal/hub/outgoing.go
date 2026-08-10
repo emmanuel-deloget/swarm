@@ -116,20 +116,33 @@ func (h *Hub) notifyIdle(name string) {
 }
 
 // isStalled is the whole definition, in one place so the watcher, the TUI and
-// `swarm ls` cannot drift apart: something owed, and idle for longer than the
-// agent's own idle_after plus stalled_after.
+// `swarm ls` cannot drift apart: something has been owed for longer than the
+// threshold, and the agent is not doing anything about it right now.
+//
+// The age is that of the debt, not of the silence. Measuring from the last byte
+// on screen was wrong in a way that showed: an agent parked on a configuration
+// screen redraws every few minutes, and every redraw reset the clock, so the
+// state blinked out and took a full cycle to come back. What matters is not how
+// long it has been quiet but how long it has been owing — and a redraw settles
+// nothing.
+//
+// Being idle stays a condition, since an agent that is writing may well be
+// working on exactly what is owed. It is only the clock that moved.
 func (h *Hub) isStalled(in agent.Info) bool {
 	after := h.cfg.Bus.StalledAfter
 	if after <= 0 || in.State != agent.StateIdle {
 		return false
 	}
-	if _, owes := h.bus.OwedSince(in.Name); !owes {
+	d, owes := h.bus.OwedSince(in.Name)
+	if !owes {
 		return false
 	}
+	// Still counted on top of the agent's own idle_after, so the two settings
+	// add up rather than compete.
 	if ac, ok := h.cfg.Agent(in.Name); ok {
 		after += ac.IdleAfter
 	}
-	return time.Since(in.LastOutput) >= after
+	return time.Since(d.Since) >= after
 }
 
 // watchStalled reports an agent that owes something and has been idle for too
