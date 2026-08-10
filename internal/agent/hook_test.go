@@ -97,8 +97,16 @@ func TestStopGivesUpOnAHungHook(t *testing.T) {
 		// working directory open — the cleanup would then fail on a locked
 		// directory, reporting a second problem instead of this one.
 		Workdir: os.TempDir(), Cols: 80, Rows: 24,
-		OnExit: probeCmd(t, "sleep", "60"),
+		// Long enough to still be running when Stop returns, which is what is
+		// being shown, and short enough to be gone before the package ends.
+		// The probe is the test binary, and Windows will not delete an image
+		// that is running: a hook outliving the run leaves `go test` unable to
+		// remove its own executable, which fails the job after every test has
+		// passed.
+		OnExit: probeCmd(t, "sleep", "2"),
 	})
+	// So wait it out rather than leave it behind.
+	t.Cleanup(func() { time.Sleep(2500 * time.Millisecond) })
 	if err := a.Start(); err != nil {
 		t.Fatal(err)
 	}
