@@ -20,7 +20,7 @@ func keyAgent(t *testing.T, delay time.Duration) *Agent {
 	dir := t.TempDir()
 	cfg := &config.AgentConfig{
 		Name:     "alpha",
-		Command:  probe(t, "echo"),
+		Command:  probeCmd(t, "echo"),
 		Cols:     80,
 		Rows:     24,
 		KeyDelay: delay,

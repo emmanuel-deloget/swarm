@@ -9,10 +9,24 @@ import (
 
 	"github.com/emmanuel-deloget/swarm/internal/config"
 	"github.com/emmanuel-deloget/swarm/internal/hub"
+	"github.com/emmanuel-deloget/swarm/internal/probe"
 )
+
+func TestMain(m *testing.M) {
+	if probe.Run(os.Args[1:]) {
+		return
+	}
+	os.Exit(m.Run())
+}
 
 func newFleet(t *testing.T, extra string) *hub.Hub {
 	t.Helper()
+	// The agents are this test binary, driven by verbs; see internal/probe.
+	// Single-quoted in the YAML so a Windows path keeps its backslashes.
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "swarm.yaml")
 	body := `session: itest
@@ -27,14 +41,14 @@ groups:
 agents:
   - name: dev-1
     role: dev
-    command: [sh, -c, "printf 'ready\n'; while IFS= read -r l; do printf 'saw:%s\n' \"$l\"; done"]
+    command: ['` + self + `', '-swarm-probe', 'print', 'ready', 'lines', 'saw:']
   - name: dev-2
     role: dev
-    command: [sh, -c, "printf 'ready\n'; while IFS= read -r l; do printf 'saw:%s\n' \"$l\"; done"]
+    command: ['` + self + `', '-swarm-probe', 'print', 'ready', 'lines', 'saw:']
   - name: rev-1
     role: review
     delivery: pull
-    command: [sh, -c, "printf 'ready\n'; while IFS= read -r l; do printf 'saw:%s\n' \"$l\"; done"]
+    command: ['` + self + `', '-swarm-probe', 'print', 'ready', 'lines', 'saw:']
 ` + extra
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)

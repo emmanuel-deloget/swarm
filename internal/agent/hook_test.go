@@ -28,7 +28,7 @@ func TestRunHookRunsInTheWorkdirWithTheEnvironment(t *testing.T) {
 	a := hookAgent(t, &config.AgentConfig{Name: "dev-1", Workdir: dir})
 	a.env = append(os.Environ(), "SWARM_AGENT=dev-1", "PORT=4321")
 
-	if err := a.runHook("on_start", probe(t, "write", "witness.txt", "$SWARM_AGENT $PORT")); err != nil {
+	if err := a.runHook("on_start", probeCmd(t, "write", "witness.txt", "$SWARM_AGENT $PORT")); err != nil {
 		t.Fatal(err)
 	}
 	// Written in the agent's directory, not wherever the test happens to run.
@@ -45,7 +45,7 @@ func TestRunHookRunsInTheWorkdirWithTheEnvironment(t *testing.T) {
 // agent will not start and the reason is in the script's output.
 func TestRunHookCarriesTheFailureUp(t *testing.T) {
 	a := hookAgent(t, &config.AgentConfig{Name: "dev-1", Workdir: t.TempDir()})
-	err := a.runHook("on_start", probe(t, "fail", "npm ERR! no such package"))
+	err := a.runHook("on_start", probeCmd(t, "fail", "npm ERR! no such package"))
 	if err == nil {
 		t.Fatal("a failing hook should be an error")
 	}
@@ -72,9 +72,9 @@ func TestStopWaitsForTheExitHook(t *testing.T) {
 	dir := t.TempDir()
 	witness := filepath.Join(dir, "torn-down.txt")
 	a := hookAgent(t, &config.AgentConfig{
-		Name: "dev-1", Command: probe(t, "sleep", "30"),
+		Name: "dev-1", Command: probeCmd(t, "sleep", "30"),
 		Workdir: dir, Cols: 80, Rows: 24,
-		OnExit: probe(t, "sleep", "1", "write", witness, "gone"),
+		OnExit: probeCmd(t, "sleep", "1", "write", witness, "gone"),
 	})
 	if err := a.Start(); err != nil {
 		t.Fatal(err)
@@ -91,9 +91,9 @@ func TestStopWaitsForTheExitHook(t *testing.T) {
 // script that never returns delays a shutdown, it does not prevent one.
 func TestStopGivesUpOnAHungHook(t *testing.T) {
 	a := hookAgent(t, &config.AgentConfig{
-		Name: "dev-1", Command: probe(t, "sleep", "30"),
+		Name: "dev-1", Command: probeCmd(t, "sleep", "30"),
 		Workdir: t.TempDir(), Cols: 80, Rows: 24,
-		OnExit: probe(t, "sleep", "60"),
+		OnExit: probeCmd(t, "sleep", "60"),
 	})
 	if err := a.Start(); err != nil {
 		t.Fatal(err)
@@ -111,9 +111,9 @@ func TestStopGivesUpOnAHungHook(t *testing.T) {
 // directory its preparation never finished.
 func TestStartRefusesAfterAFailedHook(t *testing.T) {
 	a := hookAgent(t, &config.AgentConfig{
-		Name: "dev-1", Command: probe(t, "sleep", "30"),
+		Name: "dev-1", Command: probeCmd(t, "sleep", "30"),
 		Workdir: t.TempDir(), Cols: 80, Rows: 24,
-		OnStart: probe(t, "exit", "3"),
+		OnStart: probeCmd(t, "exit", "3"),
 	})
 	if err := a.Start(); err == nil {
 		_ = a.Stop(time.Second)

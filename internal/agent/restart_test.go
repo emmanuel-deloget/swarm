@@ -53,7 +53,7 @@ func waitLogged(t *testing.T, l *event.Log, want string) string {
 func TestABrokenCommandIsGivenUpOn(t *testing.T) {
 	a, log := restarting(t, &config.AgentConfig{
 		Name:           "broken",
-		Command:        probe(t, "exit", "1"),
+		Command:        probeCmd(t, "exit", "1"),
 		RestartBackoff: 5 * time.Millisecond,
 		RestartMaxWait: 40 * time.Millisecond,
 		RestartMax:     3,
@@ -82,7 +82,7 @@ func TestABrokenCommandIsGivenUpOn(t *testing.T) {
 func TestTheWaitDoubles(t *testing.T) {
 	a, _ := restarting(t, &config.AgentConfig{
 		Name:           "broken",
-		Command:        probe(t, "exit", "1"),
+		Command:        probeCmd(t, "exit", "1"),
 		RestartBackoff: 10 * time.Millisecond,
 		RestartMaxWait: 80 * time.Millisecond,
 		RestartMax:     0, // no limit, so the streak can grow
@@ -112,7 +112,7 @@ func TestTheWaitDoubles(t *testing.T) {
 func TestARunThatLastedStartsOver(t *testing.T) {
 	a, _ := restarting(t, &config.AgentConfig{
 		Name:           "flaky",
-		Command:        probe(t, "exit", "1"),
+		Command:        probeCmd(t, "exit", "1"),
 		RestartBackoff: 10 * time.Millisecond,
 		RestartMaxWait: 50 * time.Millisecond,
 		RestartMax:     3,
@@ -134,7 +134,7 @@ func TestARunThatLastedStartsOver(t *testing.T) {
 func TestNoLimitKeepsTrying(t *testing.T) {
 	a, _ := restarting(t, &config.AgentConfig{
 		Name:           "stubborn",
-		Command:        probe(t, "exit", "1"),
+		Command:        probeCmd(t, "exit", "1"),
 		RestartBackoff: time.Millisecond,
 		RestartMaxWait: time.Millisecond,
 		RestartMax:     0,
