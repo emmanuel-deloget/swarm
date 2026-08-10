@@ -16,3 +16,6 @@
 
 # built binary
 /swarm
+
+# cross-compiled for a Windows VM
+/swarm.exe

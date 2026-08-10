@@ -149,7 +149,7 @@ jobs:
       - name: Test
         run: >
           go test -count=1 -timeout 5m
-          ./internal/bus/ ./internal/event/ ./internal/hook/
+          ./internal/agent/ ./internal/bus/ ./internal/event/ ./internal/hook/
           ./internal/ui/ ./internal/version/ ./internal/workspace/
 
       # And the Windows child itself: pseudoconsole, PATH resolution, .cmd
