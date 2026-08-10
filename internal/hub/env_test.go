@@ -29,7 +29,7 @@ web: {enabled: false}
 agents:
   - name: alpha
     role: dev
-    command: [cat]
+    command: [probe-echo]
 `
 
 // TestEveryVariableIsDocumented: a variable an agent is given and nobody wrote

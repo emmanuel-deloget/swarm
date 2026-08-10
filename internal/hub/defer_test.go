@@ -9,13 +9,50 @@ import (
 
 	"github.com/emmanuel-deloget/swarm/internal/bus"
 	"github.com/emmanuel-deloget/swarm/internal/config"
+	"github.com/emmanuel-deloget/swarm/internal/probe"
 )
+
+func TestMain(m *testing.M) {
+	if probe.Run(os.Args[1:]) {
+		return
+	}
+	os.Exit(m.Run())
+}
+
+// probeAgents turns the two agent shorthands the tests use into a command line
+// running the test binary; see internal/probe.
+//
+//	[probe-echo]  an agent that echoes what it is sent, as `cat` did
+//	[probe-tick]  an agent that prints every 400ms without being asked
+//
+// The names are deliberately not `cat` and `sh`: nothing here runs either, and
+// a test claiming to would be a test misreporting what it measured. Single
+// quotes in the YAML so a Windows path keeps its backslashes.
+func probeAgents(t *testing.T, body string) string {
+	t.Helper()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	argv := func(verbs ...string) string {
+		out := ""
+		for _, v := range probe.Argv(self, verbs...) {
+			if out != "" {
+				out += ", "
+			}
+			out += "'" + v + "'"
+		}
+		return "[" + out + "]"
+	}
+	body = strings.ReplaceAll(body, "[probe-echo]", argv("echo"))
+	return strings.ReplaceAll(body, "[probe-tick]", argv("tick", "0.4", "."))
+}
 
 func fleet(t *testing.T, body string) *Hub {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "swarm.yaml")
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(probeAgents(t, body)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := config.Load(path)
@@ -39,7 +76,7 @@ log_input: true
 web: {enabled: false}
 agents:
   - name: quiet
-    command: [cat]
+    command: [probe-echo]
     delivery: defer
     idle_after: 500ms
 `)
@@ -85,7 +122,7 @@ log_input: true
 web: {enabled: false}
 agents:
   - name: quiet
-    command: [cat]
+    command: [probe-echo]
     delivery: defer
 `)
 	a, _ := h.Agent("quiet")
@@ -130,7 +167,7 @@ log_input: true
 web: {enabled: false}
 agents:
   - name: briefed
-    command: [cat]
+    command: [probe-echo]
     message: |
       read the open pull requests
 
@@ -156,7 +193,7 @@ agents:
 }
 
 func TestNoMessageMeansNoInjection(t *testing.T) {
-	h := fleet(t, "web: {enabled: false}\nagents:\n  - name: silent\n    command: [cat]\n")
+	h := fleet(t, "web: {enabled: false}\nagents:\n  - name: silent\n    command: [probe-echo]\n")
 	a, _ := h.Agent("silent")
 	if err := a.Start(); err != nil {
 		t.Fatal(err)
@@ -177,7 +214,7 @@ delivery_by_kind:
   fyi: pull
 agents:
   - name: dev-1
-    command: [cat]
+    command: [probe-echo]
     delivery: push
 `)
 	a, _ := h.Agent("dev-1")
@@ -211,12 +248,12 @@ func TestCanSendRefusesBeforeDelivering(t *testing.T) {
 web: {enabled: false}
 agents:
   - name: dev-1
-    command: [cat]
+    command: [probe-echo]
     can_send: [lead-1]
   - name: dev-2
-    command: [cat]
+    command: [probe-echo]
   - name: lead-1
-    command: [cat]
+    command: [probe-echo]
 `)
 	if _, err := h.Send("dev-1", "all", "everyone listen", nil); err == nil {
 		t.Fatal("dev-1 should not be able to reach everyone")
@@ -241,7 +278,7 @@ log_input: true
 web: {enabled: false}
 agents:
   - name: dev-1
-    command: [cat]
+    command: [probe-echo]
     delivery: push
 `)
 	a, _ := h.Agent("dev-1")
@@ -271,7 +308,7 @@ agents:
 }
 
 func TestResumeWithoutFlushLeavesTheMailbox(t *testing.T) {
-	h := fleet(t, "web: {enabled: false}\nagents:\n  - name: dev-1\n    command: [cat]\n    delivery: push\n")
+	h := fleet(t, "web: {enabled: false}\nagents:\n  - name: dev-1\n    command: [probe-echo]\n    delivery: push\n")
 	a, _ := h.Agent("dev-1")
 	if err := a.Start(); err != nil {
 		t.Fatal(err)

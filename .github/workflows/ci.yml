@@ -150,7 +150,8 @@ jobs:
         run: >
           go test -count=1 -timeout 5m
           ./internal/agent/ ./internal/bus/ ./internal/event/ ./internal/hook/
-          ./internal/ipc/ ./internal/ui/ ./internal/version/ ./internal/workspace/
+          ./internal/hub/ ./internal/ipc/ ./internal/ui/ ./internal/version/
+          ./internal/workspace/
 
       # And the Windows child itself: pseudoconsole, PATH resolution, .cmd
       # shims, exit status, the drain that keeps a dying agent's last line, and

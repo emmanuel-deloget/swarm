@@ -35,9 +35,9 @@ web: {enabled: false}
 bus: {max_turns: 3}
 agents:
   - name: alpha
-    command: [cat]
+    command: [probe-echo]
   - name: beta
-    command: [cat]
+    command: [probe-echo]
 `
 
 // TestAReplyStaysOnTheThread: nobody carries an identifier around. An agent
@@ -129,9 +129,9 @@ func TestAFinalAnswerCannotBeAnswered(t *testing.T) {
 web: {enabled: false}
 agents:
   - name: alpha
-    command: [cat]
+    command: [probe-echo]
   - name: beta
-    command: [cat]
+    command: [probe-echo]
 `)
 	_, _ = h.Send("user", "alpha", "start", nil)
 	if _, err := h.SendOn("alpha", "beta", bus.KindDecision, "we do it this way", nil,
@@ -156,11 +156,11 @@ web: {enabled: false}
 bus: {max_turns: 2, escalate_to: chief}
 agents:
   - name: alpha
-    command: [cat]
+    command: [probe-echo]
   - name: beta
-    command: [cat]
+    command: [probe-echo]
   - name: chief
-    command: [cat]
+    command: [probe-echo]
 `)
 	_, _ = h.Send("user", "alpha", "settle this", nil)
 	_, _ = h.SendKind("alpha", "beta", bus.KindQuestion, "and?", nil)

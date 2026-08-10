@@ -43,6 +43,7 @@ func Argv(self string, verbs ...string) []string {
 //	print <text>          write the text and a newline
 //	lines <prefix>        echo every line read, behind that prefix
 //	echo                  copy input to output until it ends, as cat did
+//	tick <seconds> <text> write the text at that interval, for ever
 //	sleep <seconds>       stay up, fractions allowed
 //	write <file> <text>   write text, with $VARIABLES expanded as a shell would
 //	fail <text>           complain on stderr and end with 1
@@ -77,6 +78,16 @@ func run(args []string) {
 		case "echo":
 			_, _ = io.Copy(os.Stdout, os.Stdin)
 			i++
+		case "tick":
+			// An agent that keeps printing without being asked anything: what
+			// separates "quiet because it is waiting" from "quiet because it
+			// stopped" cannot be measured on something that never speaks.
+			secs, _ := strconv.ParseFloat(at(i+1), 64)
+			text := at(i + 2)
+			for {
+				time.Sleep(time.Duration(secs * float64(time.Second)))
+				fmt.Print(text)
+			}
 		case "sleep":
 			secs, _ := strconv.ParseFloat(at(i+1), 64)
 			time.Sleep(time.Duration(secs * float64(time.Second)))

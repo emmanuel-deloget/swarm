@@ -18,9 +18,9 @@ bus: {stalled_after: 300ms}
 defaults: {idle_after: 100ms}
 agents:
   - name: alpha
-    command: [cat]
+    command: [probe-echo]
   - name: beta
-    command: [cat]
+    command: [probe-echo]
 `
 
 // TestARequestSaysHowToSettleIt: left to guess, an agent guesses, and a wrong
@@ -157,9 +157,9 @@ bus: {stalled_after: 300ms}
 defaults: {idle_after: 400ms}
 agents:
   - name: alpha
-    command: [cat]
+    command: [probe-echo]
   - name: beta
-    command: [cat]
+    command: [probe-echo]
 `)
 	a, err := h.Agent("alpha")
 	if err != nil {
@@ -197,9 +197,9 @@ bus: {stalled_after: 500ms}
 defaults: {idle_after: 100ms}
 agents:
   - name: alpha
-    command: [sh, -c, "while :; do sleep 0.4; printf .; done"]
+    command: [probe-tick]
   - name: beta
-    command: [cat]
+    command: [probe-echo]
 `)
 	a, err := h.Agent("alpha")
 	if err != nil {
