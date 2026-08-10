@@ -115,6 +115,23 @@ func (h *Hub) notifyIdle(name string) {
 	h.notify(name, OutIdle, in.Git, data)
 }
 
+// isStalled is the whole definition, in one place so the watcher, the TUI and
+// `swarm ls` cannot drift apart: something owed, and idle for longer than the
+// agent's own idle_after plus stalled_after.
+func (h *Hub) isStalled(in agent.Info) bool {
+	after := h.cfg.Bus.StalledAfter
+	if after <= 0 || in.State != agent.StateIdle {
+		return false
+	}
+	if _, owes := h.bus.OwedSince(in.Name); !owes {
+		return false
+	}
+	if ac, ok := h.cfg.Agent(in.Name); ok {
+		after += ac.IdleAfter
+	}
+	return time.Since(in.LastOutput) >= after
+}
+
 // watchStalled reports an agent that owes something and has been idle for too
 // long — idle, so the wait begins where that agent's idle_after ends. It is a signal and only a signal: nothing is restarted, injected or
 // killed on the strength of it, because the state is a guess. An agent waiting
@@ -130,25 +147,14 @@ func (h *Hub) watchStalled(after time.Duration) {
 		case <-tick.C:
 			for _, in := range h.Infos() {
 				d, owes := h.bus.OwedSince(in.Name)
-				// Counted from the moment the agent went idle, not from its
-				// last output: stalled_after adds to that agent's idle_after
-				// rather than competing with it, so no pair of settings can be
-				// posed in a way that never fires.
-				//
-				// From LastOutput rather than Quiet, which is rounded to the
-				// second for display and would swallow a short threshold.
-				threshold := after
-				if ac, ok := h.cfg.Agent(in.Name); ok {
-					threshold += ac.IdleAfter
-				}
 				quiet := time.Since(in.LastOutput)
-				if !owes || in.State != agent.StateIdle || quiet < threshold {
+				if !h.isStalled(in) {
 					// Settled, busy, or has spoken since: whatever was said
 					// about it no longer holds.
 					delete(said, in.Name)
 					continue
 				}
-				if said[in.Name] == d.Thread {
+				if !owes || said[in.Name] == d.Thread {
 					continue // already reported this one
 				}
 				said[in.Name] = d.Thread

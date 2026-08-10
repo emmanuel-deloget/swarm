@@ -146,7 +146,13 @@ func printTable(rows [][]string) {
 }
 
 func stateLabel(in agent.Info) string {
+	// Stalled is said here rather than carried in State: the bus decides it,
+	// not the agent, and putting it in State would change what "idle" means for
+	// the delivery paths that key on it.
 	label := string(in.State)
+	if in.Stalled {
+		label = "stalled"
+	}
 	if in.Attention != "" {
 		label += "/" + in.Attention
 	}
@@ -155,7 +161,7 @@ func stateLabel(in agent.Info) string {
 	}
 	color := ""
 	switch {
-	case in.Attention != "":
+	case in.Attention != "", in.Stalled:
 		color = "\x1b[33m"
 	case in.State == agent.StateWorking:
 		color = "\x1b[32m"

@@ -37,6 +37,11 @@ func stateColor(in agent.Info) lipgloss.TerminalColor {
 	if in.Attention != "" {
 		return colAttention
 	}
+	// Stalled before idle: an agent that owes something and has gone quiet is
+	// the one case where "idle" reads as "fine" and is not.
+	if in.Stalled {
+		return colAttention
+	}
 	switch in.State {
 	case agent.StateWorking:
 		return colWorking
@@ -51,10 +56,24 @@ func stateColor(in agent.Info) lipgloss.TerminalColor {
 	}
 }
 
+// stateLabel is what the pane header calls the agent. Stalled is not a state
+// the agent knows it is in — the bus decides that — so it is said here rather
+// than carried in Info.State, where it would change what "idle" means for the
+// delivery paths that key on it.
+func stateLabel(in agent.Info) string {
+	if in.Stalled {
+		return "stalled"
+	}
+	return string(in.State)
+}
+
 // stateGlyph is the one-character state badge used in the agent list.
 func stateGlyph(in agent.Info) string {
 	if in.Attention != "" {
 		return "▲"
+	}
+	if in.Stalled {
+		return "◍"
 	}
 	switch in.State {
 	case agent.StateWorking:

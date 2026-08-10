@@ -3,6 +3,8 @@ package ui
 import (
 	"testing"
 
+	"github.com/emmanuel-deloget/swarm/internal/agent"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -84,5 +86,32 @@ func TestPlainKeysAreUnchanged(t *testing.T) {
 		if got := string(keyBytes(c.msg)); got != c.want {
 			t.Errorf("%v -> %q, want %q", c.msg.Type, got, c.want)
 		}
+	}
+}
+
+// TestStalledLooksDifferentFromIdle: the whole complaint about idle was that an
+// agent which owes something and has gone quiet is green, and green reads as
+// fine. It has to look like something.
+func TestStalledLooksDifferentFromIdle(t *testing.T) {
+	idle := agent.Info{Name: "a", State: agent.StateIdle}
+	stalled := agent.Info{Name: "a", State: agent.StateIdle, Stalled: true, Owed: 1}
+
+	if stateGlyph(idle) == stateGlyph(stalled) {
+		t.Error("stalled has the same glyph as idle")
+	}
+	if stateColor(idle) == stateColor(stalled) {
+		t.Error("stalled has the same colour as idle")
+	}
+	if got := stateLabel(stalled); got != "stalled" {
+		t.Errorf("the pane header calls it %q", got)
+	}
+	if got := stateLabel(idle); got != "idle" {
+		t.Errorf("an ordinary idle agent is called %q", got)
+	}
+	// Attention still wins: a prompt waiting on you is the more urgent of the
+	// two, and it is the one you can act on.
+	both := agent.Info{Name: "a", State: agent.StateIdle, Stalled: true, Attention: "approval"}
+	if stateGlyph(both) != "▲" {
+		t.Errorf("attention lost to stalled: %q", stateGlyph(both))
 	}
 }

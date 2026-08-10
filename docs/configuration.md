@@ -396,6 +396,12 @@ An agent that owes something and has been idle for `stalled_after` is reported �
 Both halves are needed: an agent with nothing to do is quiet and that is
 normal, and an agent that is writing is not stalled whatever it owes.
 
+It shows as `stalled` where the state is shown — the agent list, the pane
+header, `swarm ls` — with its own glyph and colour, and the pane header says how
+many things are outstanding. `Info.State` itself stays `idle`: the bus decides
+this, not the agent, and changing what `idle` means would change the delivery
+paths that key on it.
+
 **It is a signal and only a signal.** Nothing is restarted, injected or killed
 on the strength of it, because the state is a guess: an agent waiting on a long
 build is silent and does owe work. Ask it and it will say so — which is why the

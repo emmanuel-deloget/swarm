@@ -338,6 +338,8 @@ func (h *Hub) Infos() []agent.Info {
 		info := a.Info()
 		info.Unread = pending[info.Name]
 		info.Talking = h.bus.SentSince(info.Name, since)
+		info.Owed = len(h.bus.Owed(info.Name))
+		info.Stalled = h.isStalled(info)
 		out = append(out, info)
 	}
 	return out

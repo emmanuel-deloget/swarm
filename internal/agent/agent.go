@@ -65,6 +65,13 @@ type Info struct {
 	// Talking is how many messages this agent has put on the bus recently. It
 	// is filled by the hub, which is the only place that can see the bus.
 	Talking int `json:"talking,omitempty"`
+
+	// Owed is how many things the bus is waiting on from this agent, and
+	// Stalled says it has been idle with one of them for too long. Both are
+	// filled in by the hub, which is what knows: an agent cannot see the bus,
+	// and neither can be read off its screen.
+	Owed    int  `json:"owed,omitempty"`
+	Stalled bool `json:"stalled,omitempty"`
 }
 
 // Options builds an Agent.

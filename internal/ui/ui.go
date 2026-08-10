@@ -980,7 +980,13 @@ func (m *model) paneLines(width, height int) []string {
 		return []string{styMuted.Render("no agent")}
 	}
 
-	title := fmt.Sprintf("%s  %s", stySelect.Render(in.Name), lipgloss.NewStyle().Foreground(stateColor(*in)).Render(string(in.State)))
+	title := fmt.Sprintf("%s  %s", stySelect.Render(in.Name),
+		lipgloss.NewStyle().Foreground(stateColor(*in)).Render(stateLabel(*in)))
+	if in.Owed > 0 {
+		// What it is stalled on, since "stalled" alone says nothing about what
+		// anyone is waiting for.
+		title += styMuted.Render(fmt.Sprintf(" · owes %d", in.Owed))
+	}
 	if in.Attention != "" {
 		title += styAttn.Render(" ▲ " + in.Attention)
 	}
