@@ -10,6 +10,31 @@ import (
 	"time"
 )
 
+// TestMain doubles as the grandchild TestJobEndsTheWholeTree needs. Running the
+// test binary again is how the standard library spawns a helper process, and it
+// beats scripting one: no shell quoting, and the helper is Go.
+func TestMain(m *testing.M) {
+	if path := os.Getenv("SWARM_TEST_TICK"); path != "" {
+		tick(path)
+		return
+	}
+	os.Exit(m.Run())
+}
+
+// tick appends a byte to a file until it is killed, or gives up. The deadline
+// is not a timeout, it is the blast radius: if the job object fails to end this
+// process, it stops on its own instead of outliving the test run.
+func tick(path string) {
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+			_, _ = f.Write([]byte("x"))
+			_ = f.Close()
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 // These run on Windows only, because what they check exists nowhere else: a
 // pseudoconsole, a job object, and a command resolution that has to do by hand
 // what exec.Command does on Unix.
@@ -124,4 +149,59 @@ func TestResolveCommandWrapsAScript(t *testing.T) {
 	waitFor(t, "the script's output", func() bool {
 		return strings.Contains(term.Text(), "hello from a script")
 	})
+}
+
+// TestJobEndsTheWholeTree is the one that cannot be argued about. Agent CLIs
+// are wrappers around wrappers -- a .cmd starting node starting whatever the
+// agent decided to build -- and TerminateProcess reaches the leader alone.
+// Every survivor holds a handle on a pseudoconsole nobody reads, until the
+// machine is rebooted by someone who never connected the two.
+//
+// So: an agent whose only job is to start something else that keeps writing.
+// Stop the agent, then watch the file. If it is still growing, the tree
+// outlived the agent and the job object is not doing what this depends on.
+func TestJobEndsTheWholeTree(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Not t.TempDir(): a grandchild that survives keeps writing into it, and
+	// the cleanup would then fail on a locked file, hiding the real failure
+	// behind a second one.
+	beat := filepath.Join(os.TempDir(), "swarm-jobtest-"+t.Name())
+	defer func() { _ = os.Remove(beat) }()
+	_ = os.Remove(beat)
+
+	// cmd.exe is the agent; the ticker it starts is the descendant that a
+	// process-level kill would leave behind.
+	term, err := Start(Options{
+		Command: []string{"cmd.exe", "/c", self},
+		Env:     append(os.Environ(), "SWARM_TEST_TICK="+beat),
+		Cols:    80,
+		Rows:    24,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	size := func() int64 {
+		st, err := os.Stat(beat)
+		if err != nil {
+			return -1
+		}
+		return st.Size()
+	}
+	waitFor(t, "the descendant to start writing", func() bool { return size() > 0 })
+
+	if err := term.Stop(2 * time.Second); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	// Let a write already in flight land before taking the reading.
+	time.Sleep(500 * time.Millisecond)
+	before := size()
+	time.Sleep(700 * time.Millisecond)
+	if after := size(); after != before {
+		t.Errorf("the descendant outlived the agent: %d bytes then %d after stop", before, after)
+	}
 }
