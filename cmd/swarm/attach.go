@@ -167,6 +167,7 @@ func cmdAttach(args []string) error {
 	if err != nil {
 		return err
 	}
+	restoreVT := enableVTOutput()
 	var restoreOnce sync.Once
 	restore := func() {
 		restoreOnce.Do(func() {
@@ -180,6 +181,9 @@ func cmdAttach(args []string) error {
 			// text of its own accord, and no key in swarm can undo it, because
 			// swarm did not do it.
 			fmt.Print(leaveAgentModes)
+			// Last, since the line above is itself escape sequences and a
+			// console that has stopped interpreting them would print it.
+			restoreVT()
 		})
 	}
 	defer restore()

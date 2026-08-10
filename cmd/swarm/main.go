@@ -57,6 +57,15 @@ func main() {
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
 	}
+	// Nearly every command prints escape sequences — colours in `ls`, a whole
+	// agent screen in `attach`. A Windows console has to be asked to interpret
+	// them; everywhere else this does nothing. See vtout_windows.go.
+	//
+	// Not restored on the way out: several paths here end in os.Exit, and a
+	// console that understands escape sequences is not a state worth undoing.
+	// `attach`, which turns on far more than this, still restores its own.
+	enableVTOutput()
+
 	cmd, args := os.Args[1], os.Args[2:]
 
 	var err error
