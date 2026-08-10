@@ -890,11 +890,13 @@ func (m *model) viewMain() string {
 
 func (m *model) headerLine() string {
 	cfg := m.h.Config()
-	var working, idle, attention, dead, unread int
+	var working, idle, stalled, attention, dead, unread int
 	for _, in := range m.infos {
 		switch {
 		case in.Attention != "":
 			attention++
+		case in.Stalled:
+			stalled++
 		case in.State == agent.StateWorking:
 			working++
 		case in.State == agent.StateIdle:
@@ -915,6 +917,10 @@ func (m *model) headerLine() string {
 	}
 	if idle > 0 {
 		parts = append(parts, lipgloss.NewStyle().Foreground(colIdle).Render(fmt.Sprintf("%d idle", idle)))
+	}
+	if stalled > 0 {
+		parts = append(parts, lipgloss.NewStyle().Foreground(colStalled).
+			Render(fmt.Sprintf("%d stalled", stalled)))
 	}
 	if attention > 0 {
 		parts = append(parts, styAttn.Render(fmt.Sprintf("%d need you", attention)))

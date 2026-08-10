@@ -96,11 +96,16 @@ func TestStalledLooksDifferentFromIdle(t *testing.T) {
 	idle := agent.Info{Name: "a", State: agent.StateIdle}
 	stalled := agent.Info{Name: "a", State: agent.StateIdle, Stalled: true, Owed: 1}
 
-	if stateGlyph(idle) == stateGlyph(stalled) {
-		t.Error("stalled has the same glyph as idle")
+	// The same dot as a working agent — a glyph nobody has a font for carries
+	// nothing — with the colour doing the work.
+	working := agent.Info{Name: "a", State: agent.StateWorking}
+	if stateGlyph(stalled) != stateGlyph(working) {
+		t.Errorf("stalled draws %q, want the same dot as working", stateGlyph(stalled))
 	}
-	if stateColor(idle) == stateColor(stalled) {
-		t.Error("stalled has the same colour as idle")
+	for _, other := range []agent.Info{idle, working} {
+		if stateColor(other) == stateColor(stalled) {
+			t.Errorf("stalled shares its colour with %s", other.State)
+		}
 	}
 	if got := stateLabel(stalled); got != "stalled" {
 		t.Errorf("the pane header calls it %q", got)

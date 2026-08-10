@@ -19,8 +19,11 @@ var (
 	colWorking   = lipgloss.AdaptiveColor{Light: "#0f7b3e", Dark: "#7ee787"}
 	colIdle      = lipgloss.AdaptiveColor{Light: "#1f6f8b", Dark: "#79c0ff"}
 	colAttention = lipgloss.AdaptiveColor{Light: "#a35b00", Dark: "#e3b341"}
-	colDead      = lipgloss.AdaptiveColor{Light: "#b42318", Dark: "#ff7b72"}
-	colMsg       = lipgloss.AdaptiveColor{Light: "#7a3ba8", Dark: "#d2a8ff"}
+	// colStalled is orange: next to the green of working and the blue of idle it
+	// reads as "not moving" without shouting like the red of a dead agent.
+	colStalled = lipgloss.AdaptiveColor{Light: "#c2410c", Dark: "#ff9e64"}
+	colDead    = lipgloss.AdaptiveColor{Light: "#b42318", Dark: "#ff7b72"}
+	colMsg     = lipgloss.AdaptiveColor{Light: "#7a3ba8", Dark: "#d2a8ff"}
 
 	styHeader = lipgloss.NewStyle().Bold(true).Foreground(colAccent)
 	styMuted  = lipgloss.NewStyle().Foreground(colMuted)
@@ -40,7 +43,7 @@ func stateColor(in agent.Info) lipgloss.TerminalColor {
 	// Stalled before idle: an agent that owes something and has gone quiet is
 	// the one case where "idle" reads as "fine" and is not.
 	if in.Stalled {
-		return colAttention
+		return colStalled
 	}
 	switch in.State {
 	case agent.StateWorking:
@@ -73,7 +76,9 @@ func stateGlyph(in agent.Info) string {
 		return "▲"
 	}
 	if in.Stalled {
-		return "◍"
+		// The same dot as the others: the colour carries the difference, and a
+		// glyph nobody has a font for carries nothing at all.
+		return "●"
 	}
 	switch in.State {
 	case agent.StateWorking:
