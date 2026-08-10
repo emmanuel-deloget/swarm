@@ -92,7 +92,11 @@ func TestStopWaitsForTheExitHook(t *testing.T) {
 func TestStopGivesUpOnAHungHook(t *testing.T) {
 	a := hookAgent(t, &config.AgentConfig{
 		Name: "dev-1", Command: probeCmd(t, "sleep", "30"),
-		Workdir: t.TempDir(), Cols: 80, Rows: 24,
+		// Not t.TempDir(): the whole point of this test is a hook that is
+		// still running when it ends, and on Windows a live process holds its
+		// working directory open — the cleanup would then fail on a locked
+		// directory, reporting a second problem instead of this one.
+		Workdir: os.TempDir(), Cols: 80, Rows: 24,
 		OnExit: probeCmd(t, "sleep", "60"),
 	})
 	if err := a.Start(); err != nil {

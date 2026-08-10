@@ -55,7 +55,12 @@ func TestABrokenCommandIsGivenUpOn(t *testing.T) {
 		Name:           "broken",
 		Command:        probeCmd(t, "exit", "1"),
 		RestartBackoff: 5 * time.Millisecond,
-		RestartMaxWait: 40 * time.Millisecond,
+		// Unlike its neighbours this test starts real processes, so the
+		// threshold has to stay above what starting one costs: a run lasting
+		// RestartMaxWait resets the streak, and on Windows merely launching a
+		// process takes longer than the 40ms that was enough for a shell.
+		// Under it, the streak never builds and giving up never happens.
+		RestartMaxWait: 2 * time.Second,
 		RestartMax:     3,
 	})
 	if err := a.Start(); err != nil {
