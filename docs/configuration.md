@@ -250,6 +250,11 @@ script delays a shutdown rather than preventing one.
 | `clone` | provisions a durable clone, once | `<state_dir>/workspaces/<name>` unless you name one |
 | `none` | nothing, and presumes nothing | yours; the agent is free to move |
 
+Following an agent that moves needs asking the operating system where a process
+currently is, which only Linux answers (through `/proc`). On macOS and Windows,
+`workspace: none` reports the branch of the directory the agent was started in,
+even after it has wandered elsewhere.
+
 A clone rather than a worktree, because two worktrees cannot have the same
 branch checked out — which rules them out as soon as two agents sit on the main
 branch between tasks. It is taken from the local repository, so git hardlinks

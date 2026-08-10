@@ -586,7 +586,10 @@ func (a *Agent) GitState() (workspace.State, bool) {
 }
 
 // processCwd is where a process currently is. Linux answers through /proc;
-// elsewhere nobody asks, and the configured directory is used instead.
+// elsewhere — macOS, Windows — nobody asks, and the configured directory is
+// used instead. The cost is confined to `workspace: none`, where an agent is
+// free to wander and swarm then reports the branch of where it was told to
+// start rather than the branch of where it went.
 func processCwd(pid int) (string, bool) {
 	if pid <= 0 {
 		return "", false
