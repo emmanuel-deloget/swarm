@@ -3,6 +3,7 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -100,7 +101,9 @@ func TestTheLockIsRememberedWhenTurnedOff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := st.Mode().Perm(); perm != 0o600 {
+	// Unix only: Windows reports every readable file as 0666, and who may
+	// open it is decided by an ACL that mode bits cannot express.
+	if perm := st.Mode().Perm(); runtime.GOOS != "windows" && perm != 0o600 {
 		t.Errorf("the preferences file is %o, want 600", perm)
 	}
 }

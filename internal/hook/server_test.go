@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -315,7 +316,9 @@ func TestTraceRecordsEveryOutcome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := st.Mode().Perm(); perm != 0o600 {
+	// Unix only: Windows reports every readable file as 0666, and who may
+	// open it is decided by an ACL that mode bits cannot express.
+	if perm := st.Mode().Perm(); runtime.GOOS != "windows" && perm != 0o600 {
 		t.Errorf("the log is mode %#o, want 0600: it holds whatever the sender sent", perm)
 	}
 }

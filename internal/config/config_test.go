@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -404,6 +405,14 @@ func TestSecretPathIsReadFromAFileOnlyItsOwnerCanRead(t *testing.T) {
 }
 
 func TestSecretPathRefusesAReadableFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Not a gap in coverage but the absence of the thing covered: Windows
+		// has no POSIX modes, so there is no readable-by-others to refuse.
+		// What the file allows lives in its ACL, and checking that is its own
+		// piece of work — see docs/configuration.md, which says as much to
+		// whoever configures it.
+		t.Skip("secret_path permissions are a Unix guarantee")
+	}
 	for _, mode := range []os.FileMode{0o644, 0o640, 0o604, 0o660, 0o666} {
 		t.Run(fmt.Sprintf("%#o", mode), func(t *testing.T) {
 			path := write(t, hookConfig("  secret_path: secret.txt"))

@@ -1,12 +1,13 @@
 package ui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
-
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func newHistory(t *testing.T, lines ...string) *history {
@@ -138,8 +139,10 @@ func TestItSurvivesARestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// It holds what you typed into a fleet, like the input log does.
-	if perm := st.Mode().Perm(); perm != 0o600 {
+	// It holds what you typed into a fleet, like the input log does. Unix
+	// only: Windows reports every readable file as 0666, and who may open it
+	// is decided by an ACL that mode bits cannot express.
+	if perm := st.Mode().Perm(); runtime.GOOS != "windows" && perm != 0o600 {
 		t.Errorf("the history file is %o, want 600", perm)
 	}
 }

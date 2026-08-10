@@ -127,6 +127,36 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+  windows:
+    # What actually runs on Windows, as opposed to what merely compiles.
+    #
+    # The list is short and explicit rather than ./..., because most of the
+    # suite drives a child through `sh` and none of that runs here yet. A
+    # blanket run would be red for a reason nobody would read, and a red job
+    # nobody reads is a job that stops being read. Every package added below is
+    # a package that has been made portable on purpose.
+    name: test · windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      # Packages with no shell in their tests.
+      - name: Test
+        run: >
+          go test -count=1 -timeout 5m
+          ./internal/bus/ ./internal/event/ ./internal/hook/
+          ./internal/ui/ ./internal/version/ ./internal/workspace/
+
+      # And the Windows child itself: pseudoconsole, PATH resolution, .cmd
+      # shims, exit status, and the drain that keeps a dying agent's last line.
+      - name: Test the Windows terminal
+        run: go test -count=1 -timeout 5m -v -run "TestWindows|TestResolveCommand" ./internal/vterm/
+
   lint:
     name: golangci-lint · ${{ matrix.goos }}
     runs-on: ubuntu-latest
