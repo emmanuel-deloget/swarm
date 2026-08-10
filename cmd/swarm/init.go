@@ -198,7 +198,7 @@ agents:
 
 # Overrides every agent's delivery for one kind of message: the fleet can defer
 # while "somebody is stuck" still gets through. Kinds are set with
-# "swarm send -kind": question, answer, fyi, request, decision, blocked.
+# "swarm send -kind": question, answer, fyi, request, decision, blocked, done.
 #
 # delivery_by_kind:
 #   blocked: push

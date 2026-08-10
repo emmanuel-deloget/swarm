@@ -469,7 +469,7 @@ func cmdSend(args []string, broadcast bool) error {
 	cf.register(fs)
 	from := fs.String("from", os.Getenv("SWARM_AGENT"), "sender name (defaults to $SWARM_AGENT, else 'user')")
 	textFile := fs.String("text-file", "", "read the message body from a file (- for stdin)")
-	kind := fs.String("kind", "", "what the message is for: question, answer, fyi, request, decision, blocked")
+	kind := fs.String("kind", "", "what the message is for: "+kindList())
 	final := fs.Bool("final", false, "close the matter: the bus refuses anyone the right to answer")
 	newThread := fs.Bool("new-thread", false, "start a fresh conversation instead of continuing the last one")
 	thread := fs.Uint64("thread", 0, "continue a particular conversation")
@@ -811,6 +811,18 @@ func kindNames() string {
 		out = append(out, string(k))
 	}
 	return strings.Join(out, ", ")
+}
+
+// kindList names the kinds from the bus rather than from memory. Written out by
+// hand, this list said "question, answer, fyi, request, decision, blocked" for
+// as long as `done` existed without anyone noticing — and a flag that does not
+// name a value is a value nobody uses.
+func kindList() string {
+	names := make([]string, 0, len(bus.Kinds()))
+	for _, k := range bus.Kinds() {
+		names = append(names, string(k))
+	}
+	return strings.Join(names, ", ")
 }
 
 // cmdDone settles what an agent was asked. It exists because a request had no

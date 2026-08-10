@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/emmanuel-deloget/swarm/internal/bus"
 	"github.com/emmanuel-deloget/swarm/internal/config"
 )
 
@@ -130,5 +131,20 @@ func TestTheStarterMentionsWhatTheFleetCanDo(t *testing.T) {
 		if !strings.Contains(starterConfig, key) {
 			t.Errorf("the starter never mentions %q, so nobody reading it learns the feature exists", key)
 		}
+	}
+}
+
+// TestTheKindListIsNotWrittenTwice: `swarm send -kind` spelled its own list for
+// as long as `done` existed without it, and a flag that does not name a value
+// is a value nobody uses. The list comes from the bus now; this checks the one
+// place that still spells it out — the starter — against the same source.
+func TestTheKindListIsNotWrittenTwice(t *testing.T) {
+	for _, k := range bus.Kinds() {
+		if !strings.Contains(starterConfig, string(k)) {
+			t.Errorf("the starter never names the %q kind", k)
+		}
+	}
+	if !strings.Contains(kindList(), "done") {
+		t.Errorf("the -kind flag offers %q", kindList())
 	}
 }

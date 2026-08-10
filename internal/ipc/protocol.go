@@ -53,8 +53,8 @@ type Request struct {
 	// Text is the payload of inject and send.
 	Text string `json:"text,omitempty"`
 
-	// Kind classifies a bus message: question, answer, fyi, request, decision,
-	// blocked. Empty is a plain note.
+	// Kind classifies a bus message; bus.Kinds() is the list. Empty is a plain
+	// note. Naming them here as well is how the two go out of step.
 	Kind string `json:"kind,omitempty"`
 
 	// Keys is a whitespace-separated list of key names for CmdKeys.
