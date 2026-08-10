@@ -1,3 +1,11 @@
+//go:build !windows
+
+// These drive a real child through sh, so they do not run on Windows yet.
+// Making them portable means replacing the shell with a test binary; until
+// then this tag is what keeps the Windows job honest: it runs the whole
+// package rather than a list of test names, so a test added there cannot be
+// quietly skipped.
+
 package vterm
 
 import (

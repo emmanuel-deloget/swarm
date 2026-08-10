@@ -153,9 +153,16 @@ jobs:
           ./internal/ui/ ./internal/version/ ./internal/workspace/
 
       # And the Windows child itself: pseudoconsole, PATH resolution, .cmd
-      # shims, exit status, and the drain that keeps a dying agent's last line.
+      # shims, exit status, the drain that keeps a dying agent's last line, and
+      # the job object that has to take a whole tree with it.
+      #
+      # The whole package, not a list of test names. A -run filter was how
+      # TestJobEndsTheWholeTree came back green without having run: what the
+      # tests here cover is decided by //go:build in the test files, where it
+      # is visible, and not by a pattern in a YAML file that nobody rereads
+      # when a test is added.
       - name: Test the Windows terminal
-        run: go test -count=1 -timeout 5m -v -run "TestWindows|TestResolveCommand" ./internal/vterm/
+        run: go test -count=1 -timeout 5m -v ./internal/vterm/
 
   lint:
     name: golangci-lint · ${{ matrix.goos }}
