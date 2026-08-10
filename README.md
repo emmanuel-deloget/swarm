@@ -41,6 +41,11 @@ agent's terminal on the right, and the event log underneath](assets/tui.png)
   prompt, `pull` leaves it for `swarm inbox`, `defer` holds it until the agent
   falls quiet. What a fleet says to itself can also be bounded — kinds,
   `can_send`, a turn budget per conversation, and a pause switch.
+- **A fleet that keeps running.** An agent whose command cannot start is
+  relaunched with a doubling wait and given up on after `restart_max` tries,
+  rather than every two seconds for ever; keys sent together are spaced by
+  `key_delay`, so an agent whose UI changes state on one does not drop the
+  rest.
 - **A view of the talking.** `swarm bus tail` and `swarm bus stats` show what the
   fleet says to itself — busiest pairs, threads, who is sending and who is only
   receiving — and the TUI marks an agent putting a lot on the bus. Agents that
@@ -270,8 +275,12 @@ swarm bus stats -since 30m          # how much of the fleet's time went into tal
 swarm bus threads                   # the open conversations
 swarm bus pause "shipping"          # hold every delivery; the agents keep working
 swarm bus resume -flush             # let them through again
+swarm done "nothing to change"      # settle what an agent was asked
 swarm events -f                     # live event log
+swarm start dev-3                   # start / stop / restart one or a group
+swarm stop dev-3
 swarm restart dev-3
+swarm info                          # session, socket, web URL and token
 swarm shutdown
 swarm version                       # which build this is
 swarm config check [-fix]           # a config that has gone stale
