@@ -12,7 +12,15 @@ import (
 // caller's goroutine, so that a refusal is not delayed by the alarm it raises.
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	waitUntil(t, 2*time.Second, cond)
+}
+
+// waitUntil is waitFor with the patience spelled out, for the tests that wait
+// on a schedule they do not control — a shell loop, a ticker — where a CI
+// machine under load is slower than any margin picked on a laptop.
+func waitUntil(t *testing.T, within time.Duration, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(within)
 	for time.Now().Before(deadline) {
 		if cond() {
 			return

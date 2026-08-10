@@ -186,16 +186,18 @@ agents:
 // return. What is measured is how long the work has been owed — a redraw
 // settles nothing.
 func TestOutputDoesNotResetTheClock(t *testing.T) {
-	// Prints every 200ms: long enough to fall back to idle (100ms), short
-	// enough that the silence never reaches the 600ms threshold. Measured from
-	// the last byte, this agent could never be stalled however long it owed.
+	// Prints every 400ms, with idle_after at 100ms and a 600ms threshold: it
+	// spends three quarters of each cycle idle — a wide enough window for a
+	// loaded machine to sample — while the silence never reaches the threshold.
+	// Measured from the last byte, this agent could never be stalled however
+	// long it owed.
 	h := fleet(t, `
 web: {enabled: false}
 bus: {stalled_after: 500ms}
 defaults: {idle_after: 100ms}
 agents:
   - name: alpha
-    command: [sh, -c, "while :; do sleep 0.2; printf .; done"]
+    command: [sh, -c, "while :; do sleep 0.4; printf .; done"]
   - name: beta
     command: [cat]
 `)
@@ -210,8 +212,9 @@ agents:
 		t.Fatal(err)
 	}
 
-	// It falls back to idle between prints, and the debt keeps ageing.
-	waitFor(t, func() bool {
+	// It falls back to idle between prints, and the debt keeps ageing. Given
+	// generously: this waits on a schedule the test does not control.
+	waitUntil(t, 10*time.Second, func() bool {
 		for _, in := range h.Infos() {
 			if in.Name == "alpha" && in.Stalled {
 				return true
