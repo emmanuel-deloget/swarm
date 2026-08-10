@@ -57,13 +57,16 @@ func TestEveryCommentedBlockLoadsWhenUncommented(t *testing.T) {
 		"  - name: triage-1\n    command: [cat]\n\n"
 
 	dir := t.TempDir()
-	// hooks: names a secret file, and the block tells you to create it first.
+	// hooks: and outgoing: each name a secret file, and each block tells you to
+	// create it first.
 	secrets := filepath.Join(dir, ".swarm")
 	if err := os.MkdirAll(secrets, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(secrets, "hook-secret"), []byte("s3cret"), 0o600); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"hook-secret", "out-secret"} {
+		if err := os.WriteFile(filepath.Join(secrets, name), []byte("s3cret"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	for name, body := range commentedBlocks(starterConfig) {
@@ -121,7 +124,8 @@ func TestTheStarterMentionsWhatTheFleetCanDo(t *testing.T) {
 	for _, key := range []string{
 		"state_dir", "workspace", "on_start", "on_exit", "{alloc_port}",
 		"message:", "can_send", "delivery_by_kind", "max_turns", "escalate_to",
-		"agents_template", "delivery: defer",
+		"agents_template", "delivery: defer", "outgoing:", "agent.done",
+		"restart_max",
 	} {
 		if !strings.Contains(starterConfig, key) {
 			t.Errorf("the starter never mentions %q, so nobody reading it learns the feature exists", key)

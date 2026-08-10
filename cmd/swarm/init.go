@@ -158,6 +158,28 @@ agents:
 #       to: "@dev"        # an agent, @group, @role, or "all"
 #       message: "a review was asked of you; list your open PRs."
 
+# The other direction: fleet events posted to an endpoint of yours, with the
+# incoming rules read backwards. swarm does not know what is at the far end —
+# Telegram, a CI job, a script behind a proxy are all the same to it.
+#
+# Events: agent.started, agent.exited, agent.idle, agent.done (quiet with
+# changes under it), agent.attention, agent.error.
+#
+# Create its secret first, as for the listener:
+#   (umask 077; openssl rand -hex 32 > .swarm/out-secret)
+#
+# outgoing:
+#   enabled: true
+#   url: https://example.invalid/swarm
+#   secret_path: .swarm/out-secret
+#   signature_header: X-Swarm-Signature
+#   retries: 2
+#   rules:
+#     - name: finished
+#       when:
+#         event: agent.done
+#       body: "{agent} finished on {data.branch}"
+
 # Inter-agent messaging. On by default: agents reaching each other with
 # "swarm send" is the point of running them together.
 #

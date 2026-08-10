@@ -100,6 +100,7 @@ type Agent struct {
 	// git is the last look at the working copy, refreshed on a timer rather
 	// than per call: Info() runs for every agent several times a second, and
 	// shelling out to git that often would cost more than the fleet.
+	gitState     workspace.State
 	git          string
 	gitSeen      time.Time
 	logPath      string
@@ -558,14 +559,23 @@ func (a *Agent) refreshGit(term *vterm.Terminal) {
 			dir = cwd
 		}
 	}
-	summary := ""
+	summary, state := "", workspace.State{}
 	if st, ok := workspace.Read(dir); ok {
-		summary = st.Summary()
+		summary, state = st.Summary(), st
 	}
 
 	a.mu.Lock()
-	a.git = summary
+	a.git, a.gitState = summary, state
 	a.mu.Unlock()
+}
+
+// GitState is the last look at the working copy, kept alongside the summary so
+// a caller can ask whether there is anything to show for the work rather than
+// parse "main* 3↑" back into facts.
+func (a *Agent) GitState() (workspace.State, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.gitState, a.gitState.Branch != ""
 }
 
 // processCwd is where a process currently is. Linux answers through /proc;

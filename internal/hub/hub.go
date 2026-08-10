@@ -20,6 +20,7 @@ import (
 	"github.com/emmanuel-deloget/swarm/internal/bus"
 	"github.com/emmanuel-deloget/swarm/internal/config"
 	"github.com/emmanuel-deloget/swarm/internal/event"
+	"github.com/emmanuel-deloget/swarm/internal/hook"
 	"github.com/emmanuel-deloget/swarm/internal/sockpath"
 )
 
@@ -38,6 +39,11 @@ type Hub struct {
 	// so a saturated conversation raises one alarm rather than one per attempt.
 	escalateMu sync.Mutex
 	escalated  map[uint64]bool
+
+	// sender posts fleet events outwards. Nil when nothing is configured, and
+	// every call on it is nil-safe, so the rest of the hub need not care.
+	sender    *hook.Sender
+	outCancel func()
 
 	// paused holds the reason deliveries are suspended, empty when they are not.
 	// A circuit breaker rather than a stop: the agents keep working, and what
@@ -106,6 +112,7 @@ func New(o Options) (*Hub, error) {
 			OnIdle: func() {
 				h.brief(ac.Name)
 				h.flushDeferred(ac.Name)
+				h.notifyIdle(ac.Name)
 			},
 			Log:     h.log,
 			Env:     h.agentEnv(ac, shimDir),
@@ -511,8 +518,50 @@ func (h *Hub) StartAll() {
 	wg.Wait()
 }
 
+// StartOutgoing wires the outgoing webhook, if the configuration asks for one.
+// It is separate from New because the trace file belongs to the caller that
+// opened it, and because a hub with no endpoint should not open a socket to
+// find that out.
+func (h *Hub) StartOutgoing(trace *hook.Log) error {
+	o := h.cfg.Outgoing
+	if !o.Enabled {
+		return nil
+	}
+	s, err := hook.NewSender(hook.OutOptions{
+		URL:             o.URL,
+		Rules:           o.Rules,
+		Secret:          o.Secret,
+		SignatureHeader: o.SignatureHeader,
+		Token:           o.Token,
+		Timeout:         o.Timeout,
+		Retries:         o.Retries,
+		RetryBackoff:    o.RetryBackoff,
+		Queue:           o.Queue,
+		Trace:           trace,
+		Emit:            func(text string) { h.log.Emit(event.KindError, "", text) },
+	})
+	if err != nil {
+		return err
+	}
+	h.sender = s
+
+	// The same stream the TUI and `swarm events` read, so a rule can match
+	// anything either of them shows.
+	events, cancel := h.log.Subscribe(256)
+	h.outCancel = cancel
+	go h.watchEvents(events)
+	return nil
+}
+
 // Shutdown stops every agent, giving each one the same grace period.
 func (h *Hub) Shutdown(grace time.Duration) {
+	// Before the agents go: their last events deserve to leave, and the sender
+	// drains what is queued.
+	if h.outCancel != nil {
+		h.outCancel()
+	}
+	h.sender.Close()
+
 	var wg sync.WaitGroup
 	for _, a := range h.Agents() {
 		wg.Add(1)

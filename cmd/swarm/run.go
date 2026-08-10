@@ -121,18 +121,24 @@ func cmdRun(args []string) error {
 		go h.StartAll()
 	}
 
+	// One trace file for both directions: what came in and what went out belong
+	// in the same story, in the order they happened.
+	var trace *hook.Log
+	if (cfg.Hooks.Enabled && cfg.HookLogEnabled()) || (cfg.Outgoing.Enabled && cfg.OutgoingLogEnabled()) {
+		path := filepath.Join(h.StateDir(), "logs", "webhooks.log")
+		trace, err = hook.OpenLog(path)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = trace.Close() }()
+		h.Log().Emit(event.KindInfo, "", "webhook deliveries recorded in "+path)
+	}
+	if err := h.StartOutgoing(trace); err != nil {
+		return err
+	}
+
 	var hookSrv *hook.Server
 	if cfg.Hooks.Enabled {
-		var trace *hook.Log
-		if cfg.HookLogEnabled() {
-			path := filepath.Join(h.StateDir(), "logs", "webhooks.log")
-			trace, err = hook.OpenLog(path)
-			if err != nil {
-				return err
-			}
-			defer func() { _ = trace.Close() }()
-			h.Log().Emit(event.KindInfo, "", "webhook deliveries recorded in "+path)
-		}
 		hookSrv, err = hook.New(hook.Options{
 			Addr:            cfg.Hooks.Addr,
 			Token:           cfg.Hooks.Token,

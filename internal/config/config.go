@@ -82,6 +82,9 @@ type Config struct {
 	// Hooks configures the inbound webhook listener.
 	Hooks HookConfig `yaml:"hooks"`
 
+	// Outgoing configures what the fleet tells the world about itself.
+	Outgoing OutgoingConfig `yaml:"outgoing"`
+
 	// Agents is the fleet itself.
 	Agents []AgentConfig `yaml:"agents"`
 
@@ -378,6 +381,50 @@ type HookConfig struct {
 	// Unmatched fires only when no rule matched — route it at a triage agent
 	// and the swarm stops being blind to events nobody anticipated.
 	Unmatched *hook.Rule `yaml:"unmatched"`
+}
+
+// OutgoingConfig posts fleet events to an endpoint of yours: the incoming rules
+// read backwards. Conditions on paths into an event, a body rendered from the
+// same paths, a signed POST.
+//
+// swarm does not know what is at the far end, and does not want to: Telegram, a
+// CI job or a shell script behind a reverse proxy are the same thing to it.
+type OutgoingConfig struct {
+	// Enabled turns it on. Off by default: it talks to the network.
+	Enabled bool `yaml:"enabled"`
+
+	// URL receives the POST. Required when enabled.
+	URL string `yaml:"url"`
+
+	// Secret, SecretEnv and SecretPath work exactly as they do for the
+	// listener, and sign the body the same way — so the far end can verify with
+	// the same code that swarm verifies with.
+	Secret     string `yaml:"secret"`
+	SecretEnv  string `yaml:"secret_env"`
+	SecretPath string `yaml:"secret_path"`
+
+	// SignatureHeader carries the digest. Required with a secret.
+	SignatureHeader string `yaml:"signature_header"`
+
+	// Token, when set, goes out as X-Swarm-Token.
+	Token string `yaml:"token"`
+
+	// Timeout bounds one attempt; Retries is how many further attempts a
+	// failure earns, with RetryBackoff doubling between them.
+	Timeout      time.Duration `yaml:"timeout"`
+	Retries      int           `yaml:"retries"`
+	RetryBackoff time.Duration `yaml:"retry_backoff"`
+
+	// Queue bounds what is held while the far end is slow. Past it, notices are
+	// dropped and said to be dropped: a fleet must not stall because an
+	// endpoint is down.
+	Queue int `yaml:"queue"`
+
+	// Log records every attempt in the same file as incoming deliveries.
+	Log *bool `yaml:"log"`
+
+	// Rules are tried against every event; each match sends.
+	Rules []hook.OutRule `yaml:"rules"`
 }
 
 // Delivery modes.
@@ -707,7 +754,10 @@ func (c *Config) normalize() error {
 		}
 	}
 
-	return c.normalizeHooks()
+	if err := c.normalizeHooks(); err != nil {
+		return err
+	}
+	return c.normalizeOutgoing()
 }
 
 // normalizeHooks validates the webhook rules. It runs after the agents and the
@@ -769,6 +819,50 @@ func (c *Config) normalizeHooks() error {
 	return nil
 }
 
+func (c *Config) normalizeOutgoing() error {
+	o := &c.Outgoing
+	if o.Timeout == 0 {
+		o.Timeout = 10 * time.Second
+	}
+	if o.RetryBackoff == 0 {
+		o.RetryBackoff = 2 * time.Second
+	}
+	if o.Queue == 0 {
+		o.Queue = 256
+	}
+	if o.Log == nil {
+		o.Log = ptr(true)
+	}
+	if o.Retries < 0 {
+		return fmt.Errorf("outgoing: retries cannot be negative")
+	}
+	// Same failure-closed rule as the listener, for the same reason: a header
+	// nobody can check is worse than no header.
+	declared := o.Secret != "" || o.SecretEnv != "" || o.SecretPath != ""
+	if declared && o.SignatureHeader == "" {
+		return fmt.Errorf("outgoing: signature_header is required with a secret")
+	}
+	if o.SignatureHeader != "" && !declared {
+		return fmt.Errorf("outgoing: signature_header is set but no secret is")
+	}
+	if o.Enabled && o.URL == "" {
+		return fmt.Errorf("outgoing: url is required")
+	}
+	if err := resolveOutSecret(o, c.Dir(), o.Enabled); err != nil {
+		return err
+	}
+	for i := range o.Rules {
+		r := &o.Rules[i]
+		if err := r.Compile(); err != nil {
+			return fmt.Errorf("outgoing rule %s: %w", r.Label(i), err)
+		}
+	}
+	if o.Enabled && len(o.Rules) == 0 {
+		return fmt.Errorf("outgoing: enabled with no rules, so nothing would ever be sent")
+	}
+	return nil
+}
+
 // MayReach reports whether an agent is allowed to put a message in another's
 // mailbox, and if not, where to go instead. The reason is written for the agent
 // that will read it: a refusal that does not say what to do next only costs a
@@ -800,6 +894,9 @@ func (c *Config) BusEnabled() bool { return c.Bus.Enabled != nil && *c.Bus.Enabl
 // HookLogEnabled reports whether every webhook delivery is recorded in full.
 func (c *Config) HookLogEnabled() bool { return c.Hooks.Log != nil && *c.Hooks.Log }
 
+// OutgoingLogEnabled reports whether every outgoing attempt is recorded.
+func (c *Config) OutgoingLogEnabled() bool { return c.Outgoing.Log != nil && *c.Outgoing.Log }
+
 // resolveSecret loads the HMAC secret from whichever source was configured and
 // leaves it in Secret. Exactly one source may be named: silently preferring one
 // over another is how a swarm ends up verifying signatures against a secret its
@@ -809,6 +906,44 @@ func (c *Config) HookLogEnabled() bool { return c.Hooks.Log != nil && *c.Hooks.L
 // sources checked for coherence, but nothing is read: a hooks block that is
 // switched off must not make the whole config unloadable because its secret
 // file has not been created yet — that would take `swarm ls` down with it.
+// resolveOutSecret is resolveSecret for the outgoing side. The two are written
+// apart rather than shared through an interface: they name their own keys in
+// their own errors, and "hooks: secret_path" pointing at an outgoing block
+// would send whoever reads it to the wrong half of the file.
+func resolveOutSecret(o *OutgoingConfig, base string, load bool) error {
+	named := make([]string, 0, 3)
+	for _, s := range []struct{ name, value string }{
+		{"secret", o.Secret},
+		{"secret_env", o.SecretEnv},
+		{"secret_path", o.SecretPath},
+	} {
+		if s.value != "" {
+			named = append(named, s.name)
+		}
+	}
+	if len(named) > 1 {
+		return fmt.Errorf("outgoing: set only one of %s", strings.Join(named, ", "))
+	}
+	if !load {
+		return nil
+	}
+	switch {
+	case o.SecretEnv != "":
+		o.Secret = strings.TrimSpace(os.Getenv(o.SecretEnv))
+		if o.Secret == "" {
+			return fmt.Errorf("outgoing: secret_env names %s, which is empty", o.SecretEnv)
+		}
+	case o.SecretPath != "":
+		o.SecretPath = resolve(base, o.SecretPath)
+		secret, err := readSecretFile(o.SecretPath)
+		if err != nil {
+			return fmt.Errorf("outgoing: secret_path: %w", err)
+		}
+		o.Secret = secret
+	}
+	return nil
+}
+
 func (h *HookConfig) resolveSecret(base string, load bool) error {
 	named := make([]string, 0, 3)
 	for _, s := range []struct{ name, value string }{

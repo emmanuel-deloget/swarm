@@ -18,6 +18,7 @@ against your working directory. `~/` and `$VAR` are expanded.
 - [`groups`](#groups)
 - [`web`](#web)
 - [`bus`](#bus)
+- [`outgoing`](#outgoing)
 - [`hooks`](#hooks)
 - [Durations](#durations)
 
@@ -368,6 +369,68 @@ swarm bus threads                          # the open conversations
 A paused bus still records everything; it just stops interrupting anybody with
 it. The agents keep working — this stops the talking, not the fleet. Without
 `-flush`, resuming leaves what piled up in the mailboxes for `swarm inbox`.
+
+## `outgoing`
+
+The other direction: the incoming rules read backwards. Conditions on paths into
+a fleet event, a body rendered from the same paths, a signed POST. swarm does not
+know what is at the far end and does not want to — Telegram, a CI job or a shell
+script behind a reverse proxy are the same thing to it.
+
+```yaml
+outgoing:
+  enabled: true
+  url: https://ci.example/swarm
+  secret_path: .swarm/out-secret     # or secret_env
+  signature_header: X-Swarm-Signature
+  rules:
+    - name: finished
+      when: {event: agent.done}
+      body: "{agent} finished on {data.branch}"
+    - name: gave-up
+      when: {event: agent.error, text: "~not restarting"}
+      body: "{agent}: {text}"
+```
+
+| key | default | |
+|---|---|---|
+| `enabled` | `false` | Off by default: it talks to the network. |
+| `url` | — | **Required when enabled.** |
+| `secret` / `secret_env` / `secret_path` | — | Signs the body, exactly as the listener verifies one. Exactly one of the three. |
+| `signature_header` | — | Required with a secret. |
+| `token` | `""` | Sent as `X-Swarm-Token`. |
+| `timeout` | `10s` | Bounds one attempt. |
+| `retries` | `0` | Further attempts a failure earns; the wait doubles from `retry_backoff`. |
+| `retry_backoff` | `2s` | First wait between attempts. |
+| `queue` | `256` | Notices held while the far end is slow. Past it they are dropped, and said to be. |
+| `log` | `true` | Record every attempt in `webhooks.log`, beside the incoming ones. |
+| `rules` | `[]` | Tried against every event; each match sends. |
+
+### The events
+
+| `event` | when |
+|---|---|
+| `agent.started` | the process was launched |
+| `agent.exited` | it died — `text` is the status |
+| `agent.idle` | it fell quiet with nothing to show |
+| `agent.done` | it fell quiet **and** left changes behind: tracked files modified, or commits ahead |
+| `agent.attention` | a `pattern` with `notify: true` matched |
+| `agent.error` | anything swarm logged as an error, the restart streak included |
+
+`agent.done` is as close as an agnostic tool gets to "it finished": swarm has no
+notion of a task, so what it reports is a fleet that went quiet with work under
+it. Untracked files do not count, for the same reason they do not in `swarm ls` —
+an agent's scratch output would otherwise mark every workspace forever.
+
+A rule addresses `event`, `agent`, `text`, `at`, and everything under `data.`:
+`data.branch`, `data.dirty`, `data.ahead`, `data.behind`, `data.session`. The
+body uses the same `{placeholder}` syntax as an incoming message.
+
+The POST carries the whole notice as JSON — event, agent, text, data, and the
+rendered `body` — so the far end can use either. Retrying is deliberately
+modest and the queue lives in memory only: swarm tells the world what happened,
+and making sure the world listened is the world's job. A queue that survived
+restarts would be a message broker, which this is not.
 
 ## `hooks`
 

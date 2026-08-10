@@ -49,6 +49,9 @@ agent's terminal on the right, and the event log underneath](assets/tui.png)
 - **Incoming webhooks.** Declarative rules turn an HTTP delivery into a bus
   message, so the fleet reacts to a pull request or a ticket without you
   relaying it. The listener is signature-checked and lives on its own port.
+- **Outgoing webhooks**, the same rules read backwards: an agent that finished,
+  died or needs you becomes a signed POST to your endpoint. The fleet can say so
+  without anyone watching it.
 - **Remote control over HTTP**, token-protected, with no JavaScript terminal
   library: swarm already emulates the terminals and sends ready-made HTML.
 
