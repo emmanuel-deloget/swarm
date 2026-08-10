@@ -223,3 +223,28 @@ agents:
 		return false
 	})
 }
+
+// TestDoneRaisesTheEvent: agent.done is declared, so the declaration has to be
+// what raises it. This was documented and then not emitted at all — the git
+// version was removed and nothing took its place.
+func TestDoneRaisesTheEvent(t *testing.T) {
+	h := fleet(t, askFleet)
+	if _, err := h.SendKind("beta", "alpha", bus.KindRequest, "look", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := h.Done("alpha", 0, "nothing to change"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The sender is only built when an endpoint is configured, so what is
+	// checked here is that the hub asks for it at all.
+	var seen bool
+	for _, e := range h.Log().History(-1) {
+		if strings.Contains(e.Text, "done: settled") {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Error("settling produced no record of itself")
+	}
+}

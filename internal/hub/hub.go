@@ -721,6 +721,24 @@ func (h *Hub) Done(from string, thread uint64, note string) (settled int, out []
 		out = append(out, msgs...)
 	}
 	h.log.Emit(event.KindInfo, from, fmt.Sprintf("done: settled %d", len(closed)))
+
+	// Outwards too, and this is the only place it can come from: done is
+	// declared, so the declaration is the event. Deducing it from the disk was
+	// what this replaced.
+	data := map[string]string{"settled": fmt.Sprint(len(closed))}
+	if len(closed) > 0 {
+		data["thread"] = fmt.Sprint(closed[0].Thread)
+		data["asked_by"] = closed[0].From
+		data["asked_kind"] = string(closed[0].Kind)
+	}
+	if a, err := h.Agent(from); err == nil {
+		if st, ok := a.GitState(); ok {
+			data["branch"] = st.Branch
+			data["dirty"] = fmt.Sprint(st.Dirty)
+			data["ahead"] = fmt.Sprint(st.Ahead)
+		}
+	}
+	h.notify(from, OutDone, body, data)
 	return len(closed), out, nil
 }
 
