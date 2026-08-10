@@ -11,15 +11,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/charmbracelet/x/vt"
-	"github.com/creack/pty"
 )
 
 // Options configures a Terminal.
@@ -78,8 +75,9 @@ func (e ExitStatus) String() string {
 type Terminal struct {
 	opts Options
 
-	cmd *exec.Cmd
-	ptm *os.File // pty master
+	// child is the process and the terminal it runs in. What that means
+	// differs per operating system; see child.go.
+	child child
 
 	// emu is created once in Start and never replaced. Its *state* is guarded
 	// by mu; the pointer itself is read without locking, which matters for
@@ -138,11 +136,11 @@ type Terminal struct {
 	// is only touched from the reader goroutine.
 	modeCarry []byte
 
-	// ptmMu guards every use of the pty master, including closing it: an ioctl
+	// childMu guards every use of the terminal, including closing it: an ioctl
 	// racing the close would touch a descriptor that may already have been
 	// reused.
-	ptmMu     sync.Mutex
-	ptmClosed bool
+	childMu     sync.Mutex
+	childClosed bool
 
 	// readerDone is closed once readLoop has drained the pty to EOF. Waiting
 	// for it before tearing anything down is what keeps a dying agent's last
@@ -202,20 +200,11 @@ func Start(o Options) (*Terminal, error) {
 	t.curVisible.Store(true)
 	t.focused.Store(true)
 
-	cmd := exec.Command(o.Command[0], o.Command[1:]...)
-	cmd.Dir = o.Dir
-	cmd.Env = o.Env
-	// A session leader with the pty as controlling terminal: this is what
-	// makes job control, SIGINT-on-^C and terminal queries work. See
-	// proc_unix.go — the answer differs per operating system.
-	setSessionLeader(cmd)
-
-	ptm, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(o.Cols), Rows: uint16(o.Rows)})
+	ch, err := spawn(o)
 	if err != nil {
-		return nil, fmt.Errorf("vterm: start %s: %w", o.Command[0], err)
+		return nil, err
 	}
-	t.cmd = cmd
-	t.ptm = ptm
+	t.child = ch
 	t.lastOut.Store(time.Now().UnixNano())
 
 	go t.readLoop()
@@ -226,16 +215,16 @@ func Start(o Options) (*Terminal, error) {
 }
 
 // readLoop feeds pty output into the emulator and to the subscribers. It owns
-// the pty master: closing it anywhere else would race with this read and throw
+// the terminal: closing it anywhere else would race with this read and throw
 // away whatever the child wrote last.
 func (t *Terminal) readLoop() {
 	defer func() {
 		close(t.readerDone)
-		t.closePTM()
+		t.closeChild()
 	}()
 	buf := make([]byte, 32*1024)
 	for {
-		n, err := t.ptm.Read(buf)
+		n, err := t.child.Read(buf)
 		if n > 0 {
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
@@ -343,14 +332,7 @@ func (t *Terminal) replyWriteLoop() {
 }
 
 func (t *Terminal) waitLoop() {
-	err := t.cmd.Wait()
-	st := ExitStatus{At: time.Now(), Err: err}
-	if t.cmd.ProcessState != nil {
-		st.Code = t.cmd.ProcessState.ExitCode()
-		if ws, ok := t.cmd.ProcessState.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
-			st.Signal = ws.Signal()
-		}
-	}
+	st := t.child.Wait()
 	// Let the reader finish draining before anything is torn down, so the
 	// screen shows the child's final output. It ends on its own when the pty
 	// reports EIO; the timeout is only there so a stuck reader cannot wedge
@@ -397,33 +379,33 @@ func (t *Terminal) WriteSource(source string, p []byte) (int, error) {
 }
 
 func (t *Terminal) write(p []byte) (int, error) {
-	t.ptmMu.Lock()
-	defer t.ptmMu.Unlock()
-	if t.ptmClosed {
+	t.childMu.Lock()
+	defer t.childMu.Unlock()
+	if t.childClosed {
 		return 0, ErrExited
 	}
-	return t.ptm.Write(p)
+	return t.child.Write(p)
 }
 
-// closePTM closes the pty master exactly once.
-func (t *Terminal) closePTM() {
-	t.ptmMu.Lock()
-	defer t.ptmMu.Unlock()
-	if t.ptmClosed {
+// closeChild closes the terminal exactly once.
+func (t *Terminal) closeChild() {
+	t.childMu.Lock()
+	defer t.childMu.Unlock()
+	if t.childClosed {
 		return
 	}
-	t.ptmClosed = true
-	_ = t.ptm.Close()
+	t.childClosed = true
+	_ = t.child.Close()
 }
 
-// setSize applies the window size to the pty, unless it is already closed.
+// setSize applies the window size to the terminal, unless it is already closed.
 func (t *Terminal) setSize(cols, rows int) error {
-	t.ptmMu.Lock()
-	defer t.ptmMu.Unlock()
-	if t.ptmClosed {
+	t.childMu.Lock()
+	defer t.childMu.Unlock()
+	if t.childClosed {
 		return nil
 	}
-	return pty.Setsize(t.ptm, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+	return t.child.Resize(cols, rows)
 }
 
 // ErrExited is returned when writing to a terminal whose child is gone.
@@ -532,10 +514,10 @@ func (t *Terminal) AltScreen() bool { return t.altOn.Load() }
 
 // Pid returns the child process id, or 0 if it is gone.
 func (t *Terminal) Pid() int {
-	if t.cmd == nil || t.cmd.Process == nil {
+	if t.child == nil {
 		return 0
 	}
-	return t.cmd.Process.Pid
+	return t.child.Pid()
 }
 
 // Exited reports whether the child has been reaped.
@@ -553,13 +535,13 @@ func (t *Terminal) BytesOut() uint64 { return t.bytesOut.Load() }
 // LastOutput is when the child last wrote something.
 func (t *Terminal) LastOutput() time.Time { return time.Unix(0, t.lastOut.Load()) }
 
-// Signal sends a signal to the child's process group, so that a whole tool
-// tree (shell wrappers, node children) gets it and not just the leader.
+// Signal sends a signal to the child's process tree, so that a whole tool tree
+// (shell wrappers, node children) gets it and not just the leader.
 func (t *Terminal) Signal(sig syscall.Signal) error {
-	if t.cmd == nil || t.cmd.Process == nil {
+	if t.child == nil {
 		return ErrExited
 	}
-	return signalGroup(t.cmd.Process.Pid, sig)
+	return t.child.Signal(sig)
 }
 
 // Stop asks the child to quit, then kills it if it outstays the grace period.
