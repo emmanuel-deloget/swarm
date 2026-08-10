@@ -45,6 +45,11 @@ type Hub struct {
 	sender    *hook.Sender
 	outCancel func()
 
+	// stalledStop ends the watcher that reports agents which owe something and
+	// have gone quiet.
+	stalledStop chan struct{}
+	stalledOnce sync.Once
+
 	// paused holds the reason deliveries are suspended, empty when they are not.
 	// A circuit breaker rather than a stop: the agents keep working, and what
 	// they say to each other waits — which is what you want at the moment you
@@ -123,6 +128,13 @@ func New(o Options) (*Hub, error) {
 		}
 		h.agents[ac.Name] = agent.New(opts)
 		h.order = append(h.order, ac.Name)
+	}
+
+	// Last, and not before: the watcher reads the agent list, which the loop
+	// above is still writing.
+	if after := cfg.Bus.StalledAfter; after > 0 {
+		h.stalledStop = make(chan struct{})
+		go h.watchStalled(after)
 	}
 	return h, nil
 }
@@ -557,6 +569,11 @@ func (h *Hub) StartOutgoing(trace *hook.Log) error {
 func (h *Hub) Shutdown(grace time.Duration) {
 	// Before the agents go: their last events deserve to leave, and the sender
 	// drains what is queued.
+	h.stalledOnce.Do(func() {
+		if h.stalledStop != nil {
+			close(h.stalledStop)
+		}
+	})
 	if h.outCancel != nil {
 		h.outCancel()
 	}
@@ -661,6 +678,62 @@ func (h *Hub) Keys(target, keys string) ([]TargetResult, error) {
 // pull mode keep it pending until they run `swarm inbox`.
 func (h *Hub) Send(from, target, body string, files []string) ([]bus.Message, error) {
 	return h.SendKind(from, target, bus.KindNote, body, files)
+}
+
+// Done settles what an agent was asked, and tells whoever asked. It is the only
+// way a request can end when there is nothing to answer — the work is finished,
+// or there turned out to be none after looking.
+func (h *Hub) Done(from string, thread uint64, note string) (settled int, out []bus.Message, err error) {
+	if from == "" {
+		return 0, nil, errors.New("done needs an agent name (set SWARM_AGENT or pass one)")
+	}
+	closed := h.bus.Settle(from, thread)
+	if len(closed) == 0 {
+		// Not an error: an agent may report work it was given by hand, and
+		// being told is better than being right.
+		h.log.Emit(event.KindInfo, from, "done, with nothing outstanding")
+		return 0, nil, nil
+	}
+
+	body := note
+	if body == "" {
+		body = "done"
+	}
+	for _, d := range closed {
+		// Whoever asked may not be reachable on the bus — the user is not an
+		// agent, and a webhook is a name, not a mailbox. The debt is settled
+		// all the same: it was owed to the fleet, not to a mailbox.
+		if d.From == "" || d.From == from {
+			continue
+		}
+		if _, isAgent := h.cfg.Agent(d.From); !isAgent {
+			continue
+		}
+		msgs, err := h.SendOn(from, d.From, bus.KindDone, body, nil,
+			SendOptions{Thread: d.Thread})
+		if err != nil {
+			// Reporting must not fail because the far end cannot be written to.
+			h.log.Emit(event.KindError, from, "done: telling "+d.From+": "+err.Error())
+			continue
+		}
+		out = append(out, msgs...)
+	}
+	h.log.Emit(event.KindInfo, from, fmt.Sprintf("done: settled %d", len(closed)))
+	return len(closed), out, nil
+}
+
+// ackLine is what to append to a message that opens a debt: the exact command
+// that settles it, thread and all.
+func ackLine(kind bus.Kind, from string, thread uint64) string {
+	switch kind {
+	case bus.KindQuestion:
+		return fmt.Sprintf("\n\n[swarm] answer with: swarm send -kind answer -thread %d %s \"…\"",
+			thread, from)
+	case bus.KindRequest, bus.KindBlocked:
+		return fmt.Sprintf("\n\n[swarm] when this is settled: swarm done -thread %d"+
+			" (or answer with -kind answer if there is something to say)", thread)
+	}
+	return ""
 }
 
 // threadFor decides which conversation a message belongs to, and refuses when
@@ -808,6 +881,14 @@ func (h *Hub) SendOn(from, target string, kind bus.Kind, body string, files []st
 	if err != nil {
 		return nil, err
 	}
+	// A message that asks for something says how to settle it. Left to guess,
+	// an agent guesses — and sometimes wrongly, which costs a turn to find out
+	// and leaves the debt open in the meantime. The demand carries the way to
+	// close it, as a refusal carries the way to proceed.
+	if ack := ackLine(kind, from, thread); ack != "" {
+		body += ack
+	}
+
 	// Said one turn early, so the recipient can spend the last one on an
 	// answer rather than discovering the budget by being refused.
 	if budget := h.cfg.Bus.MaxTurns; budget > 0 && h.bus.Turns(thread) == budget-1 {

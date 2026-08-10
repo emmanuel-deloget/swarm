@@ -33,6 +33,7 @@ const (
 	CmdBusStats = "bus-stats"
 	CmdBusPause = "bus-pause"
 	CmdThreads  = "bus-threads"
+	CmdDone     = "done"
 	CmdAttach   = "attach"
 	CmdShutdown = "shutdown"
 )

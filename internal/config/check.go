@@ -85,7 +85,15 @@ func checkSharedRestatesDefault(c *Config, written map[string]string) (Finding, 
 }
 
 // Apply writes the fix to the config file.
+// Fixable reports whether this finding can be applied. Some cannot: when the
+// remedy is a judgement between two settings, saying which one to move is the
+// author's call, not a rewrite.
+func (f Finding) Fixable() bool { return f.apply != nil }
+
 func (f Finding) Apply(path string) error {
+	if f.apply == nil {
+		return fmt.Errorf("%s has no automatic fix: %s", f.Check, f.Fix)
+	}
 	src, err := os.ReadFile(path)
 	if err != nil {
 		return err

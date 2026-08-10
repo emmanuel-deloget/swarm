@@ -350,12 +350,61 @@ answer. Use it for decisions, which is what `escalate_to` produces — a saturat
 thread is handed to that agent with everything that was said, and its answer is
 expected to come back final.
 
-### Kinds
+### Kinds, and what they commit you to
 
-Every message has a kind, `note` unless `swarm send -kind` says otherwise:
-`question`, `answer`, `fyi`, `request`, `decision`, `blocked`. It is what
-`delivery_by_kind` dispatches on, and what `swarm bus stats` counts — twelve
-questions and no decisions in an hour is a verdict rather than a statistic.
+Every message has a kind, `note` unless `swarm send -kind` says otherwise. It is
+what `delivery_by_kind` dispatches on, what `swarm bus stats` counts — and what
+decides whether an agent now owes something.
+
+| kind | what it says | opens a debt | settles one |
+|---|---|---|---|
+| *(none)* | something said | | |
+| `fyi` | information, and expecting nothing back **is** the message | | |
+| `question` | I expect an answer | ✔ | |
+| `answer` | here it is | | ✔ |
+| `request` | I expect work | ✔ | |
+| `done` | it is finished, or there was nothing to do | | ✔ |
+| `decision` | it is settled | | ✔ |
+| `blocked` | I cannot go on | ✔ | |
+
+A message that opens a debt carries the way to close it, appended to the body:
+
+```
+[swarm] when this is settled: swarm done -thread 7
+```
+
+Left to guess, an agent guesses, and a wrong guess costs a turn to discover
+while the work stays open. This is the same idea as a refusal carrying its
+instruction.
+
+`swarm done [note]` settles everything outstanding, or one thread with
+`-thread`. It exists because a request had no way of ending: an answer closes a
+question, a decision closes a debate, and a demand for work closed nothing at
+all — so an agent that had finished looked exactly like one that never started.
+It also covers the case no artefact can: *I looked, there was nothing to do.*
+
+Whoever asked is told, on the thread they asked on — unless they have no mailbox
+(you, or a webhook), in which case the debt is settled and nobody is written to.
+
+### Stalled
+
+| key | default | |
+|---|---|---|
+| `stalled_after` | `10m` | How long an agent may be **idle** while owing something before swarm says so. Counted from the moment it goes idle, so it adds to that agent's `idle_after`. `0` switches it off. |
+
+An agent that owes something and has been idle for `stalled_after` is reported — in the event log, and as `agent.stalled` to an outgoing webhook.
+Both halves are needed: an agent with nothing to do is quiet and that is
+normal, and an agent that is writing is not stalled whatever it owes.
+
+**It is a signal and only a signal.** Nothing is restarted, injected or killed
+on the strength of it, because the state is a guess: an agent waiting on a long
+build is silent and does owe work. Ask it and it will say so — which is why the
+false positive costs a question rather than an interruption.
+
+The wait starts where `idle_after` ends rather than competing with it, so the
+two settings add up and no pair of values can be posed in a way that never
+fires: an agent with `idle_after: 3s` and `stalled_after: 10m` is reported after
+ten minutes and three seconds of silence.
 
 ### When it gets away from you
 
@@ -413,14 +462,17 @@ outgoing:
 | `agent.started` | the process was launched |
 | `agent.exited` | it died — `text` is the status |
 | `agent.idle` | it fell quiet with nothing to show |
-| `agent.done` | it fell quiet **and** left changes behind: tracked files modified, or commits ahead |
+| `agent.done` | it settled what it was asked, with `swarm done` |
+| `agent.stalled` | it owes something and has been silent for `bus.stalled_after` |
 | `agent.attention` | a `pattern` with `notify: true` matched |
 | `agent.error` | anything swarm logged as an error, the restart streak included |
 
-`agent.done` is as close as an agnostic tool gets to "it finished": swarm has no
-notion of a task, so what it reports is a fleet that went quiet with work under
-it. Untracked files do not count, for the same reason they do not in `swarm ls` —
-an agent's scratch output would otherwise mark every workspace forever.
+`agent.done` is declared, never deduced. An earlier version of this raised it
+from the git tree — quiet plus a dirty checkout — which was wrong in both
+directions: an agent commenting on a pull request through an MCP tool touches no
+file and would never have finished, while one that changed three files and
+stopped to ask a question always would have. Whether work is done is not visible
+from outside; it is stated by whoever did it.
 
 A rule addresses `event`, `agent`, `text`, `at`, and everything under `data.`:
 `data.branch`, `data.dirty`, `data.ahead`, `data.behind`, `data.session`. The

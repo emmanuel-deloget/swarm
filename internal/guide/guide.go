@@ -164,6 +164,21 @@ Groups you can write to: {{range $i, $g := .Groups}}{{if $i}}, {{end}}` + "`@{{$
 ` + "`swarm send -kind <kind> …`" + `, one of: {{range $i, $k := .Kinds}}{{if $i}}, {{end}}` + "`{{$k}}`" + `{{end}}.
 A question expects an answer; an fyi does not. This is not decoration — how a
 message reaches its recipient can depend on it.
+
+## When something is asked of you
+
+A ` + "`question`" + `, a ` + "`request`" + ` or a ` + "`blocked`" + ` addressed to you leaves something
+outstanding until you settle it. The message tells you how, and it is worth
+doing even when the answer is "there was nothing to do":
+
+` + "```sh" + `
+swarm done                      # everything outstanding is finished
+swarm done -thread 7 "note"     # just this one, with a word about it
+` + "```" + `
+
+Until then you are counted as owing it. After a while of silence you are
+reported as stalled — which is a signal to whoever is watching, not a
+punishment: if you are waiting on something long, say so and it is understood.
 {{if .Deferred}}
 Some agents are configured to receive messages only once they fall quiet, so a
 message you send may sit for a while. That is the fleet working as intended,

@@ -31,7 +31,7 @@ const (
 	OutExited    = "agent.exited"
 	OutIdle      = "agent.idle"
 	OutDone      = "agent.done"
-	OutGaveUp    = "agent.gave_up"
+	OutStalled   = "agent.stalled"
 	OutAttention = "agent.attention"
 	OutError     = "agent.error"
 	OutMessage   = "bus.message"
@@ -83,9 +83,14 @@ func copyData(in map[string]string) map[string]string {
 	return out
 }
 
-// notifyIdle is the derived pair, raised where the transition is known: the
-// agent has just fallen quiet. Whether it left work behind decides which of the
-// two it is.
+// notifyIdle says an agent fell quiet, and nothing more.
+//
+// It used to decide, from the git tree, whether that meant "finished" — which
+// was wrong twice over. An agent that comments on a pull request through an MCP
+// tool touches no file and would never have finished; an agent that changed
+// three files and stopped to ask a question would always have. Whether work is
+// done is not visible from outside, and no amount of watching the disk makes it
+// so: it is declared, by whoever did it. See agent.done, raised by `swarm done`.
 func (h *Hub) notifyIdle(name string) {
 	if h.sender == nil {
 		return
@@ -101,13 +106,62 @@ func (h *Hub) notifyIdle(name string) {
 		data["dirty"] = fmt.Sprint(st.Dirty)
 		data["ahead"] = fmt.Sprint(st.Ahead)
 		data["behind"] = fmt.Sprint(st.Behind)
-		if st.Dirty || st.Ahead > 0 {
-			// Something to show for the work. This is the closest an agnostic
-			// tool gets to "it finished": no notion of a task, just a fleet
-			// that went quiet with changes under it.
-			h.notify(name, OutDone, in.Git, data)
-			return
-		}
+	}
+	if d, owes := h.bus.OwedSince(name); owes {
+		data["owed_thread"] = fmt.Sprint(d.Thread)
+		data["owed_kind"] = string(d.Kind)
+		data["owed_by"] = d.From
 	}
 	h.notify(name, OutIdle, in.Git, data)
+}
+
+// watchStalled reports an agent that owes something and has been idle for too
+// long — idle, so the wait begins where that agent's idle_after ends. It is a signal and only a signal: nothing is restarted, injected or
+// killed on the strength of it, because the state is a guess. An agent waiting
+// on a long build is silent and does owe work — ask it, and it will say so.
+func (h *Hub) watchStalled(after time.Duration) {
+	tick := time.NewTicker(after / 4)
+	defer tick.Stop()
+	said := map[string]uint64{}
+	for {
+		select {
+		case <-h.stalledStop:
+			return
+		case <-tick.C:
+			for _, in := range h.Infos() {
+				d, owes := h.bus.OwedSince(in.Name)
+				// Counted from the moment the agent went idle, not from its
+				// last output: stalled_after adds to that agent's idle_after
+				// rather than competing with it, so no pair of settings can be
+				// posed in a way that never fires.
+				//
+				// From LastOutput rather than Quiet, which is rounded to the
+				// second for display and would swallow a short threshold.
+				threshold := after
+				if ac, ok := h.cfg.Agent(in.Name); ok {
+					threshold += ac.IdleAfter
+				}
+				quiet := time.Since(in.LastOutput)
+				if !owes || in.State != agent.StateIdle || quiet < threshold {
+					// Settled, busy, or has spoken since: whatever was said
+					// about it no longer holds.
+					delete(said, in.Name)
+					continue
+				}
+				if said[in.Name] == d.Thread {
+					continue // already reported this one
+				}
+				said[in.Name] = d.Thread
+				h.log.Emit(event.KindPattern, in.Name, fmt.Sprintf(
+					"stalled: owes %s to %s since %s, silent for %s",
+					d.Kind, d.From, d.Since.Format("15:04"), quiet.Round(time.Millisecond)))
+				h.notify(in.Name, OutStalled, "", map[string]string{
+					"owed_thread": fmt.Sprint(d.Thread),
+					"owed_kind":   string(d.Kind),
+					"owed_by":     d.From,
+					"quiet":       quiet.Round(time.Second).String(),
+				})
+			}
+		}
+	}
 }

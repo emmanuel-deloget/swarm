@@ -31,11 +31,16 @@ const (
 	KindRequest  Kind = "request"
 	KindDecision Kind = "decision"
 	KindBlocked  Kind = "blocked"
+	// KindDone settles what was asked when there is nothing to answer: the work
+	// is finished, or there turned out to be none. Without it a request had no
+	// way of ending — an answer closes a question, a decision closes a debate,
+	// and a demand for work closed nothing at all.
+	KindDone Kind = "done"
 )
 
 // Kinds lists every kind a message may carry, for validation and for help.
 func Kinds() []Kind {
-	return []Kind{KindQuestion, KindAnswer, KindFYI, KindRequest, KindDecision, KindBlocked}
+	return []Kind{KindQuestion, KindAnswer, KindFYI, KindRequest, KindDecision, KindBlocked, KindDone}
 }
 
 // ValidKind reports whether k is one swarm understands. The empty kind is
@@ -108,6 +113,8 @@ type Bus struct {
 	history  int
 	nextID   uint64
 	nextThrd uint64
+	// owed is what each agent has been asked and has not settled. See owed.go.
+	owed map[string][]debt
 }
 
 type mailbox struct {
@@ -203,6 +210,7 @@ func (b *Bus) Post(m Message) Message {
 	if keep := b.history * 20; len(b.recent) > keep {
 		b.recent = b.recent[len(b.recent)-keep:]
 	}
+	b.track(m)
 	box := b.box(m.To)
 	box.pending = append(box.pending, m)
 	box.seen = append(box.seen, m)

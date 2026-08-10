@@ -43,7 +43,7 @@ func cmdConfigCheck(args []string) error {
 	}
 	for _, f := range findings {
 		fmt.Printf("%s: %s\n  %s\n  fix: %s\n", f.Severity, f.Check, f.Problem, f.Fix)
-		if *fix {
+		if *fix && f.Fixable() {
 			if err := f.Apply(cfg.Path()); err != nil {
 				return err
 			}
@@ -70,7 +70,7 @@ func checkConfigAtStart(cfg *config.Config) error {
 	for _, f := range findings {
 		fmt.Fprintf(os.Stderr, "swarm: %s in %s\n  %s\n", f.Severity, cfg.Path(), f.Problem)
 
-		if interactive && confirm(fmt.Sprintf("  %s?", f.Fix)) {
+		if interactive && f.Fixable() && confirm(fmt.Sprintf("  %s?", f.Fix)) {
 			if err := f.Apply(cfg.Path()); err != nil {
 				return err
 			}

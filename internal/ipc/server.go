@@ -255,6 +255,23 @@ func (s *Server) handle(req Request) Response {
 		}
 		return Response{OK: true, Paused: h.Paused()}
 
+	case CmdDone:
+		settled, msgs, err := h.Done(req.From, req.Thread, req.Text)
+		if err != nil {
+			return errorResponse(err)
+		}
+		switch {
+		case settled == 0:
+			return Response{OK: true, Text: "nothing was outstanding"}
+		case len(msgs) == 0:
+			// Settled, but whoever asked has no mailbox — the user, or a
+			// webhook. Saying "nothing was outstanding" here would be a lie.
+			return Response{OK: true, Text: fmt.Sprintf("settled %d, nobody to tell", settled)}
+		default:
+			return Response{OK: true, Messages: msgs,
+				Text: fmt.Sprintf("settled %d, told %d", settled, len(msgs))}
+		}
+
 	case CmdThreads:
 		return Response{OK: true, Threads: h.Bus().Threads(h.Config().Bus.MaxTurns)}
 

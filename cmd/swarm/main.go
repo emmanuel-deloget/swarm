@@ -91,6 +91,8 @@ func main() {
 		err = cmdSend(args, true)
 	case "inbox":
 		err = cmdInbox(args)
+	case "done":
+		err = cmdDone(args)
 	case "stage":
 		err = cmdStage(args)
 	case "events":

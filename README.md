@@ -428,6 +428,7 @@ swarm ls                                  # the other agents and their state
 swarm send review-2 "please review PR 42"
 swarm send @dev -file report.md "findings"
 swarm inbox -wait 30s                     # block until something arrives
+swarm done "nothing to change"            # settle what you were asked
 ```
 
 `message:` is what an agent is told at launch — its standing brief, written
@@ -446,6 +447,14 @@ queued until they ask; `defer` recipients get theirs when they next fall quiet,
 several at once if several arrived. Pull suits an agent that must not be
 interrupted at all, push one that is waiting for work, and defer most of the
 rest — it is push without cutting into what the agent was doing.
+
+A `question`, a `request` or a `blocked` addressed to an agent leaves something
+outstanding until it answers or runs `swarm done` — and the message says which,
+so nobody has to guess. An agent that owes something and has been idle for
+`bus.stalled_after` is reported as **stalled**, in the event log and to an
+outgoing webhook. Both halves matter: an agent with nothing to do is quiet and
+that is normal. It is a signal only — swarm never restarts or interrupts an
+agent because of it, since the guess can be wrong and asking costs less.
 
 Beyond that, the configuration can bound the talking rather than hope for the
 best: `delivery_by_kind` lets the fleet defer while `blocked` still gets

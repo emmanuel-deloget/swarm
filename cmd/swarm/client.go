@@ -806,3 +806,36 @@ func kindNames() string {
 	}
 	return strings.Join(out, ", ")
 }
+
+// cmdDone settles what an agent was asked. It exists because a request had no
+// way of ending: an answer closes a question, a decision closes a debate, and a
+// demand for work closed nothing at all — so an agent that finished looked
+// exactly like an agent that never started.
+func cmdDone(args []string) error {
+	var cf clientFlags
+	fs := newFlagSet("done")
+	cf.register(fs)
+	from := fs.String("from", os.Getenv("SWARM_AGENT"), "who finished (defaults to $SWARM_AGENT)")
+	thread := fs.Uint64("thread", 0, "settle one conversation; default is everything outstanding")
+	if err := parseArgs(fs, args, -1); err != nil {
+		return err
+	}
+
+	c, err := cf.dial()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = c.Close() }()
+
+	resp, err := c.Do(ipc.Request{
+		Cmd:    ipc.CmdDone,
+		From:   *from,
+		Thread: *thread,
+		Text:   strings.Join(fs.Args(), " "),
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Println(resp.Text)
+	return nil
+}
