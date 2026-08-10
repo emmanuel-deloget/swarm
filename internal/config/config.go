@@ -1024,10 +1024,9 @@ func readSecretFile(path string) (string, error) {
 	if !st.Mode().IsRegular() {
 		return "", fmt.Errorf("%s is not a regular file", path)
 	}
-	if perm := st.Mode().Perm(); perm&0o077 != 0 {
-		return "", fmt.Errorf("%s is mode %#o: it must not be readable by group or others (chmod 600 %s)", path, perm, path)
+	if err := checkSecretPerm(path, st.Mode()); err != nil {
+		return "", err
 	}
-
 	raw, err := io.ReadAll(io.LimitReader(f, 4096))
 	if err != nil {
 		return "", err

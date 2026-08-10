@@ -522,6 +522,13 @@ Exactly one of `secret`, `secret_env` and `secret_path` may be named. Two is an
 error rather than a precedence rule: silently preferring one is how a swarm ends
 up verifying against a secret its owner thought they had replaced.
 
+`secret_path` is checked on Unix only. Windows has no POSIX modes — every
+readable file reports `0666` — and who may open a file is decided by its ACL,
+which mode bits cannot express. Rather than apply a rule that would reject
+every secret ever written, or keep a promise nothing verifies, swarm does not
+check the file's permissions there. On a shared Windows machine, put the secret
+somewhere your account alone can read.
+
 A block with `enabled: false` is still checked for shape — unknown targets,
 broken regexps, two secret sources — but its secret is not read, so a switched-off
 listener never makes the rest of the config unloadable.
