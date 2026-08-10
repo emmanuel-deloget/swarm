@@ -178,8 +178,9 @@ func (h *Hub) WebURL() (string, string) {
 	return h.webURL, h.token
 }
 
-// installShim drops a `swarm` executable in the state dir and returns its
-// directory, so agents get the command in their PATH.
+// installShim drops a `swarm` command in the state dir and returns its
+// directory, so agents get the command in their PATH. How it is dropped
+// differs per operating system; see shim_unix.go.
 func (h *Hub) installShim() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -190,12 +191,7 @@ func (h *Hub) installShim() (string, error) {
 		return "", err
 	}
 	dir := filepath.Join(h.stateDir, "bin")
-	link := filepath.Join(dir, "swarm")
-	if current, err := os.Readlink(link); err == nil && current == exe {
-		return dir, nil
-	}
-	_ = os.Remove(link)
-	if err := os.Symlink(exe, link); err != nil {
+	if err := linkShim(dir, exe); err != nil {
 		return "", err
 	}
 	return dir, nil

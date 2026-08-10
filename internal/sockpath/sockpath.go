@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -62,7 +63,13 @@ func candidateDirs() []string {
 	if d := os.Getenv("XDG_RUNTIME_DIR"); d != "" {
 		dirs = append(dirs, d)
 	}
-	dirs = append(dirs, os.TempDir(), "/tmp")
+	dirs = append(dirs, os.TempDir())
+	if runtime.GOOS != "windows" {
+		// The last resort, and only where it exists: on Windows a relative
+		// "/tmp" would be resolved against the current drive and quietly
+		// create C:\tmp.
+		dirs = append(dirs, "/tmp")
+	}
 	return dirs
 }
 
