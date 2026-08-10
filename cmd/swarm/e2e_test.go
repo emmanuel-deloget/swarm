@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -21,7 +22,13 @@ import (
 
 func buildSwarm(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "swarm")
+	name := "swarm"
+	if runtime.GOOS == "windows" {
+		// Without the extension CreateProcess will not run it, and the failure
+		// arrives as "file not found" for a file plainly there.
+		name += ".exe"
+	}
+	bin := filepath.Join(t.TempDir(), name)
 	cmd := exec.Command("go", "build", "-o", bin, "github.com/emmanuel-deloget/swarm/cmd/swarm")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("building swarm: %v\n%s", err, out)
@@ -43,12 +50,12 @@ web:
 agents:
   - name: alpha
     role: dev
-    command: [sh, -c, "printf 'alpha ready\n'; while IFS= read -r l; do printf 'alpha saw:%s\n' \"$l\"; done"]
+    command: [probe-alpha]
   - name: beta
     role: review
-    command: [sh, -c, "printf 'beta ready\n'; while IFS= read -r l; do printf 'beta saw:%s\n' \"$l\"; done"]
+    command: [probe-beta]
 `
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(probeAgents(t, body)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	shortcutMode(t, path)
@@ -289,11 +296,11 @@ web:
   enabled: false
 agents:
   - name: alpha
-    command: [sh, -c, "printf 'alpha ready\n'; while IFS= read -r l; do printf 'alpha saw:%s\n' \"$l\"; done"]
+    command: [probe-alpha]
   - name: talker
-    command: [sh, -c, "printf 'talker ready\n'; while IFS= read -r l; do swarm send alpha \"$l\"; done"]
+    command: [probe-talker]
 `
-	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(cfg, []byte(probeAgents(t, body)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	shortcutMode(t, cfg)
@@ -425,9 +432,9 @@ web:
   enabled: false
 agents:
   - name: a1
-    command: [sh, -c, "while :; do printf 'size='; stty size; sleep 0.3; done"]
+    command: [probe-size]
 `
-	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(cfg, []byte(probeAgents(t, body)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	shortcutMode(t, cfg)
@@ -485,9 +492,9 @@ web:
   enabled: false
 agents:
   - name: a1
-    command: [sh, -c, "printf 'a1 ready\n'; while :; do sleep 1; done"]
+    command: [probe-a1]
 `
-	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(cfg, []byte(probeAgents(t, body)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	shortcutMode(t, cfg)
@@ -531,9 +538,9 @@ web:
   enabled: false
 agents:
   - name: a1
-    command: [sh, -c, "i=1; while [ $i -le 60 ]; do printf 'line-%02d\n' $i; i=$((i+1)); done; while :; do sleep 1; done"]
+    command: [probe-numbered]
 `
-	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(cfg, []byte(probeAgents(t, body)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	shortcutMode(t, cfg)
@@ -615,9 +622,9 @@ agents:
   - name: a1
     # stty -isig so that ctrl+\ arrives as a character instead of raising
     # SIGQUIT: this test is about who intercepts the key, not about signals.
-    command: [sh, -c, "stty -isig; printf 'a1 ready\n'; cat -v"]
+    command: [probe-catv]
 `
-	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(cfg, []byte(probeAgents(t, body)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	shortcutMode(t, cfg)
@@ -708,9 +715,9 @@ web:
   enabled: false
 agents:
   - name: a1
-    command: [sh, -c, "stty -isig; printf 'a1 ready\n'; cat -v"]
+    command: [probe-catv]
 `
-	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(cfg, []byte(probeAgents(t, body)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	shortcutMode(t, cfg)
@@ -854,9 +861,9 @@ web:
   enabled: false
 agents:
   - name: a1
-    command: [sh, -c, "printf 'ready\n'; while :; do sleep 1; done"]
+    command: [probe-ready]
 `
-	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(cfg, []byte(probeAgents(t, body)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	shortcutMode(t, cfg)
@@ -931,9 +938,9 @@ web:
   enabled: false
 agents:
   - name: a1
-    command: [sh, -c, "printf 'ready\n'; while :; do sleep 1; done"]
+    command: [probe-ready]
 `
-	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(cfg, []byte(probeAgents(t, body)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	shortcutMode(t, cfg)
@@ -993,9 +1000,9 @@ web:
   enabled: false
 agents:
   - name: a1
-    command: [sh, -c, "printf 'ready\n'; while :; do sleep 1; done"]
+    command: [probe-ready]
 `
-	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(cfg, []byte(probeAgents(t, body)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	shortcutMode(t, cfg)
@@ -1203,9 +1210,9 @@ web:
   enabled: false
 agents:
   - name: a1
-    command: [sh, -c, "printf 'ready\n'; while IFS= read -r l; do printf 'saw:%s\n' \"$l\"; done"]
+    command: [probe-saw]
 `
-	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(cfg, []byte(probeAgents(t, body)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	shortcutMode(t, cfg)

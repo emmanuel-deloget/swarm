@@ -165,6 +165,13 @@ jobs:
       - name: Test the Windows terminal
         run: go test -count=1 -timeout 5m -v ./internal/vterm/
 
+      # The end-to-end tests, which drive the real binary inside a
+      # pseudoconsole and read what it draws. Slower than everything above put
+      # together, and the only place the .cmd shim is exercised: one agent
+      # there calls `swarm send` on itself.
+      - name: Test end to end
+        run: go test -count=1 -timeout 15m ./cmd/swarm/
+
   lint:
     name: golangci-lint · ${{ matrix.goos }}
     runs-on: ubuntu-latest

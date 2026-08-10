@@ -15,8 +15,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strconv"
 	"time"
+
+	"github.com/charmbracelet/x/term"
 )
 
 // Flag marks a run as the probe rather than the test suite. go test only ever
@@ -43,7 +46,11 @@ func Argv(self string, verbs ...string) []string {
 //	print <text>          write the text and a newline
 //	lines <prefix>        echo every line read, behind that prefix
 //	echo                  copy input to output until it ends, as cat did
+//	numbered <n>          write line-01 .. line-NN
 //	tick <seconds> <text> write the text at that interval, for ever
+//	size <seconds>        write size=<rows> <cols> at that interval, for ever
+//	catv                  show the bytes arriving, control characters visible
+//	sendlines <target>    run `swarm send <target> <line>` for every line read
 //	sleep <seconds>       stay up, fractions allowed
 //	write <file> <text>   write text, with $VARIABLES expanded as a shell would
 //	fail <text>           complain on stderr and end with 1
@@ -78,6 +85,12 @@ func run(args []string) {
 		case "echo":
 			_, _ = io.Copy(os.Stdout, os.Stdin)
 			i++
+		case "numbered":
+			n, _ := strconv.Atoi(at(i + 1))
+			for l := 1; l <= n; l++ {
+				fmt.Printf("line-%02d\n", l)
+			}
+			i += 2
 		case "tick":
 			// An agent that keeps printing without being asked anything: what
 			// separates "quiet because it is waiting" from "quiet because it
@@ -88,6 +101,30 @@ func run(args []string) {
 				time.Sleep(time.Duration(secs * float64(time.Second)))
 				fmt.Print(text)
 			}
+		case "size":
+			// What `stty size` answered: the geometry the child believes it
+			// has, which is the only way to check that a resize reached it.
+			secs, _ := strconv.ParseFloat(at(i+1), 64)
+			for {
+				w, h, err := term.GetSize(os.Stdout.Fd())
+				if err == nil {
+					fmt.Printf("size=%d %d\n", h, w)
+				}
+				time.Sleep(time.Duration(secs * float64(time.Second)))
+			}
+		case "catv":
+			catv()
+			i++
+		case "sendlines":
+			target := at(i + 1)
+			sc := bufio.NewScanner(os.Stdin)
+			for sc.Scan() {
+				out, err := exec.Command("swarm", "send", target, sc.Text()).CombinedOutput()
+				if err != nil {
+					fmt.Printf("send failed: %v: %s\n", err, out)
+				}
+			}
+			i += 2
 		case "sleep":
 			secs, _ := strconv.ParseFloat(at(i+1), 64)
 			time.Sleep(time.Duration(secs * float64(time.Second)))
@@ -107,6 +144,39 @@ func run(args []string) {
 		default:
 			fmt.Fprintf(os.Stderr, "probe: unknown verb %q\n", args[i])
 			os.Exit(2)
+		}
+	}
+}
+
+// catv shows what arrives on the input, control characters made visible, the
+// way `cat -v` did — and, like the `stty -isig` that preceded it in these
+// tests, without letting the terminal turn any of those bytes into a signal.
+//
+// Raw mode is what buys that: it is also the only portable way to ask for it,
+// since termios flags do not exist on Windows. The cost is that a carriage
+// return arrives as ^M rather than ending a line, which is exactly what a
+// terminal driver would otherwise have translated.
+func catv() {
+	if old, err := term.MakeRaw(os.Stdin.Fd()); err == nil {
+		defer func() { _ = term.Restore(os.Stdin.Fd(), old) }()
+	}
+	buf := make([]byte, 256)
+	for {
+		n, err := os.Stdin.Read(buf)
+		for _, b := range buf[:n] {
+			switch {
+			case b == '\n' || b == '\t':
+				fmt.Printf("%c", b)
+			case b < 0x20:
+				fmt.Printf("^%c", b+0x40)
+			case b == 0x7f:
+				fmt.Print("^?")
+			default:
+				fmt.Printf("%c", b)
+			}
+		}
+		if err != nil {
+			return
 		}
 	}
 }
