@@ -44,6 +44,9 @@ agents:
 #   idle_after: 3s        # quiet for this long -> reported as "idle"
 #   autostart: true       # launch with the swarm
 #   restart_on_exit: false
+#   restart_backoff: 2s   # doubles on each death that follows a short run
+#   restart_max_wait: 1m  # cap on that, and what counts as "it ran"
+#   restart_max: 5        # deaths in a row before swarm stops trying; 0 = never
 #   key_delay: 40ms       # pause between keys when several are sent at once
 #   submit_delay: 120ms   # pause between pasting text and pressing Enter
 #   bracketed_paste: true # a multi-line prompt arrives as one message

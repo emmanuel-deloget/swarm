@@ -105,14 +105,17 @@ type Agent struct {
 	logPath      string
 	inputLogPath string
 
-	mu         sync.Mutex
-	term       *vterm.Terminal
-	state      State
-	attention  string
-	title      string
-	startedAt  time.Time
-	exit       *vterm.ExitStatus
-	restarts   int
+	mu        sync.Mutex
+	term      *vterm.Terminal
+	state     State
+	attention string
+	title     string
+	startedAt time.Time
+	exit      *vterm.ExitStatus
+	restarts  int
+	// crashes counts deaths in a row that each followed a short run — a streak,
+	// as against a long-lived agent that dies now and then.
+	crashes    int
 	stopping   bool
 	generation uint64
 	matched    map[int]bool
@@ -136,6 +139,38 @@ func New(o Options) *Agent {
 		state:        StateStopped,
 		matched:      make(map[int]bool),
 	}
+}
+
+// restartPlan decides how long to wait before relaunching, which restart in a
+// streak this is, and whether to stop trying.
+//
+// A death that follows a run shorter than RestartMaxWait continues a streak:
+// the wait doubles each time, so a command that cannot start at all is answered
+// less and less often instead of every two seconds forever. Anything that ran
+// longer than that was working, so its death starts a new streak — an agent
+// that dies once a day should be restarted promptly every time.
+func (a *Agent) restartPlan(ran time.Duration) (wait time.Duration, streak int, giveUp bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if ran >= a.cfg.RestartMaxWait {
+		a.crashes = 0
+	}
+	a.crashes++
+	streak = a.crashes
+
+	if limit := a.cfg.RestartMax; limit > 0 && streak > limit {
+		return 0, streak - 1, true
+	}
+
+	wait = a.cfg.RestartBackoff
+	for i := 1; i < streak && wait < a.cfg.RestartMaxWait; i++ {
+		wait *= 2
+	}
+	if wait > a.cfg.RestartMaxWait {
+		wait = a.cfg.RestartMaxWait
+	}
+	return wait, streak, false
 }
 
 // Generation counts launches. It tells one run of an agent from the next, which
@@ -396,6 +431,7 @@ func (a *Agent) onExit(gen uint64, st vterm.ExitStatus) {
 	}()
 	a.state = StateExited
 	a.exit = &st
+	ran := time.Since(a.startedAt)
 	stopping := a.stopping
 	if a.watchStop != nil {
 		close(a.watchStop)
@@ -430,8 +466,15 @@ func (a *Agent) onExit(gen uint64, st vterm.ExitStatus) {
 	if stopping || !a.cfg.RestartEnabled() {
 		return
 	}
+	wait, streak, giveUp := a.restartPlan(ran)
+	if giveUp {
+		a.log.Emit(event.KindError, a.cfg.Name, fmt.Sprintf(
+			"died %d times in a row; not restarting again — fix it and run `swarm start %s`",
+			streak, a.cfg.Name))
+		return
+	}
 	go func() {
-		time.Sleep(a.cfg.RestartBackoff)
+		time.Sleep(wait)
 		a.mu.Lock()
 		abort := a.stopping || gen != a.generation
 		if !abort {
@@ -441,7 +484,12 @@ func (a *Agent) onExit(gen uint64, st vterm.ExitStatus) {
 		if abort {
 			return
 		}
-		a.log.Emit(event.KindInfo, a.cfg.Name, "restarting after exit")
+		if streak > 1 {
+			a.log.Emit(event.KindInfo, a.cfg.Name, fmt.Sprintf(
+				"restarting after exit (%d in a row, waited %s)", streak, wait))
+		} else {
+			a.log.Emit(event.KindInfo, a.cfg.Name, "restarting after exit")
+		}
 		if err := a.Start(); err != nil {
 			a.log.Emit(event.KindError, a.cfg.Name, "restart failed: "+err.Error())
 		}

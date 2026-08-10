@@ -64,7 +64,9 @@ Every key here is also an agent key. An agent that leaves one empty inherits it.
 | `idle_after` | `3s` | Quiet for this long → the agent is reported `idle`, which usually means it is waiting for you. |
 | `autostart` | `true` | Launch the agent with the swarm. |
 | `restart_on_exit` | `false` | Relaunch the agent when its process exits. |
-| `restart_backoff` | `2s` | Delay before an automatic restart. |
+| `restart_backoff` | `2s` | Delay before an automatic restart, and the base of the backoff: it doubles with each death that follows a short run. |
+| `restart_max_wait` | `1m` | Cap on that doubling, and what counts as having run — a longer life starts the streak over. |
+| `restart_max` | `5` | Deaths in a row before swarm stops answering. `0` never stops. |
 | `key_delay` | `40ms` | Pause between one key press and the next when several are sent at once. `0` sends them as one burst. |
 | `submit_delay` | `120ms` | Pause between pasting text and sending the newline that submits it. Agent UIs that re-render on paste need this; too short and the newline lands before the paste has been absorbed. |
 | `bracketed_paste` | `true` | Allow injected text to be wrapped in `ESC[200~`/`ESC[201~`, so a multi-line prompt arrives as one message. It is only actually used when the agent's own UI turned the mode on, the way a real terminal behaves. |
@@ -74,6 +76,13 @@ Every key here is also an agent key. An agent that leaves one empty inherits it.
 | `message` | — | Sent to the agent once it is up. Multi-line, as a block scalar. |
 | `message_file` | — | Same, read from a file. One or the other, not both. |
 | `message_template` | `[swarm] message from {from}: {body}` | How a pushed bus message is rendered before injection. Placeholders: `{id}` `{thread}` `{from}` `{to}` `{body}` `{files}` `{time}`. |
+
+A command that is simply broken used to relaunch every two seconds forever. The
+wait now doubles — 2s, 4s, 8s… up to `restart_max_wait` — and after
+`restart_max` deaths in a row swarm gives up and says so, naming the command to
+run once it is fixed. A death that follows a run longer than `restart_max_wait`
+is not part of a streak: an agent that dies once a day is restarted promptly
+every time.
 
 `key_delay` is `submit_delay`'s counterpart for key presses. `swarm keys dev-1
 enter shift+tab shift+tab shift+tab` sent as one block arrives in a single read,

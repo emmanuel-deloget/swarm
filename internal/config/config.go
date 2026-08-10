@@ -107,6 +107,8 @@ type AgentDefaults struct {
 	Autostart       *bool         `yaml:"autostart"`
 	RestartOnExit   *bool         `yaml:"restart_on_exit"`
 	RestartBackoff  time.Duration `yaml:"restart_backoff"`
+	RestartMaxWait  time.Duration `yaml:"restart_max_wait"`
+	RestartMax      int           `yaml:"restart_max"`
 	SubmitDelay     time.Duration `yaml:"submit_delay"`
 	KeyDelay        time.Duration `yaml:"key_delay"`
 	BracketedPaste  *bool         `yaml:"bracketed_paste"`
@@ -158,8 +160,21 @@ type AgentConfig struct {
 	// RestartOnExit relaunches the agent when its process exits.
 	RestartOnExit *bool `yaml:"restart_on_exit"`
 
-	// RestartBackoff is the delay before an automatic restart.
+	// RestartBackoff is the delay before an automatic restart, and the base of
+	// the backoff: the wait doubles with each restart that follows another
+	// straight away, up to RestartMaxWait. A command that is simply broken
+	// otherwise relaunches every two seconds until someone notices.
 	RestartBackoff time.Duration `yaml:"restart_backoff"`
+
+	// RestartMaxWait caps that doubling, and is also what counts as having run:
+	// an agent that lasted longer than this before dying was working, so the
+	// next death starts the backoff over rather than continuing a streak that
+	// is not one.
+	RestartMaxWait time.Duration `yaml:"restart_max_wait"`
+
+	// RestartMax is how many deaths in a row swarm answers before it stops
+	// answering. Zero means never stop, which is what this used to do.
+	RestartMax int `yaml:"restart_max"`
 
 	// KeyDelay is the pause between one key press and the next when several are
 	// sent at once. Without it they arrive in a single read, and an agent whose
@@ -470,6 +485,12 @@ func (c *Config) normalize() error {
 	if d.IdleAfter == 0 {
 		d.IdleAfter = 3 * time.Second
 	}
+	if d.RestartMaxWait == 0 {
+		d.RestartMaxWait = time.Minute
+	}
+	if d.RestartMax == 0 {
+		d.RestartMax = 5
+	}
 	if d.RestartBackoff == 0 {
 		d.RestartBackoff = 2 * time.Second
 	}
@@ -588,6 +609,12 @@ func (c *Config) normalize() error {
 		}
 		if a.RestartBackoff == 0 {
 			a.RestartBackoff = d.RestartBackoff
+		}
+		if a.RestartMaxWait == 0 {
+			a.RestartMaxWait = d.RestartMaxWait
+		}
+		if a.RestartMax == 0 {
+			a.RestartMax = d.RestartMax
 		}
 		if a.SubmitDelay == 0 {
 			a.SubmitDelay = d.SubmitDelay
