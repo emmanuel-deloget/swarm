@@ -42,6 +42,7 @@ against your working directory. `~/` and `$VAR` are expanded.
 | `web` | — | The remote control. |
 | `bus` | — | Inter-agent messaging. |
 | `hooks` | — | Incoming webhooks. |
+| `outgoing` | — | What the fleet tells the world about itself. |
 
 `swarm run` writes `<state_dir>/AGENTS.md` — the file your agents read to learn
 how to talk to each other. It is generated from this configuration, so it
@@ -77,6 +78,9 @@ Every key here is also an agent key. An agent that leaves one empty inherits it.
 | `message` | — | Sent to the agent once it is up. Multi-line, as a block scalar. |
 | `message_file` | — | Same, read from a file. One or the other, not both. |
 | `message_template` | `[swarm] message from {from}: {body}` | How a pushed bus message is rendered before injection. Placeholders: `{id}` `{thread}` `{from}` `{to}` `{body}` `{files}` `{time}`. |
+| `workspace` | `shared` | What swarm does about an agent's working copy — `shared`, `clone` or `none`, described under [`agents`](#agents). Inheritable, which is how a whole fleet is given its own clones in one line. |
+| `on_start` | — | Command run before the agent starts, as an argv. See [`agents`](#agents). |
+| `on_exit` | — | Command run after it exits, as an argv. See [`agents`](#agents). |
 
 A command that is simply broken used to relaunch every two seconds forever. The
 wait now doubles — 2s, 4s, 8s… up to `restart_max_wait` — and after
