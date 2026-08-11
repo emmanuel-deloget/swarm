@@ -14,8 +14,8 @@
 # scratch: notes and drafts that are not the project
 /IDEAS/
 
-# built binary
-/swarm
 
-# cross-compiled for a Windows VM
-/swarm.exe
+# built binaries, wherever they land: a Windows VM sharing this directory
+# drops its copy here, and `git add -A` will take it if the pattern is narrow
+*.exe
+/swarm
