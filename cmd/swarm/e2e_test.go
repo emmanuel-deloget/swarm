@@ -531,7 +531,13 @@ agents:
 	}
 	defer func() { _ = term.Stop(3 * time.Second) }()
 
-	waitScreen(t, term, "the agent's screen", "a1 ready")
+	// Waited on through the hub rather than on the screen. A pinned agent is
+	// deliberately larger than the pane showing it — 45 rows in about 33 — and
+	// a pane shows the *last* rows of a screen, so the greeting on row one is
+	// out of view by construction. Watching for it passed on Linux by an
+	// accident of timing and failed everywhere else, which is the wrong way to
+	// learn that a test is measuring the wrong thing.
+	waitRunning(t, bin, cfg, "a1")
 	time.Sleep(1500 * time.Millisecond)
 
 	if cols, rows := agentSize(t, bin, cfg, "a1"); cols != 150 || rows != 45 {
