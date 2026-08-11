@@ -523,6 +523,11 @@ Incoming webhooks, turned into bus messages by declarative rules. See the
 | `rules` | `[]` | Tried against every delivery; every match fires. |
 | `unmatched` | — | One rule, used only when none of `rules` matched. |
 
+`swarm attach` also drops its status bar on Windows and prints the reminder
+once instead: holding a line at the bottom of the screen needs a scrolling
+region the console does not honour, and the bar ends up stacked across the
+display rather than sitting on one row.
+
 Two things a Windows console never passes on, whatever you configure. It
 translates keys to escape sequences itself, and its support for ctrl with
 punctuation is incomplete — `ctrl+\` arrives as a plain backslash, which is why

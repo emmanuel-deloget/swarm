@@ -56,6 +56,12 @@ func (s *statusBar) rows() int {
 	return s.h - 1
 }
 
+// detachLabel is what the reminder says, wherever it is shown: on the last row
+// for the whole attach, or printed once where that cannot be held.
+func detachLabel(agent, key string) string {
+	return fmt.Sprintf(" %s — %s detach ", agent, key)
+}
+
 func (s *statusBar) draw() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -63,7 +69,7 @@ func (s *statusBar) draw() {
 		return
 	}
 
-	label := fmt.Sprintf(" %s — %s detach ", s.agent, s.detach)
+	label := detachLabel(s.agent, s.detach)
 	// Never write in the very last column: on the bottom row that would wrap
 	// and scroll the whole window.
 	width := s.w - 1
@@ -148,7 +154,7 @@ func cmdAttach(args []string) error {
 		return fmt.Errorf("detach key %q: %w", keyName, err)
 	}
 
-	bar := &statusBar{enabled: !*noStatus, agent: name, detach: keyName}
+	bar := &statusBar{enabled: !*noStatus && statusBarSupported, agent: name, detach: keyName}
 	if w, h, err := term.GetSize(os.Stdout.Fd()); err == nil {
 		bar.resize(w, h)
 	}
@@ -190,6 +196,11 @@ func cmdAttach(args []string) error {
 
 	fmt.Print("\x1b[2J\x1b[H")
 	bar.draw()
+	if !*noStatus && !statusBarSupported {
+		// No room reserved, so it scrolls away with everything else — said
+		// once is better than said wrongly. See statusbar_windows.go.
+		fmt.Printf("%s\r\n", detachLabel(name, keyName))
+	}
 
 	// Follow this window, so the agent redraws for the size it is shown at.
 	if !*keepSize {

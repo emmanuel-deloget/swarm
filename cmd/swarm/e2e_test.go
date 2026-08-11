@@ -261,11 +261,11 @@ func TestAttachDrivesAnAgentDirectly(t *testing.T) {
 		t.Fatalf("expected a 24-row screen, got %d", len(rows))
 	}
 	if runtime.GOOS == "windows" {
-		// Under a nested pseudoconsole the bar lands on row 23, one above the
-		// bottom. Run for real on Windows 10 it sits on the last row, as it
-		// should — so what is off by one is this arrangement, a ConPTY inside
-		// a ConPTY, and not the attach.
-		t.Skip("row counting differs inside a nested pseudoconsole")
+		// There is no bar to place there: a Windows console does not hold the
+		// scrolling region that reserves the row, so the reminder is printed
+		// once at the start instead — which is what the wait above just found.
+		// See statusbar_windows.go.
+		t.Skip("the reminder is printed once on Windows, not kept on a row")
 	}
 	if !strings.Contains(rows[23], detachName+" detach") {
 		t.Errorf("the status bar should be on the last row, got %q", rows[23])
