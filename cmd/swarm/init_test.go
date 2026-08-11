@@ -37,7 +37,12 @@ func TestTheExampleIsTheStarter(t *testing.T) {
 	if err != nil {
 		t.Skipf("no shipped example: %v", err)
 	}
-	if string(shipped) != starterConfig {
+	// Compared without carriage returns: a Windows checkout converts the
+	// shipped file's line endings, and `swarm init` writes what it always
+	// writes. The difference between the two is what this test is about, and
+	// git's translation is not part of it.
+	normal := func(s string) string { return strings.ReplaceAll(s, "\r\n", "\n") }
+	if normal(string(shipped)) != normal(starterConfig) {
 		t.Error("swarm.example.yaml has drifted from what `swarm init` writes; " +
 			"regenerate it with `swarm init`")
 	}
