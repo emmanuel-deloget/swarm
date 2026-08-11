@@ -205,8 +205,14 @@ func cmdAttach(args []string) error {
 			// text of its own accord, and no key in swarm can undo it, because
 			// swarm did not do it.
 			fmt.Print(leaveAgentModes)
-			// Last, since the line above is itself escape sequences and a
-			// console that has stopped interpreting them would print it.
+			// And give the terminal back empty. What is on it is the agent's
+			// screen, and the agent is still running and still drawing it
+			// elsewhere; left there, the shell prompt lands in the middle of a
+			// picture nothing will ever finish. The scrollback is untouched —
+			// that is this terminal's history, not the agent's.
+			fmt.Print("\x1b[2J\x1b[H")
+			// Last, since the lines above are themselves escape sequences and
+			// a console that has stopped interpreting them would print them.
 			restoreVT()
 		})
 	}

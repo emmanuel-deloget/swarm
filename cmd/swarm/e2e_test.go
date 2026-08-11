@@ -301,6 +301,16 @@ func TestAttachDrivesAnAgentDirectly(t *testing.T) {
 		t.Fatalf("%s did not detach", detachName)
 	}
 
+	// The terminal comes back empty. What was on it is the agent's screen, and
+	// the agent is still running: left there, the shell prompt lands in the
+	// middle of a drawing that nothing will ever finish.
+	// The terminal comes back empty. What was on it is the agent's screen, and
+	// the agent is still running: left there, the shell prompt lands in the
+	// middle of a picture nothing will ever finish.
+	if left := strings.TrimSpace(term.Text()); left != "" {
+		t.Errorf("detaching left the agent's screen behind:\n%s", left)
+	}
+
 	cmd := exec.Command(bin, "ls", "-c", cfg)
 	cmd.Dir = dir
 	out, err = cmd.CombinedOutput()
