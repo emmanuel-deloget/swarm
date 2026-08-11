@@ -523,6 +523,11 @@ Incoming webhooks, turned into bus messages by declarative rules. See the
 | `rules` | `[]` | Tried against every delivery; every match fires. |
 | `unmatched` | — | One rule, used only when none of `rules` matched. |
 
+`swarm attach` follows the window on Windows too, by asking the console its
+size four times a second: there is no SIGWINCH, and the resize is reported as a
+console input record an attach cannot read without eating the keystrokes it is
+there to forward.
+
 `swarm attach` has no status bar on Windows: holding a line at the bottom of
 the screen needs a scrolling region the console does not honour, and the bar
 ends up stacked across the display rather than sitting on one row. The reminder

@@ -2,13 +2,43 @@
 
 package main
 
-import "os"
+import (
+	"time"
 
-// notifyResize subscribes to nothing here: a Windows console reports a resize
-// as a WINDOW_BUFFER_SIZE_EVENT record on its input handle, and reading those
-// means owning the console input loop rather than registering a signal.
+	"github.com/charmbracelet/x/term"
+
+	"os"
+)
+
+// resizePoll is how often the console is asked how big it is. Often enough that
+// dragging a window edge settles before it is let go, seldom enough that the
+// cost is a syscall a few times a second.
+const resizePoll = 250 * time.Millisecond
+
+// watchResize calls back whenever this terminal changes size, until stop is
+// closed.
 //
-// The consequence is stated rather than worked around: an attach does not yet
-// follow the window, and the agent keeps the geometry its configuration gave
-// it — which is exactly what -keep-size asks for on Unix.
-func notifyResize(chan<- os.Signal) {}
+// Windows has no SIGWINCH. It reports a resize as a WINDOW_BUFFER_SIZE_EVENT
+// record on the console input handle — which an attach cannot read, because it
+// is reading that handle as a byte stream and consuming the records would eat
+// the keystrokes. So it asks instead. A comparison a few times a second is not
+// elegant, but the alternative is an attach that never follows its window, and
+// an agent laid out for a size that no longer exists wraps every line it draws.
+func watchResize(stop <-chan struct{}, fn func()) {
+	t := time.NewTicker(resizePoll)
+	defer t.Stop()
+	lastW, lastH, _ := term.GetSize(os.Stdout.Fd())
+	for {
+		select {
+		case <-t.C:
+			w, h, err := term.GetSize(os.Stdout.Fd())
+			if err != nil || (w == lastW && h == lastH) {
+				continue
+			}
+			lastW, lastH = w, h
+			fn()
+		case <-stop:
+			return
+		}
+	}
+}

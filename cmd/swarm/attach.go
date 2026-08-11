@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"strings"
 	"sync"
 
@@ -224,21 +223,20 @@ func cmdAttach(args []string) error {
 	}
 
 	// Follow this window, so the agent redraws for the size it is shown at.
+	// An agent still laid out for a size that no longer exists wraps every line
+	// it draws, which is the difference between a readable screen and confetti.
 	if !*keepSize {
-		winch := make(chan os.Signal, 1)
-		notifyResize(winch)
-		defer signal.Stop(winch)
-		go func() {
-			for range winch {
-				w, h, err := term.GetSize(os.Stdout.Fd())
-				if err != nil {
-					continue
-				}
-				bar.resize(w, h)
-				_ = c.Send(ipc.Request{Cols: w, Rows: bar.rows()})
-				bar.draw()
+		stopResize := make(chan struct{})
+		defer close(stopResize)
+		go watchResize(stopResize, func() {
+			w, h, err := term.GetSize(os.Stdout.Fd())
+			if err != nil {
+				return
 			}
-		}()
+			bar.resize(w, h)
+			_ = c.Send(ipc.Request{Cols: w, Rows: bar.rows()})
+			bar.draw()
+		})
 	}
 
 	// Keystrokes in. The detach key never reaches the agent; everything else
