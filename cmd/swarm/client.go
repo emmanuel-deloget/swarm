@@ -922,12 +922,36 @@ func quoteKeyBytes(b []byte) string {
 	return strings.TrimSpace(hex.String()) + "  " + pretty.String()
 }
 
+// printableRest is every other printable ASCII character, tried after the
+// lower-case letters.
+const printableRest = " !\"#$%&'()*+,-./0123456789:;<=>?@" +
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`{|}~"
+
 // nameForKeyBytes says which key name swarm would give those bytes, so what a
 // terminal sends can be compared with what a binding expects.
+//
+// KeyNames alone is not enough to answer that: most of what a keyboard sends
+// is covered by the patterns rather than by a listed name — a bare character,
+// ctrl+<char>, alt+<char>. Asking only the list made this report "no key name"
+// for ^G, which is the default detach key on Windows and works perfectly. A
+// measuring instrument that calls the working case unknown is worse than none.
 func nameForKeyBytes(b []byte) string {
+	// The listed names first, so ^I is reported as tab rather than as ctrl+i:
+	// both send it, and the one with a key of its own is the one meant.
 	for _, name := range vterm.KeyNames() {
 		if seq, err := vterm.KeySequence(name); err == nil && seq == string(b) {
 			return name
+		}
+	}
+	// Lower case first: ctrl+a and ctrl+A send the same byte, and the lower one
+	// is how a person writes it.
+	for _, set := range []string{"abcdefghijklmnopqrstuvwxyz", printableRest} {
+		for _, r := range set {
+			for _, name := range []string{string(r), "ctrl+" + string(r), "alt+" + string(r)} {
+				if seq, err := vterm.KeySequence(name); err == nil && seq == string(b) {
+					return name
+				}
+			}
 		}
 	}
 	return "(no key name sends these bytes)"
