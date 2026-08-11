@@ -523,10 +523,11 @@ Incoming webhooks, turned into bus messages by declarative rules. See the
 | `rules` | `[]` | Tried against every delivery; every match fires. |
 | `unmatched` | — | One rule, used only when none of `rules` matched. |
 
-`swarm attach` also drops its status bar on Windows and prints the reminder
-once instead: holding a line at the bottom of the screen needs a scrolling
-region the console does not honour, and the bar ends up stacked across the
-display rather than sitting on one row.
+`swarm attach` has no status bar on Windows: holding a line at the bottom of
+the screen needs a scrolling region the console does not honour, and the bar
+ends up stacked across the display rather than sitting on one row. The reminder
+goes in the window title instead — an agent that sets its own title takes it
+back, so keep the detach key in mind there.
 
 Two things a Windows console never passes on, whatever you configure. It
 translates keys to escape sequences itself, and its support for ctrl with

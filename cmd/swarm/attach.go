@@ -197,9 +197,11 @@ func cmdAttach(args []string) error {
 	fmt.Print("\x1b[2J\x1b[H")
 	bar.draw()
 	if !*noStatus && !statusBarSupported {
-		// No room reserved, so it scrolls away with everything else — said
-		// once is better than said wrongly. See statusbar_windows.go.
-		fmt.Printf("%s\r\n", detachLabel(name, keyName))
+		// Into the window title, not onto the screen: the agent owns every row
+		// and the first thing it sends is a repaint, so a line printed here is
+		// wiped before anyone reads it. A title costs no row and survives it.
+		// An agent that sets its own title takes it back, which is its right.
+		fmt.Printf("\x1b]2;%s\x07", strings.TrimSpace(detachLabel(name, keyName)))
 	}
 
 	// Follow this window, so the agent redraws for the size it is shown at.

@@ -252,6 +252,13 @@ func TestAttachDrivesAnAgentDirectly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if runtime.GOOS == "windows" {
+		// No reminder on screen there: holding a row needs a scrolling region
+		// the console does not honour, so it goes in the window title
+		// instead — which is not part of what the screen says. See
+		// statusbar_windows.go.
+		t.Skip("the detach reminder is in the window title on Windows")
+	}
 	waitScreen(t, term, "the detach reminder", detachName+" detach")
 
 	// It sits on the very last row, and nowhere else: the agent was given the
@@ -259,13 +266,6 @@ func TestAttachDrivesAnAgentDirectly(t *testing.T) {
 	rows := strings.Split(term.Text(), "\n")
 	if len(rows) < 24 {
 		t.Fatalf("expected a 24-row screen, got %d", len(rows))
-	}
-	if runtime.GOOS == "windows" {
-		// There is no bar to place there: a Windows console does not hold the
-		// scrolling region that reserves the row, so the reminder is printed
-		// once at the start instead — which is what the wait above just found.
-		// See statusbar_windows.go.
-		t.Skip("the reminder is printed once on Windows, not kept on a row")
 	}
 	if !strings.Contains(rows[23], detachName+" detach") {
 		t.Errorf("the status bar should be on the last row, got %q", rows[23])
@@ -692,11 +692,16 @@ agents:
 	}
 	defer func() { _ = term.Stop(3 * time.Second) }()
 
-	// The status bar advertises the configured key, not the default.
 	waitScreen(t, term, "the agent screen", "a1 ready")
-	waitScreen(t, term, "the configured key in the status bar", "ctrl+g detach")
-	if strings.Contains(term.Text(), `ctrl+\ detach`) {
-		t.Error("the status bar still advertises the default key")
+	// The status bar advertises the configured key, not the default — where
+	// there is a status bar. On Windows it is the window title instead, which
+	// the screen does not show; the rest of this test, that the moved key
+	// detaches and the old one no longer does, still holds there.
+	if statusBarSupported {
+		waitScreen(t, term, "the configured key in the status bar", "ctrl+g detach")
+		if strings.Contains(term.Text(), `ctrl+\ detach`) {
+			t.Error("the status bar still advertises the default key")
+		}
 	}
 
 	// ctrl+\ is no longer special: it must reach the agent, and leave the
