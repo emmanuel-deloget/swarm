@@ -733,7 +733,14 @@ agents:
 	}
 	defer func() { _ = term2.Stop(3 * time.Second) }()
 
-	waitScreen(t, term2, "the overridden key in the status bar", "ctrl+] detach")
+	// Wait for the attach to be live before pressing anything. The bar is the
+	// clearest sign of that where there is one; where there is not, the agent's
+	// own screen says the same thing.
+	if statusBarSupported {
+		waitScreen(t, term2, "the overridden key in the status bar", "ctrl+] detach")
+	} else {
+		waitScreen(t, term2, "the agent screen", "a1 ready")
+	}
 	pressKey(t, term2, "\x1d")
 	select {
 	case <-term2.Done():
