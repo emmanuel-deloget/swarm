@@ -71,6 +71,7 @@ func buildProbe(t *testing.T) string {
 //	[probe-saw]       says "ready", then echoes lines as "saw:…"
 //	[probe-ready]     says "ready" and stays up
 //	[probe-a1]        says "a1 ready" and stays up
+//	[probe-two]       writes two rows, then stays up
 //	[probe-talker]    says "talker ready", then sends every line to alpha
 //	[probe-numbered]  writes 60 numbered lines, then stays up
 //	[probe-size]      writes the geometry it believes it has, three times a second
@@ -96,6 +97,7 @@ func probeAgents(t *testing.T, body string) string {
 		"[probe-beta]":     {"print", "beta ready", "lines", "beta saw:"},
 		"[probe-saw]":      {"print", "ready", "lines", "saw:"},
 		"[probe-ready]":    {"print", "ready", "sleep", "3600"},
+		"[probe-two]":      {"print", "ROW-ONE", "print", "ROW-TWO", "sleep", "3600"},
 		"[probe-a1]":       {"print", "a1 ready", "sleep", "3600"},
 		"[probe-talker]":   {"print", "talker ready", "sendlines", "alpha"},
 		"[probe-numbered]": {"numbered", "60", "sleep", "3600"},

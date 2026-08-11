@@ -1412,3 +1412,68 @@ func TestDialogueLockIsOnByDefault(t *testing.T) {
 	typeText(t, term, "m")
 	waitScreen(t, term, "the mosaic after leaving the lock", "alpha", "beta")
 }
+
+// TestAttachStartsEveryRowAtColumnOne: a rendering separates rows with \n, and
+// an attach runs under MakeRaw — which is there to stop the terminal touching
+// what passes through, and stops it turning those into carriage returns too.
+// Each row then began where the one above it ended.
+//
+// On Unix it showed for an instant, until the agent redrew with absolute
+// positions; on a Windows console it stayed, and that is where it was noticed.
+// The check is the second row: written at column one by the agent, it has to
+// arrive at column one.
+func TestAttachStartsEveryRowAtColumnOne(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the swarm binary")
+	}
+	bin := buildSwarm(t)
+
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "swarm.yaml")
+	body := `session: crlf
+defaults: {idle_after: 300ms}
+web: {enabled: false}
+agents:
+  - name: a1
+    command: [probe-two]
+`
+	if err := os.WriteFile(cfg, []byte(probeAgents(t, body)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	shortcutMode(t, cfg)
+
+	run := exec.Command(bin, "run", "-c", cfg, "--no-tui")
+	run.Dir = dir
+	if err := run.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = run.Process.Kill()
+		_, _ = run.Process.Wait()
+	}()
+	waitRunning(t, bin, cfg, "a1")
+
+	term, err := vterm.Start(vterm.Options{
+		Command: []string{bin, "attach", "-c", cfg, "a1"},
+		Dir:     dir,
+		Cols:    60,
+		Rows:    12,
+	})
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	defer func() { _ = term.Stop(3 * time.Second) }()
+
+	waitScreen(t, term, "the agent screen through attach", "ROW-TWO")
+	rows := strings.Split(term.Text(), "\n")
+	for _, row := range rows {
+		if !strings.Contains(row, "ROW-TWO") {
+			continue
+		}
+		if strings.HasPrefix(row, " ") {
+			t.Errorf("the second row is indented by the first: %q", row)
+		}
+		return
+	}
+	t.Fatalf("ROW-TWO is nowhere on:\n%s", term.Text())
+}

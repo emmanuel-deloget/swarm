@@ -56,6 +56,25 @@ func (s *statusBar) rows() int {
 	return s.h - 1
 }
 
+// crlf gives a rendered screen the line endings a raw terminal needs.
+//
+// A rendering separates rows with \n, and everywhere else that is enough: a
+// terminal in its usual mode turns each one into a carriage return and a line
+// feed. An attach does not run in that mode — MakeRaw exists to stop the
+// terminal touching what passes through, and it stops this too — so a bare \n
+// drops a row without returning to column one, and every row starts where the
+// one above it ended.
+//
+// It shows on Unix as a staircase in the first repaint, gone as soon as the
+// agent redraws with absolute positions. On a Windows console it stays, which
+// is how it was finally noticed.
+//
+// What arrives as raw agent output needs none of this: it has already been
+// through that agent's own terminal, which added the carriage returns.
+func crlf(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\n", "\r\n")
+}
+
 // detachLabel is what the reminder says, wherever it is shown: on the last row
 // for the whole attach, or printed once where that cannot be held.
 func detachLabel(agent, key string) string {
@@ -265,7 +284,7 @@ func cmdAttach(args []string) error {
 				// Clear, then repaint from the snapshot: the stream we were
 				// following had a hole in it.
 				fmt.Print("\x1b[2J\x1b[H")
-				fmt.Print(resp.Text)
+				fmt.Print(crlf(resp.Text))
 				bar.draw()
 			case len(resp.Data) > 0:
 				_, _ = os.Stdout.Write(resp.Data)
