@@ -31,7 +31,7 @@ against your working directory. `~/` and `$VAR` are expanded.
 | `state_dir` | `.swarm` | Everything swarm writes: the control socket, the logs, the CLI shim, the staged files, the TUI's command history. `swarm init` offers to add it to `.gitignore`. |
 | `shared` | `<state_dir>/shared` | Where injected files are staged so every agent can reach them by path. Agents get it as `$SWARM_SHARED`. |
 | `env` | `{}` | Added to the environment of every agent. Per-agent `env` wins. |
-| `detach_key` | `ctrl+\` | Leaves an attached agent, in the TUI and in `swarm attach`. Any name `swarm keys -list` marks as bindable: `ctrl+g`, `ctrl+]`, `f12`, `esc esc`. Configurable because the default is what tmux, screen and asciinema like to grab. |
+| `detach_key` | `ctrl+\`, `ctrl+g` on Windows | Leaves an attached agent, in the TUI and in `swarm attach`. Any name `swarm keys -list` marks as bindable: `ctrl+g`, `ctrl+]`, `f12`, `esc esc`. Configurable because the default is what tmux, screen and asciinema like to grab. |
 | `log_input` | `false` | Record everything swarm *sends* to an agent in `.swarm/logs/<agent>.input.log`. Off by default and written 0600: it holds what you typed. |
 | `mouse` | `false` | Mouse reporting in the TUI. Off by default because a terminal that reports mouse events stops selecting text itself — reading an agent's output matters more than the wheel. `M` toggles it at runtime. |
 | `defaults` | — | Inherited by every agent; see below. |
@@ -522,6 +522,13 @@ Incoming webhooks, turned into bus messages by declarative rules. See the
 | `log` | `true` | Record every delivery in full in `.swarm/logs/webhooks.log`. Written 0600. |
 | `rules` | `[]` | Tried against every delivery; every match fires. |
 | `unmatched` | — | One rule, used only when none of `rules` matched. |
+
+Two things a Windows console never passes on, whatever you configure. It
+translates keys to escape sequences itself, and its support for ctrl with
+punctuation is incomplete — `ctrl+\` arrives as a plain backslash, which is why
+the default is `ctrl+g` there: a letter becomes `0x07` the way `ctrl+a`..`ctrl+z`
+all do. And `alt+enter` is the console's own full-screen toggle, so it never
+reaches swarm at all.
 
 Exactly one of `secret`, `secret_env` and `secret_path` may be named. Two is an
 error rather than a precedence rule: silently preferring one is how a swarm ends

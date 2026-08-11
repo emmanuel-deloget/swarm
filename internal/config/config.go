@@ -462,9 +462,6 @@ const (
 // DefaultMessageTemplate is what a pushed bus message looks like in a terminal.
 const DefaultMessageTemplate = "[swarm] message from {from}: {body}"
 
-// DefaultDetachKey leaves an attached terminal when nothing else is configured.
-const DefaultDetachKey = "ctrl+\\"
-
 // DefaultStateDir is where swarm writes everything, relative to the config file.
 const DefaultStateDir = ".swarm"
 

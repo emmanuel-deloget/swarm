@@ -317,7 +317,8 @@ would be advertised and never fire. Binding one is refused, with the reason.
 
 ### Detaching
 
-`ctrl+\` leaves an attached agent, in the TUI and in `swarm attach` alike. It is
+`ctrl+\` leaves an attached agent, in the TUI and in `swarm attach` alike —
+`ctrl+g` on Windows, whose console cannot produce `ctrl+\`. It is
 also what tmux, screen and asciinema like to grab, so it is configurable:
 
 ```yaml

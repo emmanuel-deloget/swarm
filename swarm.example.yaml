@@ -105,7 +105,8 @@ agents:
 #
 # mouse: true
 
-# The key that leaves an attached agent. The default is ctrl+\ , which is also
+# The key that leaves an attached agent. The default is ctrl+\ , except on
+# Windows, whose console cannot produce it: there it is ctrl+g. ctrl+\ is also
 # what tmux, screen and asciinema like to grab — hence this knob.
 # "swarm keys -list" prints every usable name.
 #

@@ -116,7 +116,7 @@ func cmdAttach(args []string) error {
 
 	name := fs.Arg(0)
 	if name == "" {
-		return fmt.Errorf("usage: swarm attach <agent>    (detach with the configured key, ctrl+\\ by default)")
+		return fmt.Errorf("usage: swarm attach <agent>    (detach with the configured key, %s by default)", config.DefaultDetachKey)
 	}
 
 	stdin := os.Stdin.Fd()

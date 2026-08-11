@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emmanuel-deloget/swarm/internal/config"
 	"github.com/emmanuel-deloget/swarm/internal/vterm"
 )
 
@@ -189,12 +190,17 @@ func TestTUIRendersFleetAndAcceptsCommands(t *testing.T) {
 	}
 }
 
-// skipMouseOnWindows: what this checks is that swarm's own escape sequences
-// reach the terminal showing it, and under a pseudoconsole they do not travel
-// that way — conhost interprets what an application writes and re-renders it,
-// so a mode set for the outer terminal is not observable from outside. Whether
-// the mouse itself works there is a separate question, and one only a person
-// at a Windows terminal can answer.
+// skipMouseOnWindows skips the check, not the feature — the mouse works on
+// Windows, tried by hand on Windows 10: M turns it on and clicking an agent
+// selects it.
+//
+// What cannot be done there is watching for it from outside. These tests read
+// swarm's own escape sequences through a pty, and under a pseudoconsole they
+// do not travel that way: conhost interprets what an application writes and
+// re-renders the screen, so a mode set for the outer terminal leaves no trace
+// an outer terminal can see. Run normally, swarm is the application in the
+// console and gets the events; run inside a nested pseudoconsole, as here, it
+// cannot be observed.
 func skipMouseOnWindows(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -238,7 +244,15 @@ func TestAttachDrivesAnAgentDirectly(t *testing.T) {
 	waitScreen(t, term, "the agent screen through attach", "alpha ready")
 
 	// The last row keeps telling you how to get out, whatever the agent draws.
-	waitScreen(t, term, "the detach reminder", "ctrl+\\ detach")
+	// Which key that is differs per platform — a Windows console cannot
+	// produce ctrl+\ — so the reminder is read from the default rather than
+	// spelled out here.
+	detachName := config.DefaultDetachKey
+	detachSeq, err := vterm.KeySequence(detachName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitScreen(t, term, "the detach reminder", detachName+" detach")
 
 	// It sits on the very last row, and nowhere else: the agent was given the
 	// rows above it.
@@ -247,18 +261,17 @@ func TestAttachDrivesAnAgentDirectly(t *testing.T) {
 		t.Fatalf("expected a 24-row screen, got %d", len(rows))
 	}
 	if runtime.GOOS == "windows" {
-		// The bar lands on row 23 there, one above the bottom, and where that
-		// line goes is not something to guess at from another operating
-		// system: a pseudoconsole owns the screen and serialises it back, so
-		// the last row is exactly where the two disagree. To be watched on a
-		// real Windows terminal before this is called correct either way.
-		t.Skip("the status bar sits one row high under a pseudoconsole (unexplained)")
+		// Under a nested pseudoconsole the bar lands on row 23, one above the
+		// bottom. Run for real on Windows 10 it sits on the last row, as it
+		// should — so what is off by one is this arrangement, a ConPTY inside
+		// a ConPTY, and not the attach.
+		t.Skip("row counting differs inside a nested pseudoconsole")
 	}
-	if !strings.Contains(rows[23], "ctrl+\\ detach") {
+	if !strings.Contains(rows[23], detachName+" detach") {
 		t.Errorf("the status bar should be on the last row, got %q", rows[23])
 	}
 	for i, row := range rows[:23] {
-		if strings.Contains(row, "ctrl+\\ detach") {
+		if strings.Contains(row, detachName+" detach") {
 			t.Errorf("the status bar leaked onto row %d: %q", i+1, row)
 		}
 	}
@@ -278,14 +291,14 @@ func TestAttachDrivesAnAgentDirectly(t *testing.T) {
 	typeText(t, term, "through attach\r")
 	waitScreen(t, term, "the echo of what we typed", "alpha saw:through attach")
 
-	// ctrl+\ detaches without stopping the agent.
-	if _, err := term.Write([]byte{0x1c}); err != nil {
+	// The detach key detaches without stopping the agent.
+	if _, err := term.Write([]byte(detachSeq)); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case <-term.Done():
 	case <-time.After(10 * time.Second):
-		t.Fatal("ctrl+\\ did not detach")
+		t.Fatalf("%s did not detach", detachName)
 	}
 
 	cmd := exec.Command(bin, "ls", "-c", cfg)
