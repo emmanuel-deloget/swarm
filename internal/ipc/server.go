@@ -30,6 +30,12 @@ type Server struct {
 	wg     sync.WaitGroup
 	closed chan struct{}
 	once   sync.Once
+
+	// conns are the connections being served. Close needs them: waiting for a
+	// client to hang up on its own is waiting on somebody else's good manners,
+	// and an attach holds its connection open for as long as it is watching.
+	connMu sync.Mutex
+	conns  map[net.Conn]struct{}
 }
 
 // Hub is the subset of *hub.Hub the server needs. Keeping it as an interface
@@ -57,7 +63,10 @@ func Listen(h *Hub) (*Server, error) {
 	// The socket is the control plane of the fleet: keep it private.
 	_ = os.Chmod(path, 0o600)
 
-	s := &Server{hub: h, ln: ln, path: path, pointer: h.SocketPointer(), closed: make(chan struct{})}
+	s := &Server{
+		hub: h, ln: ln, path: path, pointer: h.SocketPointer(),
+		closed: make(chan struct{}), conns: map[net.Conn]struct{}{},
+	}
 	if err := sockpath.WritePointer(s.pointer, path); err != nil {
 		_ = ln.Close()
 		return nil, err
@@ -88,6 +97,13 @@ func (s *Server) Close() error {
 	s.once.Do(func() {
 		close(s.closed)
 		_ = s.ln.Close()
+		// Then the connections themselves, so an unfinished exchange ends in a
+		// read error rather than in a shutdown that never returns.
+		s.connMu.Lock()
+		for c := range s.conns {
+			_ = c.Close()
+		}
+		s.connMu.Unlock()
 		_ = os.Remove(s.path)
 		if s.pointer != "" {
 			_ = os.Remove(s.pointer)
@@ -112,11 +128,24 @@ func (s *Server) accept() {
 			continue
 		}
 		s.wg.Add(1)
+		s.track(conn, true)
 		go func() {
 			defer s.wg.Done()
+			defer s.track(conn, false)
 			s.serve(conn)
 		}()
 	}
+}
+
+// track adds or removes a connection from the set Close will shut.
+func (s *Server) track(c net.Conn, add bool) {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	if add {
+		s.conns[c] = struct{}{}
+		return
+	}
+	delete(s.conns, c)
 }
 
 func (s *Server) serve(conn net.Conn) {

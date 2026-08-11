@@ -1,6 +1,8 @@
 package ipc
 
 import (
+	"encoding/json"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -351,5 +353,41 @@ func TestSecondSwarmOnTheSameSessionIsRefused(t *testing.T) {
 
 	if _, err := Listen(h); err == nil {
 		t.Fatal("a second swarm on the same session should be refused")
+	}
+}
+
+// TestCloseDoesNotWaitOnAClient: shutting down cannot depend on somebody else
+// hanging up. An attach holds its connection open for as long as it is
+// watching, and a client that simply goes away — a closed laptop, a killed
+// terminal — leaves a socket nobody is going to finish reading. Close used to
+// wait for those, so `swarm shutdown` could hang on a client that no longer
+// existed. Found as a five-minute test timeout on the Windows runner, which is
+// the same thing with a deadline.
+func TestCloseDoesNotWaitOnAClient(t *testing.T) {
+	h := newFleet(t, "")
+	srv := serve(t, h)
+
+	// A live, served connection: the ping proves the server is inside its read
+	// loop for it rather than about to accept it.
+	c, err := net.DialTimeout("unix", srv.Path(), 2*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	if err := json.NewEncoder(c).Encode(Request{Cmd: CmdPing}); err != nil {
+		t.Fatal(err)
+	}
+	var resp Response
+	if err := json.NewDecoder(c).Decode(&resp); err != nil || !resp.OK {
+		t.Fatalf("ping: %v %+v", err, resp)
+	}
+
+	// And now nothing more is sent. Close must not care.
+	done := make(chan struct{})
+	go func() { _ = srv.Close(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Close waited on a client that had gone quiet")
 	}
 }
