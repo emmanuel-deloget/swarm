@@ -146,6 +146,9 @@ func KeySequence(name string) (string, error) {
 	if seq, ok := keyAliases[key]; ok {
 		return seq, nil
 	}
+	if seq, ok := modifiedKey(key); ok {
+		return seq, nil
+	}
 	if strings.HasPrefix(key, "^") && len(key) == 2 {
 		return ctrl(rune(key[1]))
 	}
@@ -171,6 +174,55 @@ func KeySequence(name string) (string, error) {
 		return string(r), nil
 	}
 	return "", fmt.Errorf("unknown key %q", name)
+}
+
+// navKeys are the keys a terminal reports with a parameter when a modifier is
+// held: CSI 1;<mod> <final> for the arrows and home/end, CSI <n>;<mod>~ for the
+// paged ones. The plain forms live in keyAliases; these are the shapes they
+// take once shift, alt or ctrl is involved.
+var navKeys = map[string]struct {
+	final  byte // for the CSI 1;<mod><final> form
+	number int  // for the CSI <number>;<mod>~ form, 0 when unused
+}{
+	"up": {'A', 0}, "down": {'B', 0}, "right": {'C', 0}, "left": {'D', 0},
+	"home": {'H', 0}, "end": {'F', 0},
+	"pageup": {0, 5}, "pgup": {0, 5}, "pagedown": {0, 6}, "pgdn": {0, 6},
+	"insert": {0, 2}, "delete": {0, 3}, "del": {0, 3},
+}
+
+// modifiedKey resolves "ctrl+left", "shift+home", "ctrl+shift+pgup" and the
+// rest of that family into the bytes a terminal sends for them.
+//
+// The parameter is the encoding xterm defined and everything since follows:
+// 1 plus shift(1), alt(2), ctrl(4). It is the same arithmetic the TUI uses to
+// rebuild these keys when forwarding them to an agent — which is the reason to
+// have them here too, since until now the two disagreed: alt+up was accepted
+// and sent ESC ESC[A, while a terminal that actually has the key sends
+// ESC[1;3A.
+//
+// Modifiers may be given in any order and combined. Anything else falls
+// through to the ctrl+<char> and alt+<char> patterns below.
+func modifiedKey(key string) (string, bool) {
+	var mod int
+	for {
+		switch {
+		case strings.HasPrefix(key, "ctrl+"):
+			mod, key = mod|4, strings.TrimPrefix(key, "ctrl+")
+		case strings.HasPrefix(key, "alt+"):
+			mod, key = mod|2, strings.TrimPrefix(key, "alt+")
+		case strings.HasPrefix(key, "shift+"):
+			mod, key = mod|1, strings.TrimPrefix(key, "shift+")
+		default:
+			nav, ok := navKeys[key]
+			if !ok || mod == 0 {
+				return "", false
+			}
+			if nav.number > 0 {
+				return fmt.Sprintf("\x1b[%d;%d~", nav.number, mod+1), true
+			}
+			return fmt.Sprintf("\x1b[1;%d%c", mod+1, nav.final), true
+		}
+	}
 }
 
 func ctrl(r rune) (string, error) {

@@ -404,8 +404,12 @@ func printKeyNames() {
 	fmt.Println("Patterns, for anything not named above:")
 	fmt.Println("  ctrl+<char>    ctrl+c, ctrl+d, ctrl+], ctrl+\\")
 	fmt.Println("  ^<char>        ^c, ^d — the same thing, shorter")
-	fmt.Println("  alt+<char>     alt+b; also alt+<name>, as in alt+left")
+	fmt.Println("  alt+<char>     alt+b, alt+enter")
 	fmt.Println("  <char>         a single character sends itself")
+	fmt.Println("  <mods>+<nav>   ctrl+left, shift+home, ctrl+shift+pgup —")
+	fmt.Println("                 any of ctrl, shift and alt, on up, down,")
+	fmt.Println("                 left, right, home, end, pgup, pagedown,")
+	fmt.Println("                 insert and delete")
 	fmt.Println()
 	fmt.Println("Several keys in one go: swarm keys dev-1 esc ctrl+c enter")
 	fmt.Println("A key marked above as \"cannot be bound\" is one a terminal never")
@@ -941,6 +945,17 @@ func nameForKeyBytes(b []byte) string {
 	for _, name := range vterm.KeyNames() {
 		if seq, err := vterm.KeySequence(name); err == nil && seq == string(b) {
 			return name
+		}
+	}
+	// The modified navigation keys, which are a pattern too: ctrl+left and its
+	// family are built from the plain name and a parameter.
+	for _, base := range []string{"up", "down", "right", "left", "home", "end",
+		"pgup", "pagedown", "insert", "delete"} {
+		for _, mods := range []string{"ctrl+", "shift+", "alt+",
+			"ctrl+shift+", "ctrl+alt+", "shift+alt+", "ctrl+shift+alt+"} {
+			if seq, err := vterm.KeySequence(mods + base); err == nil && seq == string(b) {
+				return mods + base
+			}
 		}
 	}
 	// Lower case first: ctrl+a and ctrl+A send the same byte, and the lower one

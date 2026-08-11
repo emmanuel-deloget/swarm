@@ -307,8 +307,9 @@ also let you select with shift held down while reporting is on.
 
 ### Key names
 
-`swarm keys -list` prints every name, the bytes it sends, and the three patterns
-that cover the rest: `ctrl+<char>`, `alt+<char>`, `^<char>`. Several keys in one
+`swarm keys -list` prints every name, the bytes it sends, and the patterns that
+cover the rest: `ctrl+<char>`, `alt+<char>`, `^<char>`, and a modifier on a
+navigation key — `ctrl+left`, `shift+home`, `ctrl+shift+pgup`. Several keys in one
 call are fine: `swarm keys dev-1 esc ctrl+c enter`.
 
 `swarm keys -read` answers the other direction: press a key, and it prints the

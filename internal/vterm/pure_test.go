@@ -161,3 +161,60 @@ func TestKeyNamesAreAllUsable(t *testing.T) {
 		}
 	}
 }
+
+// TestModifiedNavigationKeys: a terminal reports these with a parameter — 1
+// plus shift(1), alt(2), ctrl(4) — and swarm had no name for any of them. They
+// could be received and not sent, so `swarm keys dev-1 ctrl+left` failed and
+// ctrl+left could not be a detach key.
+//
+// The bytes on the right were measured with `swarm keys -read` on a Windows 10
+// console, which sends the whole family.
+func TestModifiedNavigationKeys(t *testing.T) {
+	for name, want := range map[string]string{
+		"ctrl+up":       "\x1b[1;5A",
+		"ctrl+right":    "\x1b[1;5C",
+		"ctrl+down":     "\x1b[1;5B",
+		"ctrl+left":     "\x1b[1;5D",
+		"ctrl+home":     "\x1b[1;5H",
+		"ctrl+end":      "\x1b[1;5F",
+		"ctrl+pgup":     "\x1b[5;5~",
+		"ctrl+pagedown": "\x1b[6;5~",
+		"shift+up":      "\x1b[1;2A",
+		"shift+left":    "\x1b[1;2D",
+		"shift+home":    "\x1b[1;2H",
+		"alt+up":        "\x1b[1;3A",
+		"alt+left":      "\x1b[1;3D",
+		"ctrl+shift+up": "\x1b[1;6A",
+		"ctrl+alt+left": "\x1b[1;7D",
+		"shift+delete":  "\x1b[3;2~",
+		"ctrl+insert":   "\x1b[2;5~",
+	} {
+		got, err := KeySequence(name)
+		if err != nil {
+			t.Errorf("KeySequence(%q): %v", name, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("KeySequence(%q) = %q, want %q", name, got, want)
+		}
+	}
+
+	// The plain keys are untouched, and so are the patterns a modifier shares
+	// its prefix with: ctrl+a is a control character, not a navigation key.
+	for name, want := range map[string]string{
+		"up": "\x1b[A", "home": "\x1b[H", "pgup": "\x1b[5~",
+		"ctrl+a": "\x01", "alt+a": "\x1ba",
+	} {
+		if got, err := KeySequence(name); err != nil || got != want {
+			t.Errorf("KeySequence(%q) = %q, %v; want %q", name, got, err, want)
+		}
+	}
+
+	// A modifier on something that has no modified form is still an error
+	// rather than a silent nothing.
+	for _, name := range []string{"shift+nonsense", "ctrl+shift+nope"} {
+		if _, err := KeySequence(name); err == nil {
+			t.Errorf("KeySequence(%q) should have failed", name)
+		}
+	}
+}

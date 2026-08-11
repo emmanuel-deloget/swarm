@@ -22,12 +22,21 @@ func TestEveryMeasuredKeyIsNamed(t *testing.T) {
 		}
 	}
 
-	// The modified arrows a console really does send, and which swarm has no
-	// name for: it cannot bind them or send them, only receive them. Reporting
-	// the bytes is then the whole of what this command can honestly say.
-	for _, seq := range []string{"\x1b[1;5A", "\x1b[1;2D", "\x1b[1;3B", "\x1b[5;5~"} {
-		if got := nameForKeyBytes([]byte(seq)); got != "(no key name sends these bytes)" {
-			t.Errorf("%q is reported as %q; swarm has no name for it", seq, got)
+	// The modified navigation keys a console really does send. Naming them was
+	// the point of measuring: swarm could receive them and had no name for
+	// them, so they could be neither sent nor bound.
+	for seq, want := range map[string]string{
+		"\x1b[1;5A": "ctrl+up", "\x1b[1;2D": "shift+left",
+		"\x1b[1;3B": "alt+down", "\x1b[5;5~": "ctrl+pgup",
+		"\x1b[1;6C": "ctrl+shift+right",
+	} {
+		if got := nameForKeyBytes([]byte(seq)); got != want {
+			t.Errorf("%q is reported as %q, want %q", seq, got, want)
 		}
+	}
+
+	// And something no key sends still says so.
+	if got := nameForKeyBytes([]byte("\x1b[99;99R")); got != "(no key name sends these bytes)" {
+		t.Errorf("an unknown sequence is reported as %q", got)
 	}
 }
