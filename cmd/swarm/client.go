@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/term"
 	"github.com/emmanuel-deloget/swarm/internal/agent"
 	"github.com/emmanuel-deloget/swarm/internal/bus"
 	"github.com/emmanuel-deloget/swarm/internal/config"
@@ -342,6 +344,7 @@ func cmdKeys(args []string) error {
 	fs := newFlagSet("keys")
 	cf.register(fs)
 	list := fs.Bool("list", false, "print the key names swarm understands and exit")
+	read := fs.Bool("read", false, "print the bytes this terminal sends for each key, and exit")
 	// Flags are recognised anywhere here: the arguments are key names, not free
 	// text, and no key name starts with a dash — so `swarm keys a1 esc -c x.yaml`
 	// should work like any other command.
@@ -350,6 +353,9 @@ func cmdKeys(args []string) error {
 	if *list {
 		printKeyNames()
 		return nil
+	}
+	if *read {
+		return readKeys()
 	}
 
 	target := fs.Arg(0)
@@ -856,4 +862,73 @@ func cmdDone(args []string) error {
 	}
 	fmt.Println(resp.Text)
 	return nil
+}
+
+// readKeys prints what this terminal sends for each key pressed, until ctrl+c.
+//
+// swarm decides what a key means from the bytes it receives, and terminals do
+// not agree on which bytes those are. A Windows console produces a plain
+// backslash for ctrl+\, so the key that used to detach typed into the agent
+// instead — found by pressing it, after being reasoned about wrongly twice
+// from a machine with no console. This turns that kind of question into a
+// measurement anyone can take, and paste into a bug report.
+func readKeys() error {
+	stdin := os.Stdin.Fd()
+	if !term.IsTerminal(stdin) {
+		return errors.New("keys -read needs a terminal on stdin")
+	}
+	old, err := term.MakeRaw(stdin)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = term.Restore(stdin, old) }()
+	restoreVT := enableVTOutput()
+	defer restoreVT()
+
+	fmt.Print("press keys to see what this terminal sends for them; ctrl+c to stop\r\n\r\n")
+	buf := make([]byte, 64)
+	for {
+		n, err := os.Stdin.Read(buf)
+		if n > 0 {
+			b := buf[:n]
+			fmt.Printf("%-24s %s\r\n", quoteKeyBytes(b), nameForKeyBytes(b))
+			if bytes.Contains(b, []byte{0x03}) {
+				return nil
+			}
+		}
+		if err != nil {
+			return nil
+		}
+	}
+}
+
+// quoteKeyBytes renders a key press as hex and as the escape sequence a person
+// would recognise it by.
+func quoteKeyBytes(b []byte) string {
+	var hex, pretty strings.Builder
+	for _, c := range b {
+		fmt.Fprintf(&hex, "%02x ", c)
+		switch {
+		case c == 0x1b:
+			pretty.WriteString("ESC")
+		case c < 0x20:
+			fmt.Fprintf(&pretty, "^%c", c+0x40)
+		case c == 0x7f:
+			pretty.WriteString("^?")
+		default:
+			pretty.WriteByte(c)
+		}
+	}
+	return strings.TrimSpace(hex.String()) + "  " + pretty.String()
+}
+
+// nameForKeyBytes says which key name swarm would give those bytes, so what a
+// terminal sends can be compared with what a binding expects.
+func nameForKeyBytes(b []byte) string {
+	for _, name := range vterm.KeyNames() {
+		if seq, err := vterm.KeySequence(name); err == nil && seq == string(b) {
+			return name
+		}
+	}
+	return "(no key name sends these bytes)"
 }

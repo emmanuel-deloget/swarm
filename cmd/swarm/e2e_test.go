@@ -1487,3 +1487,45 @@ agents:
 	}
 	t.Fatalf("ROW-TWO is nowhere on:\n%s", term.Text())
 }
+
+// TestKeysReadShowsWhatTheTerminalSends: swarm decides what a key means from
+// the bytes it receives, and terminals disagree about which bytes those are. A
+// Windows console sends a plain backslash for ctrl+\, so the key that detached
+// everywhere else typed into the agent — reasoned about wrongly twice from a
+// machine with no console before anyone simply pressed it. This is the
+// measurement that replaces the reasoning.
+func TestKeysReadShowsWhatTheTerminalSends(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the swarm binary")
+	}
+	bin := buildSwarm(t)
+
+	term, err := vterm.Start(vterm.Options{
+		Command: []string{bin, "keys", "-read"},
+		Cols:    80,
+		Rows:    24,
+	})
+	if err != nil {
+		t.Fatalf("keys -read: %v", err)
+	}
+	defer func() { _ = term.Stop(3 * time.Second) }()
+
+	waitScreen(t, term, "the invitation", "press keys")
+
+	// The up arrow, as a terminal sends it.
+	pressKey(t, term, "\x1b[A")
+	waitScreen(t, term, "the bytes and the name", "1b 5b 41", "up")
+
+	// A key with no name of its own still reports its bytes rather than
+	// nothing, which is the whole point when a binding does not fire.
+	pressKey(t, term, "\x1c")
+	waitScreen(t, term, "an unnamed key", "1c")
+
+	// ctrl+c ends it.
+	pressKey(t, term, "\x03")
+	select {
+	case <-term.Done():
+	case <-time.After(10 * time.Second):
+		t.Fatalf("ctrl+c did not end it; screen was:\n%s", term.Text())
+	}
+}

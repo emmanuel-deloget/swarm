@@ -260,6 +260,7 @@ swarm inject dev-1 "run the tests"  # type and submit
 swarm inject dev-1 -submit=false "typed but not submitted"
 swarm keys dev-1 esc ctrl+c         # key presses
 swarm keys -list                    # the key names swarm understands
+swarm keys -read                    # what this terminal sends for a key
 swarm inject dev-1 -file shot.png "what is wrong here?"
 
 swarm send @review "PR 42 is ready" # bus message
@@ -309,6 +310,12 @@ also let you select with shift held down while reporting is on.
 `swarm keys -list` prints every name, the bytes it sends, and the three patterns
 that cover the rest: `ctrl+<char>`, `alt+<char>`, `^<char>`. Several keys in one
 call are fine: `swarm keys dev-1 esc ctrl+c enter`.
+
+`swarm keys -read` answers the other direction: press a key, and it prints the
+bytes your terminal actually sent and which name swarm would give them. That
+question is not rhetorical — a Windows console sends a plain backslash for
+`ctrl+\`, so the key that detached everywhere else typed into the agent
+instead. Where a binding does not fire, this says whether the key ever arrived.
 
 A few names are **sendable but not bindable**, and the listing marks them:
 `ctrl+enter` and `shift+enter` send bytes an agent may well act on, but a
