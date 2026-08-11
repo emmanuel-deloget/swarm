@@ -72,7 +72,13 @@ Or from a checkout:
 go build -o swarm ./cmd/swarm
 ```
 
-Requires Go 1.25+ and a Unix-like system (Linux, macOS).
+Requires Go 1.25+. Linux and macOS are the tested platforms; Windows works and
+is newer — see [Windows](#windows).
+
+On Windows, install it this way rather than downloading a binary. Nothing is
+published as a signed `.exe` yet, and an unsigned Go binary is regularly taken
+for malware by heuristics — `go install` compiles on your machine, so the
+question does not arise.
 
 ## Configuration
 
@@ -649,9 +655,41 @@ with a pointer file when the project path is too long for a Unix socket.
 | `internal/ui` | the TUI |
 | `internal/web` | the remote control |
 
+## Windows
+
+swarm runs on **Windows 10 build 17763 (1809) or later**, which is what
+`CreatePseudoConsole` requires. Everything the tour above describes works
+there: the TUI, attaching, the bus, the control socket, `swarm send` from
+inside an agent. Continuous integration runs it on a Windows runner alongside
+Linux and macOS: the terminal, the fleet, the bus, the control socket and the
+end-to-end tests that drive the real binary.
+
+It is the youngest of the three, and these are its differences. None is a
+surprise waiting to be found — they are here because they are what a first day
+on Windows runs into.
+
+| | |
+|---|---|
+| `detach_key` | `ctrl+g`, not `ctrl+\`. A Windows console translates keys itself and its support for ctrl with punctuation is incomplete: `ctrl+\` and `ctrl+]` arrive as a plain backslash and bracket, so neither can be a shortcut. Everything else came through — the arrows with ctrl, shift and alt included. |
+| `alt+enter` | The console's own full-screen toggle. It never reaches swarm, so it cannot be bound. |
+| `swarm attach` | No status bar on the last row: holding one needs a scrolling region the console does not honour, and the bar ends up stacked across the screen. The reminder goes in the window title instead, until an agent sets a title of its own. |
+| `secret_path` | Not checked. Windows has no POSIX modes — every readable file reports `0666` — and who may open a file is its ACL, which mode bits cannot express. On a shared machine, put the secret somewhere your account alone can read. |
+| `workspace: none` | Reports the branch of the directory an agent started in, even after it has moved. Following a process needs `/proc`, which only Linux has; macOS is in the same position. |
+| Fonts | The shortcut bar writes `enter` where it writes `↵` elsewhere: the raster fonts the older console offers have no glyph for it. Windows Terminal does. |
+
+Two things are worth knowing about the console you run it in. The older
+`conhost` (the plain "Command Prompt" window) works, and swarm asks it to
+interpret escape sequences at startup — but its font may lack the symbols
+above. Windows Terminal has them, and is the default on Windows 11.
+
+If a key does not do what you expect, `swarm keys -read` prints the bytes your
+terminal actually sent for it, and the name swarm gives them. That is how the
+list above was established rather than guessed.
+
 ## Limits
 
-- Unix only: it uses ptys, Unix sockets and process groups.
+- Windows is supported and newer than the rest; its differences are listed
+  above.
 - Attaching from the TUI (`↵`) reconstructs key bytes from parsed events, which
   covers text, control keys, arrows and arrows held with ctrl/shift/alt, but not
   exotic sequences or mouse input. `A` runs the real `swarm attach` instead,
