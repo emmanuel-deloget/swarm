@@ -173,7 +173,7 @@ func cmdAttach(args []string) error {
 	if err != nil {
 		return err
 	}
-	restoreVT := attachOutputMode()
+	restoreVT := enableVTOutput()
 	var restoreOnce sync.Once
 	restore := func() {
 		restoreOnce.Do(func() {

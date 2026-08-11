@@ -36,31 +36,3 @@ func enableVTOutput() func() {
 	}
 	return func() { _ = windows.SetConsoleMode(h, mode) }
 }
-
-// attachOutputMode prepares the console for a passthrough, and returns what
-// puts it back.
-//
-// On top of interpreting escape sequences, it turns off
-// ENABLE_WRAP_AT_EOL_OUTPUT. A terminal writing the last column of a row
-// leaves the cursor there and wraps only when the *next* character arrives —
-// the pending-wrap rule every VT has followed since the DEC VT100. A console
-// with this flag wraps immediately, so the last character of a repaint scrolls
-// the screen by one line, and everything after it lands a row low.
-//
-// Nothing here relies on the console wrapping for it: what an attach forwards
-// is a rendering of the agent's screen, already broken into rows.
-func attachOutputMode() func() {
-	h := windows.Handle(os.Stdout.Fd())
-	var mode uint32
-	if err := windows.GetConsoleMode(h, &mode); err != nil {
-		return func() {}
-	}
-	want := (mode | windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING) &^ windows.ENABLE_WRAP_AT_EOL_OUTPUT
-	if want == mode {
-		return func() {}
-	}
-	if err := windows.SetConsoleMode(h, want); err != nil {
-		return func() {}
-	}
-	return func() { _ = windows.SetConsoleMode(h, mode) }
-}
