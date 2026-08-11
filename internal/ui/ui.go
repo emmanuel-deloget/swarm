@@ -1104,17 +1104,17 @@ func (m *model) statusLine() string {
 		// ↵ still attaches, and the arrows still select: they are not text, so
 		// the lock never sees them. Saying so costs a few columns on a line
 		// that disappears the moment you type anything.
-		lock := styKey.Render("↵") + " attach" + styMuted.Render(" · ") +
-			styAttn.Render("⌨ DIALOGUE") +
+		lock := styKey.Render(glyphEnter) + " attach" + styMuted.Render(" · ") +
+			styAttn.Render(glyphKeyboard+"DIALOGUE") +
 			styMuted.Render(" — typing goes to "+m.currentName()+" · ") +
 			styKey.Render("esc") + styMuted.Render(" for a shortcut")
 		if m.escNext {
-			lock = styAttn.Render("⌨ esc") + styMuted.Render(" — next key is a shortcut")
+			lock = styAttn.Render(glyphKeyboard+"esc") + styMuted.Render(" — next key is a shortcut")
 		}
 		return padRight(lock, m.usable())
 	}
 	hints := []string{
-		styKey.Render("↵") + " attach",
+		styKey.Render(glyphEnter) + " attach",
 		styKey.Render("A") + " full",
 		styKey.Render("i") + " inject",
 		styKey.Render("s") + " send",
@@ -1223,7 +1223,7 @@ func (m *model) viewHelp() string {
 		{"j / k / ↑ / ↓", "select an agent"},
 		{"tab / shift+tab", "cycle through agents"},
 		{"1..9", "jump to an agent"},
-		{"↵", "attach: keys go to that agent"},
+		{glyphEnter, "attach: keys go to that agent"},
 		{"A", "attach full screen"},
 		{"pgup / pgdn", "scroll back through its output"},
 		{"d", "dialogue lock (on by default): typing talks to the agent"},
