@@ -428,10 +428,10 @@ func (m *model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "pgup":
-		m.scroll(10)
+		m.page(msg, 10)
 		return m, nil
 	case "pgdown":
-		m.scroll(-10)
+		m.page(msg, -10)
 		return m, nil
 
 	case "enter":
@@ -519,6 +519,45 @@ func (m *model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// page moves the pane through the agent's history — or gives the key to the
+// agent, when this pane has no history to move through.
+//
+// An application on the alternate screen keeps no scrollback: it owns the
+// screen and remembers what came before in its own way, which is why paging
+// through a full-screen agent means asking the agent. Reaching that today
+// costs an attach, a page, and a detach, for a key that had no other use.
+//
+// Where there is a scrollback — a shell, an agent that prints and moves on —
+// the key stays here and walks it, as it always did.
+func (m *model) page(msg tea.KeyMsg, by int) {
+	in := m.current()
+	if pagesHere(m.maxOffset, in) {
+		m.scroll(by)
+		return
+	}
+	data := keyBytes(msg)
+	if len(data) == 0 || in == nil {
+		return
+	}
+	a, err := m.h.Agent(in.Name)
+	if err != nil {
+		return
+	}
+	if err := a.WriteRaw(data); err != nil {
+		m.status, m.isError = err.Error(), true
+	}
+}
+
+// pagesHere decides who a page key belongs to: this pane while it has a
+// scrollback to walk, the agent once it has none — which is what a full-screen
+// application means by taking over the alternate screen.
+func pagesHere(maxOffset int, in *agent.Info) bool {
+	if in != nil && in.AltScreen {
+		return false
+	}
+	return maxOffset > 0
 }
 
 // scroll moves the pane through the agent's history, stopping at the start of
@@ -1225,7 +1264,7 @@ func (m *model) viewHelp() string {
 		{"1..9", "jump to an agent"},
 		{glyphEnter, "attach: keys go to that agent"},
 		{"A", "attach full screen"},
-		{"pgup / pgdn", "scroll back through its output"},
+		{"pgup / pgdn", "scroll back through its output, or page the agent itself"},
 		{"d", "dialogue lock (on by default): typing talks to the agent"},
 		{"esc", "in dialogue: one shortcut; esc esc leaves the lock"},
 		{"m", "mosaic: every agent at once"},

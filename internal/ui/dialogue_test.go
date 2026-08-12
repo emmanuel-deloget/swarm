@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/emmanuel-deloget/swarm/internal/agent"
 )
 
 // Eighteen letters are shortcuts, three of them acting on an agent's life.
@@ -204,5 +205,34 @@ func TestAttachedWinsOverTheLock(t *testing.T) {
 	}
 	if !strings.Contains(bar, "ATTACHED") {
 		t.Errorf("the bar does not say it is attached: %q", bar)
+	}
+}
+
+// TestPageKeysGoWhereThereIsSomethingToPage: pgup did nothing at all in front
+// of a full-screen agent. It scrolled this pane through a scrollback that an
+// application on the alternate screen never fills — so the only way to page
+// such an agent was to attach, press it, and detach again, for a key that had
+// no other use meanwhile.
+func TestPageKeysGoWhereThereIsSomethingToPage(t *testing.T) {
+	for _, c := range []struct {
+		what      string
+		maxOffset int
+		alt       bool
+		here      bool
+	}{
+		{"a shell with history", 40, false, true},
+		{"a shell with nothing above the screen", 0, false, false},
+		{"a full-screen agent", 40, true, false},
+		{"a full-screen agent with no scrollback", 0, true, false},
+	} {
+		in := &agent.Info{Name: "a", AltScreen: c.alt}
+		if got := pagesHere(c.maxOffset, in); got != c.here {
+			t.Errorf("%s: paging stays here = %v, want %v", c.what, got, c.here)
+		}
+	}
+
+	// No agent at all is not a reason to write to one.
+	if !pagesHere(10, nil) {
+		t.Error("with no agent selected, a page key has nowhere else to go")
 	}
 }

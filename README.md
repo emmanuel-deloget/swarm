@@ -189,7 +189,7 @@ swarm run
 | `1`…`9` | jump to an agent |
 | `↵` | attach: your keys go to that agent, the detach key comes back |
 | `A` | attach full screen, with a byte-perfect keyboard |
-| `pgup` `pgdn` | scroll back through the agent's output |
+| `pgup` `pgdn` | scroll back through the agent's output — or page the agent itself, when it has taken the whole screen and keeps no scrollback |
 | `m` | mosaic: every agent at once |
 | `l` | show/hide the event log |
 | `M` | mouse reporting on/off (see below) |
@@ -249,6 +249,11 @@ hand.
 `pgup` scrolls back into the agent's scrollback (`scrollback:` lines per agent)
 and stops at the start of the session; the pane header shows how far back you
 are. `pgdn` returns to the live output.
+
+In front of an agent that has taken over the screen there is nothing to scroll:
+a full-screen application keeps no scrollback and remembers what came before in
+its own way. The key is sent to the agent instead, and pages that — which used
+to mean attaching, pressing it, and detaching again.
 
 ## The CLI
 
