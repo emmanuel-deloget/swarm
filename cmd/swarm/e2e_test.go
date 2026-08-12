@@ -1529,3 +1529,38 @@ func TestKeysReadShowsWhatTheTerminalSends(t *testing.T) {
 		t.Fatalf("ctrl+c did not end it; screen was:\n%s", term.Text())
 	}
 }
+
+// TestKeysReadReportsTheMouse: "the wheel does nothing" is the same question as
+// "this key does nothing" — a terminal that does not report the mouse turns the
+// wheel into up and down arrows instead, and the two are told apart by what
+// arrives. So the reader asks for mouse reporting as well, and prints whatever
+// comes.
+func TestKeysReadReportsTheMouse(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the swarm binary")
+	}
+	bin := buildSwarm(t)
+
+	term, err := vterm.Start(vterm.Options{
+		Command: []string{bin, "keys", "-read"},
+		Cols:    80,
+		Rows:    24,
+	})
+	if err != nil {
+		t.Fatalf("keys -read: %v", err)
+	}
+	defer func() { _ = term.Stop(3 * time.Second) }()
+
+	waitScreen(t, term, "the invitation", "press keys")
+
+	// A wheel-up report, as a terminal in SGR mode sends one.
+	pressKey(t, term, "\x1b[<64;10;5M")
+	waitScreen(t, term, "the wheel report", "1b 5b 3c 36 34")
+
+	pressKey(t, term, "\x03")
+	select {
+	case <-term.Done():
+	case <-time.After(10 * time.Second):
+		t.Fatal("ctrl+c did not end it")
+	}
+}

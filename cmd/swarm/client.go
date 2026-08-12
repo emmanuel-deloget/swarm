@@ -889,7 +889,14 @@ func readKeys() error {
 	restoreVT := enableVTOutput()
 	defer restoreVT()
 
-	fmt.Print("press keys to see what this terminal sends for them; ctrl+c to stop\r\n\r\n")
+	// Mouse reporting too, since "the wheel does nothing" is the same kind of
+	// question: a terminal that does not report it converts the wheel into up
+	// and down arrows instead, and the two are told apart by what arrives here.
+	fmt.Print("\x1b[?1002h\x1b[?1006h")
+	defer fmt.Print("\x1b[?1002l\x1b[?1006l")
+
+	fmt.Print("press keys — or move the mouse — to see what this terminal sends;" +
+		" ctrl+c to stop\r\n\r\n")
 	buf := make([]byte, 64)
 	for {
 		n, err := os.Stdin.Read(buf)

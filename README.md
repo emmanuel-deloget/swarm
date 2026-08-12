@@ -324,7 +324,10 @@ navigation key — `ctrl+left`, `shift+home`, `ctrl+shift+pgup`. Several keys in
 call are fine: `swarm keys dev-1 esc ctrl+c enter`.
 
 `swarm keys -read` answers the other direction: press a key, and it prints the
-bytes your terminal actually sent and which name swarm would give them. That
+bytes your terminal actually sent and which name swarm would give them. It asks
+for mouse reporting too, so "the wheel does nothing" gets the same answer: a
+terminal that does not report the wheel sends up and down arrows instead, and
+you can see which one you have. That
 question is not rhetorical — a Windows console sends a plain backslash for
 `ctrl+\`, so the key that detached everywhere else typed into the agent
 instead. Where a binding does not fire, this says whether the key ever arrived.
