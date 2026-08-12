@@ -211,7 +211,10 @@ main {
   white-space: pre;
   line-height: 1.15;
   overflow: hidden;
-  height: 160px;
+  /* No fixed height: the type is scaled so the whole screen fits the width,
+     and the height then follows the terminal's own proportions. A ceiling
+     keeps one tall agent from owning the page — see maxCellHeight in app.js. */
+  max-height: 320px;
   padding: 4px 6px;
   background: var(--term-bg);
 }

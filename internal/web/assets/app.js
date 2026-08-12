@@ -13,6 +13,7 @@ const state = {
   readOnly: document.body.dataset.readonly === "1",
   ws: null,
   gridWs: new Map(),
+  gridCells: new Map(), // name -> the parts of a cell that change with state
   lines: [],
   cols: 0,
 };
@@ -294,7 +295,22 @@ function mergeInfo(info) {
   if (i >= 0) state.agents[i] = info;
   renderSidebar();
   renderCounts();
+  paintCellState(info);
   if (info.name === state.selected) renderTitle();
+}
+
+// paintCellState keeps a grid cell's dot in step with the agent.
+//
+// The cells were built once and never touched again, so a grid left open
+// showed the states an agent had when it was opened — which is most of what a
+// grid is for. The screens were live; the dots beside them were not.
+function paintCellState(a) {
+  const parts = state.gridCells.get(a.name);
+  if (!parts) return;
+  parts.dot.className = "dot " + stateClass(a);
+  parts.dot.textContent = glyph(a);
+  parts.attn.textContent = a.attention ? "▲ " + a.attention : "";
+  parts.attn.hidden = !a.attention; // an empty span still costs a gap
 }
 
 function send(msg) {
@@ -323,13 +339,11 @@ function openGrid() {
     dot.textContent = glyph(a);
     const nm = document.createElement("strong");
     nm.textContent = a.name;
-    head.append(dot, nm);
-    if (a.attention) {
-      const at = document.createElement("span");
-      at.className = "s-attention";
-      at.textContent = "▲ " + a.attention;
-      head.append(at);
-    }
+    const attn = document.createElement("span");
+    attn.className = "s-attention";
+    head.append(dot, nm, attn);
+    state.gridCells.set(a.name, { dot, attn });
+    paintCellState(a);
 
     const body = document.createElement("div");
     body.className = "cs";
@@ -345,11 +359,11 @@ function openGrid() {
       if (f.info) mergeInfo(f.info);
       if (f.type === "full") {
         lines = f.full.slice();
-        body.innerHTML = tail(lines);
-        fitFont(body, f.cols);
+        body.innerHTML = lines.join("");
+        fitWhole(body, f.cols, lines.length);
       } else if (f.type === "diff") {
         for (const [i, html] of Object.entries(f.lines || {})) lines[Number(i)] = html;
-        body.innerHTML = tail(lines);
+        body.innerHTML = lines.join("");
       } else if (f.type === "off") {
         body.textContent = f.text || "not running";
       }
@@ -358,11 +372,37 @@ function openGrid() {
   }
 }
 
-// tail keeps the bottom of the screen: that is where an agent's prompt lives.
-function tail(lines) {
-  let end = lines.length;
-  while (end > 0 && !lines[end - 1].replace(/<[^>]*>/g, "").trim()) end--;
-  return lines.slice(Math.max(0, end - 14), end).join("");
+// fitWhole scales a cell's type so the agent's entire screen fits inside it,
+// width and height both.
+//
+// The grid used to show the last fourteen lines of each agent, which is where
+// a prompt lives — and which is exactly what one is not watching a grid for.
+// Whole screens at a glance is the point: what is legible at this size is not
+// the words but the shape, and a shape that changes is an agent doing
+// something.
+//
+// The floor is low on purpose. A 200-column agent in a 300-pixel cell lands
+// around two pixels, unreadable and still worth showing; clicking the cell
+// opens it full size, which is what reading is for.
+const maxCellHeight = 320;
+
+function fitWhole(el, cols, rows) {
+  if (!cols || !rows) return;
+  const probe = document.createElement("span");
+  probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font-family:var(--mono);font-size:100px";
+  probe.textContent = "0".repeat(10);
+  el.append(probe);
+  const per100 = probe.getBoundingClientRect().width / 10;
+  probe.remove();
+  if (!per100) return;
+
+  // Width first, then a ceiling on the height so one tall agent cannot own the
+  // page. The cell itself has no fixed height, so what is left is exactly the
+  // terminal's own proportions — no letterboxing, no cropping.
+  const byWidth = ((el.clientWidth - 10) / cols) * (100 / per100);
+  const byHeight = maxCellHeight / (rows * 1.15); // 1.15 is the line-height in the stylesheet
+  const size = Math.max(1.5, Math.min(16, Math.min(byWidth, byHeight)));
+  el.style.fontSize = size.toFixed(2) + "px";
 }
 
 function closeGrid() {
@@ -371,6 +411,7 @@ function closeGrid() {
     ws.close();
   }
   state.gridWs.clear();
+  state.gridCells.clear();
   $("#grid").textContent = "";
 }
 
