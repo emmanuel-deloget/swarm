@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -280,5 +281,43 @@ func TestUploadStagesFile(t *testing.T) {
 	}
 	if !strings.HasSuffix(payload.Path, "shot.png") {
 		t.Errorf("the staged name should keep the original: %s", payload.Path)
+	}
+}
+
+// TestTheStylesheetAdaptsToNarrowScreens: the page is meant to be usable from a
+// phone — that is half of why the remote control exists — and the layout was
+// fixed at one size. The terminal itself cannot adapt, being as wide as its
+// agent was told to be, but everything around it can.
+//
+// A stylesheet cannot be checked by looking at it, so this checks the little
+// that can be: that the breakpoints are served and that the rule which costs
+// the most on a phone is there — the sidebar giving up its column.
+func TestTheStylesheetAdaptsToNarrowScreens(t *testing.T) {
+	h := newTestHub(t)
+	ts := newTestServer(t, h, Options{})
+	res, err := http.Get(ts.URL + "/style.css?t=secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(body)
+
+	for _, want := range []string{
+		"@media (max-width: 900px)",
+		"@media (max-width: 620px)",
+		"@media (max-width: 420px)",
+		"flex-direction: column", // the sidebar stops being a column of its own
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("the stylesheet has no %q", want)
+		}
+	}
+
+	if strings.Count(css, "{") != strings.Count(css, "}") {
+		t.Errorf("unbalanced braces: %d { and %d }", strings.Count(css, "{"), strings.Count(css, "}"))
 	}
 }

@@ -266,7 +266,55 @@ footer {
 .status { color: var(--muted); font-size: 12px; min-height: 1.2em; }
 .status.err { color: var(--dead); }
 
-@media (max-width: 700px) {
-  #sidebar { flex: 0 0 128px; }
+/* Narrow, but still two columns: the sidebar gives up width first, since a
+   terminal is the one thing here with a size of its own. */
+@media (max-width: 900px) {
+  #sidebar { flex: 0 0 140px; }
+  .counts { gap: 6px; }
+}
+
+/* Too narrow for two columns. The sidebar becomes a strip of agents above the
+   screen — scrolled sideways rather than stacked, so it costs one row instead
+   of a third of the width — and the composer takes a line of its own.
+
+   The terminal itself keeps its size: an agent is 200 columns wide because
+   somebody said so, and a phone cannot argue. It scrolls, and the type is
+   smaller so that more of it is in view at once. */
+@media (max-width: 620px) {
+  main { flex-direction: column; }
+
+  #sidebar {
+    flex: 0 0 auto;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  #agents { display: flex; gap: 4px; padding: 4px 6px; }
+  #agents li { padding: 5px 9px; border-radius: 999px; }
+  #agents li.sel { box-shadow: inset 0 -2px 0 var(--accent); }
+  #agents .un { margin-left: 4px; }
+
+  .screen { font-size: 11px; }
+  .title { font-size: 12px; padding: 5px 8px; }
+
+  /* The session name is on the tab; the counts are what changes. */
+  header { gap: 7px; padding: 7px 9px; }
+  header .session { display: none; }
+
+  #composer { flex-wrap: wrap; }
+  #prompt { flex: 1 1 100%; order: -1; }
+
   .keys button { padding: 6px 10px; }
+}
+
+/* A phone held upright, where the footer is most of the screen if it is not
+   watched: the key row and the composer share one line each, and nothing else
+   is allowed to grow. */
+@media (max-width: 420px) {
+  header .brand { font-size: 13px; }
+  header button { padding: 5px 8px; font-size: 12px; }
+  .screen { font-size: 10px; }
+  #mode { max-width: 5.5em; }
+  footer { padding: 5px 6px; gap: 5px; }
 }
