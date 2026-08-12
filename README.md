@@ -318,7 +318,8 @@ also let you select with shift held down while reporting is on.
 
 Clicks reach the agent as well, when it tracks the mouse and the pane is
 showing its live screen — not while you are scrolled back, where a position
-would name a cell that has moved.
+would name a cell that has moved. Drags travel with them if the agent asked
+for movements, which is what selecting text inside an agent is made of.
 
 In front of an agent that has taken over the screen the wheel goes to the agent,
 for the same reason the page keys do: there is no scrollback here to move

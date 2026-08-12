@@ -319,9 +319,10 @@ func (m *model) refreshScreen() {
 }
 
 func (m *model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	// Releases are forwarded, since an agent tracking the mouse is waiting for
-	// them; everything else here acts on the press.
-	if msg.Action == tea.MouseActionRelease {
+	// Releases and movements go straight through: an agent tracking a drag —
+	// selecting text in its own interface, say — needs the whole gesture, not
+	// the press that started it.
+	if msg.Action == tea.MouseActionRelease || msg.Action == tea.MouseActionMotion {
 		m.clickAgent(msg)
 		return m, nil
 	}
@@ -358,6 +359,11 @@ func (m *model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 func (m *model) clickAgent(msg tea.MouseMsg) {
 	in := m.current()
 	if in == nil || !in.Mouse || !in.AltScreen || m.offset != 0 {
+		return
+	}
+	// A movement is only wanted by an agent that asked for movements: one
+	// tracking clicks alone (mode 1000) would have to skip every one of them.
+	if msg.Action == tea.MouseActionMotion && !in.MouseDrag {
 		return
 	}
 	col, row, ok := agentCell(msg.X, msg.Y, m.maxOffset)
@@ -406,6 +412,10 @@ func mouseReport(msg tea.MouseMsg, col, row int) string {
 	}
 	if msg.Ctrl {
 		code |= 16
+	}
+	// 32 marks a movement with a button held, which is how a drag is spelled.
+	if msg.Action == tea.MouseActionMotion {
+		code |= 32
 	}
 	final := 'M'
 	if msg.Action == tea.MouseActionRelease {

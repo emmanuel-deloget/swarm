@@ -56,6 +56,7 @@ type Info struct {
 	Title      string        `json:"title,omitempty"`
 	AltScreen  bool          `json:"alt_screen"`
 	Mouse      bool          `json:"mouse"`
+	MouseDrag  bool          `json:"mouse_drag"`
 	Exit       string        `json:"exit,omitempty"`
 	Delivery   string        `json:"delivery"`
 	Unread     int           `json:"unread"`
@@ -907,6 +908,7 @@ func (a *Agent) Info() Info {
 		info.LastOutput = term.LastOutput()
 		info.AltScreen = term.AltScreen()
 		info.Mouse = term.MouseReporting()
+		info.MouseDrag = term.MouseMotion()
 		if !info.LastOutput.IsZero() {
 			info.Quiet = time.Since(info.LastOutput).Round(time.Second)
 		}

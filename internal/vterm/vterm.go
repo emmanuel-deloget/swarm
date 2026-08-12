@@ -117,9 +117,11 @@ type Terminal struct {
 	pendingRows int
 	pendingAt   time.Time
 
-	// mouseOn is whether the child asked for mouse reports. Without it, the
-	// wheel has to be offered as arrow keys, the way a terminal does.
-	mouseOn atomic.Bool
+	// mouseModes is the set of mouse tracking modes the child has switched on.
+	// Which ones matters: 1000 asks for clicks alone, while 1002 and 1003 also
+	// want the pointer's movements, and sending those to an application that
+	// asked for neither is noise it has to skip.
+	mouseModes atomic.Int32
 
 	curVisible atomic.Bool
 	bracketed  atomic.Bool
@@ -513,8 +515,14 @@ func (t *Terminal) Cursor() (x, y int, visible bool) {
 	return pos.X, pos.Y, t.curVisible.Load()
 }
 
-// MouseReporting reports whether the child asked for mouse events.
-func (t *Terminal) MouseReporting() bool { return t.mouseOn.Load() }
+// MouseReporting reports whether the child asked for mouse events at all.
+func (t *Terminal) MouseReporting() bool { return t.mouseModes.Load() != 0 }
+
+// MouseMotion reports whether it asked for the pointer's movements too, which
+// is what a drag is made of — and what text selection inside an agent needs.
+func (t *Terminal) MouseMotion() bool {
+	return t.mouseModes.Load()&(mouseBitButton|mouseBitAny) != 0
+}
 
 // AltScreen reports whether the child is using the alternate screen.
 func (t *Terminal) AltScreen() bool { return t.altOn.Load() }

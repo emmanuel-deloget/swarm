@@ -36,6 +36,13 @@ const (
 	modeMouseAny    = 1003
 )
 
+// The bits mouseModes keeps, one per mode above.
+const (
+	mouseBitClick int32 = 1 << iota
+	mouseBitButton
+	mouseBitAny
+)
+
 // carryMax is how many bytes of a possibly-truncated sequence we keep between
 // reads: ESC [ ? then a few parameters is well under this.
 const carryMax = 32
@@ -86,9 +93,24 @@ func (t *Terminal) scanModes(chunk []byte) []byte {
 			if hasParam(buf[start:j], modeSyncUpdate) {
 				t.syncOn.Store(final == 'h')
 			}
-			for _, mode := range []int{modeMouseClick, modeMouseButton, modeMouseAny} {
-				if hasParam(buf[start:j], mode) {
-					t.mouseOn.Store(final == 'h')
+			// Kept as a set rather than a flag: an application that moves
+			// from 1002 to 1000 wants clicks and no longer wants motion, and
+			// a single boolean cannot say that.
+			for bit, mode := range map[int32]int{
+				mouseBitClick: modeMouseClick, mouseBitButton: modeMouseButton, mouseBitAny: modeMouseAny,
+			} {
+				if !hasParam(buf[start:j], mode) {
+					continue
+				}
+				for {
+					was := t.mouseModes.Load()
+					now := was &^ bit
+					if final == 'h' {
+						now = was | bit
+					}
+					if t.mouseModes.CompareAndSwap(was, now) {
+						break
+					}
 				}
 			}
 			if final == 'h' && hasParam(buf[start:j], modeFocusEvent) {

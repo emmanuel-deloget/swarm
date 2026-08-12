@@ -218,3 +218,45 @@ func TestModifiedNavigationKeys(t *testing.T) {
 		}
 	}
 }
+
+// TestMouseModesAreTrackedSeparately: 1000 asks for clicks, 1002 and 1003 also
+// want the pointer's movements. Sending movements to an application that asked
+// for neither is noise it has to skip, so the difference is kept rather than
+// flattened into "the mouse is on".
+func TestMouseModesAreTrackedSeparately(t *testing.T) {
+	term := &Terminal{}
+	if term.MouseReporting() || term.MouseMotion() {
+		t.Fatal("a fresh terminal is tracking the mouse")
+	}
+
+	term.scanModes([]byte("\x1b[?1000h"))
+	if !term.MouseReporting() || term.MouseMotion() {
+		t.Error("1000 asks for clicks, not for movements")
+	}
+
+	term.scanModes([]byte("\x1b[?1002h"))
+	if !term.MouseMotion() {
+		t.Error("1002 asks for movements too")
+	}
+
+	// Dropping 1002 leaves 1000 behind: an application narrowing what it wants
+	// still wants the clicks.
+	term.scanModes([]byte("\x1b[?1002l"))
+	if !term.MouseReporting() {
+		t.Error("turning 1002 off took 1000 with it")
+	}
+	if term.MouseMotion() {
+		t.Error("1002 was turned off and movements are still expected")
+	}
+
+	term.scanModes([]byte("\x1b[?1000l"))
+	if term.MouseReporting() {
+		t.Error("with every mode off, the mouse is still reported as tracked")
+	}
+
+	// 1003 counts as movement as well, and combined parameters are seen.
+	term.scanModes([]byte("\x1b[?1049;1003h"))
+	if !term.MouseMotion() {
+		t.Error("1003 among several parameters was missed")
+	}
+}

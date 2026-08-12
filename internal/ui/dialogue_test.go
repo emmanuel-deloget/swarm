@@ -313,3 +313,17 @@ func TestMouseReportsCarryTheButtonAndTheModifiers(t *testing.T) {
 		}
 	}
 }
+
+// TestDragsAreForwardedAsDrags: selecting text inside an agent is a press, a
+// run of movements and a release. Without the movements the agent sees a click
+// that never went anywhere.
+func TestDragsAreForwardedAsDrags(t *testing.T) {
+	drag := tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion}
+	if got, want := mouseReport(drag, 3, 4), "\x1b[<32;3;4M"; got != want {
+		t.Errorf("a left drag is %q, want %q", got, want)
+	}
+	right := tea.MouseMsg{Button: tea.MouseButtonRight, Action: tea.MouseActionMotion}
+	if got, want := mouseReport(right, 1, 1), "\x1b[<34;1;1M"; got != want {
+		t.Errorf("a right drag is %q, want %q", got, want)
+	}
+}
