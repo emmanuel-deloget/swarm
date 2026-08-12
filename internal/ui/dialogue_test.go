@@ -260,3 +260,56 @@ func TestWheelGoesWhereTheAgentCanUseIt(t *testing.T) {
 		t.Errorf("wheel down for an agent without the mouse = %q", got)
 	}
 }
+
+// TestClicksReachTheAgentAtTheRightCell: a click carries a position, and a
+// position off by a row is worse than no click at all — it acts on the wrong
+// line of somebody else's interface.
+func TestClicksReachTheAgentAtTheRightCell(t *testing.T) {
+	// The pane starts after the sidebar and its separator, two rows of window
+	// header and two of the pane's own.
+	const left = sidebarWidth + 1
+	const top = 4
+
+	// The first cell of the agent's screen is 1,1 in a mouse report.
+	if col, row, ok := agentCell(left, top, 0); !ok || col != 1 || row != 1 {
+		t.Errorf("the pane's first cell maps to %d,%d (ok=%v), want 1,1", col, row, ok)
+	}
+	// And one cell right and down is 2,2.
+	if col, row, _ := agentCell(left+1, top+1, 0); col != 2 || row != 2 {
+		t.Errorf("one cell in maps to %d,%d, want 2,2", col, row)
+	}
+	// An agent taller than the pane is showing its bottom rows, so what is on
+	// the pane's first row is that far down its screen.
+	if _, row, _ := agentCell(left, top, 12); row != 13 {
+		t.Errorf("with 12 rows above the pane, its first row is the agent's %d, want 13", row)
+	}
+	// The sidebar and the header are not the agent's.
+	for _, c := range [][2]int{{left - 1, top}, {left, top - 1}, {0, 0}} {
+		if _, _, ok := agentCell(c[0], c[1], 0); ok {
+			t.Errorf("%d,%d was taken for a cell of the agent", c[0], c[1])
+		}
+	}
+}
+
+// TestMouseReportsCarryTheButtonAndTheModifiers, in the SGR encoding swarm
+// asks terminals for — the only one that survives past column 223.
+func TestMouseReportsCarryTheButtonAndTheModifiers(t *testing.T) {
+	press := func(b tea.MouseButton) tea.MouseMsg {
+		return tea.MouseMsg{Button: b, Action: tea.MouseActionPress}
+	}
+	for _, c := range []struct {
+		msg  tea.MouseMsg
+		want string
+	}{
+		{press(tea.MouseButtonLeft), "\x1b[<0;3;4M"},
+		{press(tea.MouseButtonMiddle), "\x1b[<1;3;4M"},
+		{press(tea.MouseButtonRight), "\x1b[<2;3;4M"},
+		{tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease}, "\x1b[<0;3;4m"},
+		{tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, Ctrl: true}, "\x1b[<16;3;4M"},
+		{tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, Shift: true}, "\x1b[<4;3;4M"},
+	} {
+		if got := mouseReport(c.msg, 3, 4); got != c.want {
+			t.Errorf("%v %v -> %q, want %q", c.msg.Button, c.msg.Action, got, c.want)
+		}
+	}
+}

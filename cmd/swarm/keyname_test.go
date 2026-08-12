@@ -40,3 +40,28 @@ func TestEveryMeasuredKeyIsNamed(t *testing.T) {
 		t.Errorf("an unknown sequence is reported as %q", got)
 	}
 }
+
+// TestMouseEventsAreNamed: "no key name sends these bytes" is a poor answer to
+// someone asking why the wheel does nothing. The bytes below were measured on
+// a real terminal.
+func TestMouseEventsAreNamed(t *testing.T) {
+	for _, c := range []struct{ bytes, want string }{
+		{"\x1b[<64;81;11M", "mouse wheel up at 81,11"},
+		{"\x1b[<65;81;11M", "mouse wheel down at 81,11"},
+		{"\x1b[<0;57;22M", "mouse left press at 57,22"},
+		{"\x1b[<0;57;22m", "mouse left release at 57,22"},
+		{"\x1b[<1;57;22M", "mouse middle press at 57,22"},
+		{"\x1b[<2;57;22m", "mouse right release at 57,22"},
+		{"\x1b[<32;10;3M", "mouse drag press at 10,3"},
+		{"\x1b[<16;10;3M", "mouse ctrl+left press at 10,3"},
+	} {
+		if got := nameForKeyBytes([]byte(c.bytes)); got != c.want {
+			t.Errorf("%q is reported as %q, want %q", c.bytes, got, c.want)
+		}
+	}
+
+	// And something that only looks like one is not claimed.
+	if _, ok := mouseEventName([]byte("\x1b[<0;1X")); ok {
+		t.Error("a malformed report was named anyway")
+	}
+}

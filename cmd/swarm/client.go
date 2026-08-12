@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -947,6 +948,9 @@ const printableRest = " !\"#$%&'()*+,-./0123456789:;<=>?@" +
 // for ^G, which is the default detach key on Windows and works perfectly. A
 // measuring instrument that calls the working case unknown is worse than none.
 func nameForKeyBytes(b []byte) string {
+	if name, ok := mouseEventName(b); ok {
+		return name
+	}
 	// The listed names first, so ^I is reported as tab rather than as ctrl+i:
 	// both send it, and the one with a key of its own is the one meant.
 	for _, name := range vterm.KeyNames() {
@@ -977,4 +981,57 @@ func nameForKeyBytes(b []byte) string {
 		}
 	}
 	return "(no key name sends these bytes)"
+}
+
+// mouseEventName describes an SGR mouse report — ESC[<b;x;y M for a press, m
+// for a release — since "no key name sends these bytes" is a poor answer to
+// someone asking why the wheel does nothing.
+func mouseEventName(b []byte) (string, bool) {
+	body, ok := strings.CutPrefix(string(b), "\x1b[<")
+	if !ok || len(body) < 2 {
+		return "", false
+	}
+	final := body[len(body)-1]
+	if final != 'M' && final != 'm' {
+		return "", false
+	}
+	parts := strings.Split(body[:len(body)-1], ";")
+	if len(parts) != 3 {
+		return "", false
+	}
+	code, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return "", false
+	}
+
+	// The low two bits name the button; 4, 8 and 16 are shift, alt and ctrl;
+	// 32 means the pointer moved with a button down; 64 is the wheel.
+	var what string
+	switch {
+	case code&64 != 0:
+		what = map[int]string{0: "wheel up", 1: "wheel down", 2: "wheel left", 3: "wheel right"}[code&3]
+	case code&32 != 0:
+		what = "drag"
+	default:
+		what = map[int]string{0: "left", 1: "middle", 2: "right"}[code&3]
+	}
+	if what == "" {
+		what = fmt.Sprintf("button %d", code&3)
+	}
+	for bit, name := range map[int]string{4: "shift+", 8: "alt+", 16: "ctrl+"} {
+		if code&bit != 0 {
+			what = name + what
+		}
+	}
+	action := "press"
+	if final == 'm' {
+		action = "release"
+	}
+	if code&64 != 0 {
+		action = "" // a wheel notch has no release to distinguish it from
+	}
+	if action != "" {
+		what += " " + action
+	}
+	return fmt.Sprintf("mouse %s at %s,%s", what, parts[1], parts[2]), true
 }

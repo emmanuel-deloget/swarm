@@ -319,6 +319,12 @@ func (m *model) refreshScreen() {
 }
 
 func (m *model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	// Releases are forwarded, since an agent tracking the mouse is waiting for
+	// them; everything else here acts on the press.
+	if msg.Action == tea.MouseActionRelease {
+		m.clickAgent(msg)
+		return m, nil
+	}
 	if msg.Action != tea.MouseActionPress {
 		return m, nil
 	}
@@ -327,17 +333,85 @@ func (m *model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		m.wheel(3, true)
 	case tea.MouseButtonWheelDown:
 		m.wheel(-3, false)
-	case tea.MouseButtonLeft:
+	case tea.MouseButtonLeft, tea.MouseButtonMiddle, tea.MouseButtonRight:
 		// Clicking the sidebar selects an agent.
-		if msg.X < sidebarWidth && msg.Y >= 2 {
+		if msg.Button == tea.MouseButtonLeft && msg.X < sidebarWidth && msg.Y >= 2 {
 			if i := msg.Y - 2; i < len(m.infos) {
 				m.sel = i
 				m.offset = 0
 				m.refreshScreen()
 			}
+			return m, nil
 		}
+		m.clickAgent(msg)
 	}
 	return m, nil
+}
+
+// clickAgent forwards a click to the agent under the pointer, when the agent
+// is tracking the mouse and the pane is showing its live screen.
+//
+// Only then: a click carries a position, and a position means nothing while
+// the pane is showing scrollback — the agent would be told about a cell that
+// is no longer where it is. An agent that never asked for the mouse is not
+// told about clicks either, since it would take the bytes for keystrokes.
+func (m *model) clickAgent(msg tea.MouseMsg) {
+	in := m.current()
+	if in == nil || !in.Mouse || !in.AltScreen || m.offset != 0 {
+		return
+	}
+	col, row, ok := agentCell(msg.X, msg.Y, m.maxOffset)
+	if !ok {
+		return
+	}
+	a, err := m.h.Agent(in.Name)
+	if err != nil {
+		return
+	}
+	_ = a.WriteRaw([]byte(mouseReport(msg, col, row)))
+}
+
+// agentCell turns a cell of this window into the cell of the agent's screen
+// drawn there, 1-based as a mouse report wants it.
+//
+// The pane starts after the sidebar and its separator, and below the two rows
+// of header this window has plus the two the pane has of its own. What is drawn
+// in it are the last rows of the agent's screen, so an agent taller than the
+// pane is showing its bottom: maxOffset is how much of the top is missing.
+func agentCell(x, y, maxOffset int) (col, row int, ok bool) {
+	const paneLeft = sidebarWidth + 1
+	const paneTop = 2 /*window header*/ + 2 /*pane header and rule*/
+	if x < paneLeft || y < paneTop {
+		return 0, 0, false
+	}
+	return x - paneLeft + 1, y - paneTop + maxOffset + 1, true
+}
+
+// mouseReport encodes a click the way swarm asks terminals to encode theirs:
+// SGR (1006), which is the only form that survives a screen wider than 223
+// columns.
+func mouseReport(msg tea.MouseMsg, col, row int) string {
+	code := 0
+	switch msg.Button {
+	case tea.MouseButtonMiddle:
+		code = 1
+	case tea.MouseButtonRight:
+		code = 2
+	}
+	if msg.Shift {
+		code |= 4
+	}
+	if msg.Alt {
+		code |= 8
+	}
+	if msg.Ctrl {
+		code |= 16
+	}
+	final := 'M'
+	if msg.Action == tea.MouseActionRelease {
+		final = 'm'
+	}
+	return fmt.Sprintf("\x1b[<%d;%d;%d%c", code, col, row, final)
 }
 
 func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

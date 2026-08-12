@@ -316,6 +316,10 @@ pane and a click picks an agent.
 `M` toggles it while running, and `mouse: true` starts with it on. Many terminals
 also let you select with shift held down while reporting is on.
 
+Clicks reach the agent as well, when it tracks the mouse and the pane is
+showing its live screen — not while you are scrolled back, where a position
+would name a cell that has moved.
+
 In front of an agent that has taken over the screen the wheel goes to the agent,
 for the same reason the page keys do: there is no scrollback here to move
 through. What it sends depends on what the agent asked for — a mouse report if
