@@ -201,9 +201,14 @@ function renderTitle() {
 
 // ------------------------------------------------------------------- terminal
 
-// The screen is monospaced and `cols` wide; scale the font so a full line fits
-// without wrapping, which is what makes an agent TUI readable on a phone.
-function fitFont(el, cols) {
+// The screen is monospaced and cols×rows; scale the type so the whole of it
+// fits the pane — all the width, or all the height, whichever runs out first —
+// and let the stylesheet centre what is left over.
+//
+// Fitting the width alone was not enough: a 37-row agent in a short pane had
+// its bottom below the fold, which is where an agent's prompt and its last
+// answer live. Both dimensions, or neither is worth much.
+function fitFont(el, cols, rows) {
   if (!cols) return;
   const probe = document.createElement("span");
   probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font-family:var(--mono);font-size:100px";
@@ -212,12 +217,16 @@ function fitFont(el, cols) {
   const per100 = probe.getBoundingClientRect().width / 10;
   probe.remove();
   if (!per100) return;
-  const avail = el.clientWidth - 18;
-  let size = (avail / cols) * (100 / per100);
-  // Never shrink below something readable: a wide agent on a narrow screen is
-  // better scrolled sideways than rendered at a size nobody can read. The pane
-  // scrolls (overflow: auto), so nothing is lost.
-  size = Math.max(9, Math.min(16, size));
+  const byWidth = ((el.clientWidth - 18) / cols) * (100 / per100);
+  let size = byWidth;
+  if (rows) {
+    const byHeight = (el.clientHeight - 10) / (rows * 1.2); // 1.2 is the line-height below
+    size = Math.min(byWidth, byHeight);
+  }
+  // A floor all the same: past a certain size nothing is readable and the pane
+  // scrolls instead, which loses nothing. The grid is where whole screens are
+  // meant to be taken in at a glance.
+  size = Math.max(6, Math.min(16, size));
   el.style.fontSize = size.toFixed(2) + "px";
 }
 
@@ -226,7 +235,7 @@ function paintFull(lines, cols) {
   state.lines = lines.slice();
   state.cols = cols;
   el.innerHTML = lines.join("");
-  fitFont(el, cols);
+  fitFont(el, cols, lines.length);
 }
 
 function paintDiff(changed, cols) {
@@ -246,7 +255,7 @@ function paintDiff(changed, cols) {
   }
   if (cols && cols !== state.cols) {
     state.cols = cols;
-    fitFont(el, cols);
+    fitFont(el, cols, state.lines.length);
   }
 }
 
@@ -324,6 +333,7 @@ function openGrid() {
   const grid = $("#grid");
   grid.textContent = "";
   closeGrid();
+  const cellHeight = layoutGrid(state.agents);
   for (const a of state.agents) {
     const cell = document.createElement("div");
     cell.className = "cell" + (a.name === state.selected ? " sel" : "");
@@ -348,6 +358,8 @@ function openGrid() {
     const body = document.createElement("div");
     body.className = "cs";
     body.textContent = "";
+    body.dataset.maxHeight = cellHeight;
+    body.style.maxHeight = cellHeight + "px";
 
     cell.append(head, body);
     grid.append(cell);
@@ -384,6 +396,48 @@ function openGrid() {
 // The floor is low on purpose. A 200-column agent in a 300-pixel cell lands
 // around two pixels, unreadable and still worth showing; clicking the cell
 // opens it full size, which is what reading is for.
+// layoutGrid picks how many columns the grid gets, and how tall a cell may be.
+//
+// auto-fill packed the cells at their minimum width and left the rest of the
+// page empty — four agents in a strip across the top of a screen with room for
+// three times that. What is wanted is the opposite: the fewest columns whose
+// rows still fit on the page, since fewer columns means wider cells and a wider
+// cell is a bigger screen.
+//
+// A cell's height follows from its width, because the terminal inside keeps its
+// proportions: a character is about twice as tall as it is wide, so a screen of
+// cols×rows drawn `w` pixels wide is about w × rows × 2.3 / cols tall.
+function layoutGrid(agents) {
+  const grid = document.querySelector("#grid");
+  const w = grid.clientWidth;
+  const h = grid.clientHeight;
+  if (!w || !h || !agents.length) return maxCellHeight;
+
+  const gap = 8;
+  const headHeight = 26; // the cell's own title bar
+  // The widest ratio decides, so that no agent is the one that overflows.
+  let tallest = 0;
+  for (const a of agents) {
+    if (a.cols && a.rows) tallest = Math.max(tallest, (a.rows * 2.3) / a.cols);
+  }
+  if (!tallest) tallest = 0.5;
+
+  let best = { columns: agents.length, height: maxCellHeight };
+  for (let columns = 1; columns <= agents.length; columns++) {
+    const rows = Math.ceil(agents.length / columns);
+    const cellW = (w - gap * (columns - 1)) / columns;
+    const screenH = cellW * tallest;
+    const total = rows * (screenH + headHeight + gap);
+    if (total <= h) {
+      best = { columns, height: Math.floor(screenH) };
+      break; // the first that fits is the one with the fewest columns
+    }
+  }
+  grid.style.gridTemplateColumns = "repeat(" + best.columns + ", 1fr)";
+  return best.height;
+}
+
+// maxCellHeight is the fallback when the page has not been measured yet.
 const maxCellHeight = 320;
 
 function fitWhole(el, cols, rows) {
@@ -400,7 +454,7 @@ function fitWhole(el, cols, rows) {
   // page. The cell itself has no fixed height, so what is left is exactly the
   // terminal's own proportions — no letterboxing, no cropping.
   const byWidth = ((el.clientWidth - 10) / cols) * (100 / per100);
-  const byHeight = maxCellHeight / (rows * 1.15); // 1.15 is the line-height in the stylesheet
+  const byHeight = (Number(el.dataset.maxHeight) || maxCellHeight) / (rows * 1.15); // 1.15 is the line-height in the stylesheet
   const size = Math.max(1.5, Math.min(16, Math.min(byWidth, byHeight)));
   el.style.fontSize = size.toFixed(2) + "px";
 }
@@ -546,7 +600,7 @@ function wire() {
   $("#btn-log").onclick = () => setView(state.view === "log" ? "screen" : "log");
 
   window.addEventListener("resize", () => {
-    if (state.view === "screen") fitFont($("#screen"), state.cols);
+    if (state.view === "screen") fitFont($("#screen"), state.cols, state.lines.length);
     else if (state.view === "grid") openGrid();
   });
 

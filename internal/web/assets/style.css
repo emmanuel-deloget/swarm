@@ -173,6 +173,13 @@ main {
   white-space: pre;
   outline: none;
   tab-size: 8;
+  /* The type is scaled so the whole screen fits (see fitFont); this centres
+     whatever room is left on the other axis. A grid rather than flex because
+     the lines are direct children, addressed by index when a diff arrives —
+     nothing may come between the pane and them. `safe` keeps the top and the
+     left reachable when the screen is larger than the pane after all. */
+  display: grid;
+  place-content: safe center;
 }
 .screen:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
 .screen .l { min-height: 1.2em; }
@@ -184,6 +191,8 @@ main {
 
 .grid {
   display: grid;
+  /* Overridden by layoutGrid, which picks the number of columns that fills
+     the page; this is what it looks like before the page is measured. */
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 8px;
   align-content: start;
