@@ -321,6 +321,11 @@ showing its live screen — not while you are scrolled back, where a position
 would name a cell that has moved. Drags travel with them if the agent asked
 for movements, which is what selecting text inside an agent is made of.
 
+None of that happens on Windows, and not for want of trying: a pseudoconsole
+does not pass an application's private modes back out, so swarm cannot see
+whether the agent wants the mouse — and an agent that is sent mouse reports it
+never asked for reads them as text. `pgup` and `pgdn` still reach it.
+
 In front of an agent that has taken over the screen the wheel goes to the agent,
 for the same reason the page keys do: there is no scrollback here to move
 through. What it sends depends on what the agent asked for — a mouse report if
@@ -694,6 +699,7 @@ on Windows runs into.
 | `swarm attach` | No status bar on the last row: holding one needs a scrolling region the console does not honour, and the bar ends up stacked across the screen. The reminder goes in the window title instead, until an agent sets a title of its own. |
 | `secret_path` | Not checked. Windows has no POSIX modes — every readable file reports `0666` — and who may open a file is its ACL, which mode bits cannot express. On a shared machine, put the secret somewhere your account alone can read. |
 | `workspace: none` | Reports the branch of the directory an agent started in, even after it has moved. Following a process needs `/proc`, which only Linux has; macOS is in the same position. |
+| The mouse | Clicks, drags and the wheel are not passed to agents. A pseudoconsole does not carry an application's private modes back out, so swarm cannot tell whether an agent wants them — and sending them regardless would be read as text. Mouse mode still works for swarm's own interface. |
 | Fonts | The shortcut bar writes `enter` where it writes `↵` elsewhere: the raster fonts the older console offers have no glyph for it. Windows Terminal does. |
 
 Two things are worth knowing about the console you run it in. The older

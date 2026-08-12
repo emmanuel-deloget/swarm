@@ -637,40 +637,38 @@ func (m *model) page(msg tea.KeyMsg, by int) {
 // wheel scrolls this pane, or gives the wheel to the agent when there is
 // nothing here to scroll — the same rule the page keys follow.
 //
-// What the agent is given depends on what it asked for, which is what a
-// terminal does with a wheel too. An application tracking the mouse gets a
-// mouse report; one that is not gets the arrow keys a terminal sends in their
-// place, which is the whole reason "the wheel scrolls in less" works at all.
+// An agent tracking the mouse gets a mouse report. One that is not gets
+// nothing: a terminal would send arrow keys here, which is what makes a wheel
+// scroll a pager — but swarm would be inventing keystrokes nobody pressed,
+// into an agent whose arrows walk its prompt history. Tried on Windows, where
+// conhost hides the agent's mouse mode from us: the wheel wrote old prompts
+// into Claude's input line. pgup and pgdn still reach the agent, and those are
+// keys somebody actually pressed.
 func (m *model) wheel(by int, up bool) {
 	in := m.current()
 	if pagesHere(m.maxOffset, in) {
 		m.scroll(by)
 		return
 	}
-	if in == nil {
+	if in == nil || !in.Mouse {
 		return
 	}
 	a, err := m.h.Agent(in.Name)
 	if err != nil {
 		return
 	}
-	_ = a.WriteRaw([]byte(wheelBytes(in.Mouse, up)))
+	_ = a.WriteRaw([]byte(wheelBytes(up)))
 }
 
-// wheelBytes is what one notch of the wheel looks like to an agent.
+// wheelBytes is what one notch of the wheel looks like to an agent that is
+// tracking the mouse.
 //
 // The position is the top-left cell rather than where the pointer really is:
 // swarm knows where it is on *its* screen, and translating that into the
 // agent's takes the pane's origin, its scroll offset and its own idea of its
 // size — three ways to be subtly wrong about something no application reads
 // for a wheel event. Applications scroll what they are showing.
-func wheelBytes(mouseTracked, up bool) string {
-	if !mouseTracked {
-		if up {
-			return "\x1b[A\x1b[A\x1b[A"
-		}
-		return "\x1b[B\x1b[B\x1b[B"
-	}
+func wheelBytes(up bool) string {
 	// SGR (1006): button 64 is wheel up, 65 is wheel down.
 	if up {
 		return "\x1b[<64;1;1M"

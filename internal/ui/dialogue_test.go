@@ -244,20 +244,23 @@ func TestPageKeysGoWhereThereIsSomethingToPage(t *testing.T) {
 func TestWheelGoesWhereTheAgentCanUseIt(t *testing.T) {
 	// An agent tracking the mouse gets a mouse report, in the SGR encoding
 	// swarm asks terminals for: 64 up, 65 down.
-	if got := wheelBytes(true, true); got != "\x1b[<64;1;1M" {
-		t.Errorf("wheel up for a mouse-tracking agent = %q", got)
+	if got := wheelBytes(true); got != "\x1b[<64;1;1M" {
+		t.Errorf("wheel up = %q", got)
 	}
-	if got := wheelBytes(true, false); got != "\x1b[<65;1;1M" {
-		t.Errorf("wheel down for a mouse-tracking agent = %q", got)
+	if got := wheelBytes(false); got != "\x1b[<65;1;1M" {
+		t.Errorf("wheel down = %q", got)
 	}
 
-	// One that is not gets arrows, which is what a terminal sends in their
-	// place and what makes a wheel scroll anything at all in less or a pager.
-	if got := wheelBytes(false, true); got != strings.Repeat("\x1b[A", 3) {
-		t.Errorf("wheel up for an agent without the mouse = %q", got)
-	}
-	if got := wheelBytes(false, false); got != strings.Repeat("\x1b[B", 3) {
-		t.Errorf("wheel down for an agent without the mouse = %q", got)
+	// An agent that is not tracking the mouse is sent nothing. A terminal
+	// would send arrows; swarm would be inventing keystrokes into an agent
+	// whose arrows walk its prompt history — which is what it did on Windows,
+	// where the agent's mouse mode is invisible to us.
+	m := newTestModel(t)
+	m.maxOffset = 0
+	before := m.offset
+	m.wheel(3, true)
+	if m.offset != before {
+		t.Error("the wheel moved a pane that had nothing to move")
 	}
 }
 
