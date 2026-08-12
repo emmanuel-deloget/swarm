@@ -1,0 +1,21 @@
+#!/bin/sh
+# Refuse a commit with no Signed-off-by.
+#
+# Checked here rather than added automatically: a sign-off is an attestation,
+# and one a tool writes on your behalf attests to nothing. Add it with
+# `git commit -s`, or `git commit --amend -s` if this message is already
+# written.
+#
+# Not for merges and squashes, which carry whoever signed the original.
+case "$2" in
+	merge|squash) exit 0 ;;
+esac
+
+if grep -q '^Signed-off-by: ' "$1"; then
+	exit 0
+fi
+
+echo "commit-msg: no Signed-off-by in this message." >&2
+echo '  This project signs off its commits. Use "git commit -s",' >&2
+echo '  or keep what you have written with: git commit --amend -s' >&2
+exit 1

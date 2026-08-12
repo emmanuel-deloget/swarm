@@ -737,8 +737,22 @@ govulncheck ./...              # run it with the latest Go, as CI does
 CI runs the suite on Linux and macOS at the Go version in `go.mod`, plus the
 current Go release, and separately checks `go vet`, `gofmt`, `go mod tidy`,
 golangci-lint and govulncheck. It also runs weekly, so an advisory published
-without a commit still shows up. There is no Windows job: swarm needs ptys,
-Unix sockets and process groups.
+without a commit still shows up. A Windows runner covers the terminal, the
+fleet, the bus, the control socket and the end-to-end tests; three packages
+still drive their children through a shell and stay out of it.
+
+Commits are signed off and signed. Two hooks check it, in `hooks/`, which git
+uses once you point it there:
+
+```sh
+git config core.hooksPath hooks
+```
+
+`commit-msg` refuses a message with no `Signed-off-by` — checked rather than
+added, since a sign-off a tool writes on your behalf attests to nothing.
+`pre-push` refuses to send a commit that is not signed off, or not signed with
+the key in `user.signingkey`; the signature can only be checked once the commit
+exists, and a push is the last moment before it leaves the machine.
 
 `govulncheck` deliberately runs with the latest Go rather than the version in
 `go.mod`: it reports standard-library advisories for the toolchain it runs with,

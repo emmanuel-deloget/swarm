@@ -1,0 +1,59 @@
+#!/bin/sh
+# Refuse to push a commit that is not signed off, or not signed with this
+# repository's GPG key.
+#
+# The signature can only be checked once the commit exists, so it is checked
+# here rather than at commit time — and here is also where it matters: nothing
+# has left the machine yet.
+zero=$(git hash-object --stdin </dev/null | tr '[0-9a-f]' '0')
+key=$(git config --get user.signingkey)
+bad=0
+
+check() {
+	commit=$1
+	subject=$(git log -1 --format='%h %s' "$commit")
+
+	if ! git log -1 --format='%B' "$commit" | grep -q '^Signed-off-by: '; then
+		echo "  no Signed-off-by: $subject" >&2
+		bad=1
+	fi
+
+	case "$(git log -1 --format='%G?' "$commit")" in
+		G|U) ;;
+		*)
+			echo "  not signed: $subject" >&2
+			bad=1
+			return
+			;;
+	esac
+
+	if [ -n "$key" ]; then
+		fingerprint=$(git log -1 --format='%GF' "$commit")
+		case "$(echo "$fingerprint" | tr 'a-f' 'A-F')" in
+			*"$(echo "$key" | tr 'a-f' 'A-F')") ;;
+			*)
+				echo "  signed with $fingerprint, not $key: $subject" >&2
+				bad=1
+				;;
+		esac
+	fi
+}
+
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+	[ "$local_sha" = "$zero" ] && continue # deleting a ref
+	if [ "$remote_sha" = "$zero" ]; then
+		range="$local_sha --not --remotes"
+	else
+		range="$remote_sha..$local_sha"
+	fi
+	for commit in $(git rev-list $range); do
+		check "$commit"
+	done
+done
+
+if [ "$bad" -ne 0 ]; then
+	echo "pre-push: refusing to push the commits above." >&2
+	echo "  Fix the last one with: git commit --amend -s -S" >&2
+	echo "  Or a run of them with: git rebase --signoff -S <base>" >&2
+	exit 1
+fi
