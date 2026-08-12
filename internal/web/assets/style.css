@@ -296,7 +296,22 @@ footer {
   #agents .un { margin-left: 4px; }
 
   .screen { font-size: 11px; }
-  .title { font-size: 12px; padding: 5px 8px; }
+
+  /* The title carries the agent's name, its state, and the three buttons that
+     act on it. On one line they run off the side and take the buttons with
+     them — reachable only by scrolling a strip nobody thinks to scroll. So it
+     wraps, and the part that can go, goes: a pid and a geometry are not what
+     is wanted from a phone. */
+  .title {
+    font-size: 12px;
+    padding: 5px 8px;
+    flex-wrap: wrap;
+    white-space: normal;
+    overflow-x: visible;
+    gap: 6px;
+  }
+  .title .meta { display: none; }
+  .title button { padding: 4px 9px; }
 
   /* The session name is on the tab; the counts are what changes. */
   header { gap: 7px; padding: 7px 9px; }

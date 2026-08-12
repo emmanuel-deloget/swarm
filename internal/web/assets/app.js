@@ -184,6 +184,7 @@ function renderTitle() {
   if (a.exit) bits.push(a.exit);
   if (bits.length) {
     const meta = document.createElement("span");
+    meta.className = "meta";
     meta.textContent = bits.join(" · ");
     el.append(meta);
   }
