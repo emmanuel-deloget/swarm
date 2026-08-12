@@ -55,6 +55,7 @@ type Info struct {
 	Restarts   int           `json:"restarts"`
 	Title      string        `json:"title,omitempty"`
 	AltScreen  bool          `json:"alt_screen"`
+	Mouse      bool          `json:"mouse"`
 	Exit       string        `json:"exit,omitempty"`
 	Delivery   string        `json:"delivery"`
 	Unread     int           `json:"unread"`
@@ -905,6 +906,7 @@ func (a *Agent) Info() Info {
 		info.BytesOut = term.BytesOut()
 		info.LastOutput = term.LastOutput()
 		info.AltScreen = term.AltScreen()
+		info.Mouse = term.MouseReporting()
 		if !info.LastOutput.IsZero() {
 			info.Quiet = time.Since(info.LastOutput).Round(time.Second)
 		}

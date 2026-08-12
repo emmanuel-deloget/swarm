@@ -324,9 +324,9 @@ func (m *model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.Button {
 	case tea.MouseButtonWheelUp:
-		m.scroll(3)
+		m.wheel(3, true)
 	case tea.MouseButtonWheelDown:
-		m.scroll(-3)
+		m.wheel(-3, false)
 	case tea.MouseButtonLeft:
 		// Clicking the sidebar selects an agent.
 		if msg.X < sidebarWidth && msg.Y >= 2 {
@@ -548,6 +548,50 @@ func (m *model) page(msg tea.KeyMsg, by int) {
 	if err := a.WriteRaw(data); err != nil {
 		m.status, m.isError = err.Error(), true
 	}
+}
+
+// wheel scrolls this pane, or gives the wheel to the agent when there is
+// nothing here to scroll — the same rule the page keys follow.
+//
+// What the agent is given depends on what it asked for, which is what a
+// terminal does with a wheel too. An application tracking the mouse gets a
+// mouse report; one that is not gets the arrow keys a terminal sends in their
+// place, which is the whole reason "the wheel scrolls in less" works at all.
+func (m *model) wheel(by int, up bool) {
+	in := m.current()
+	if pagesHere(m.maxOffset, in) {
+		m.scroll(by)
+		return
+	}
+	if in == nil {
+		return
+	}
+	a, err := m.h.Agent(in.Name)
+	if err != nil {
+		return
+	}
+	_ = a.WriteRaw([]byte(wheelBytes(in.Mouse, up)))
+}
+
+// wheelBytes is what one notch of the wheel looks like to an agent.
+//
+// The position is the top-left cell rather than where the pointer really is:
+// swarm knows where it is on *its* screen, and translating that into the
+// agent's takes the pane's origin, its scroll offset and its own idea of its
+// size — three ways to be subtly wrong about something no application reads
+// for a wheel event. Applications scroll what they are showing.
+func wheelBytes(mouseTracked, up bool) string {
+	if !mouseTracked {
+		if up {
+			return "\x1b[A\x1b[A\x1b[A"
+		}
+		return "\x1b[B\x1b[B\x1b[B"
+	}
+	// SGR (1006): button 64 is wheel up, 65 is wheel down.
+	if up {
+		return "\x1b[<64;1;1M"
+	}
+	return "\x1b[<65;1;1M"
 }
 
 // pagesHere decides who a page key belongs to: this pane while it has a

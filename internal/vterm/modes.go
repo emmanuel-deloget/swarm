@@ -27,6 +27,15 @@ const modeFocusEvent = 1004
 // written for. See Terminal.Resize.
 const modeSyncUpdate = 2026
 
+// The mouse tracking modes. An application that has asked for any of them
+// expects mouse reports, and gets nonsense from the arrow keys a terminal
+// would otherwise send in their place.
+const (
+	modeMouseClick  = 1000
+	modeMouseButton = 1002
+	modeMouseAny    = 1003
+)
+
 // carryMax is how many bytes of a possibly-truncated sequence we keep between
 // reads: ESC [ ? then a few parameters is well under this.
 const carryMax = 32
@@ -76,6 +85,11 @@ func (t *Terminal) scanModes(chunk []byte) []byte {
 			}
 			if hasParam(buf[start:j], modeSyncUpdate) {
 				t.syncOn.Store(final == 'h')
+			}
+			for _, mode := range []int{modeMouseClick, modeMouseButton, modeMouseAny} {
+				if hasParam(buf[start:j], mode) {
+					t.mouseOn.Store(final == 'h')
+				}
 			}
 			if final == 'h' && hasParam(buf[start:j], modeFocusEvent) {
 				// Answer once the emulator has seen the sequence too,

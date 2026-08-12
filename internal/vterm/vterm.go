@@ -117,6 +117,10 @@ type Terminal struct {
 	pendingRows int
 	pendingAt   time.Time
 
+	// mouseOn is whether the child asked for mouse reports. Without it, the
+	// wheel has to be offered as arrow keys, the way a terminal does.
+	mouseOn atomic.Bool
+
 	curVisible atomic.Bool
 	bracketed  atomic.Bool
 	stopping   atomic.Bool
@@ -508,6 +512,9 @@ func (t *Terminal) Cursor() (x, y int, visible bool) {
 	t.mu.Unlock()
 	return pos.X, pos.Y, t.curVisible.Load()
 }
+
+// MouseReporting reports whether the child asked for mouse events.
+func (t *Terminal) MouseReporting() bool { return t.mouseOn.Load() }
 
 // AltScreen reports whether the child is using the alternate screen.
 func (t *Terminal) AltScreen() bool { return t.altOn.Load() }

@@ -316,6 +316,12 @@ pane and a click picks an agent.
 `M` toggles it while running, and `mouse: true` starts with it on. Many terminals
 also let you select with shift held down while reporting is on.
 
+In front of an agent that has taken over the screen the wheel goes to the agent,
+for the same reason the page keys do: there is no scrollback here to move
+through. What it sends depends on what the agent asked for — a mouse report if
+it tracks the mouse, arrow keys if it does not, which is what a terminal sends
+in their place and what makes a wheel scroll a pager at all.
+
 ### Key names
 
 `swarm keys -list` prints every name, the bytes it sends, and the patterns that

@@ -236,3 +236,27 @@ func TestPageKeysGoWhereThereIsSomethingToPage(t *testing.T) {
 		t.Error("with no agent selected, a page key has nowhere else to go")
 	}
 }
+
+// TestWheelGoesWhereTheAgentCanUseIt: the wheel had the same problem as the
+// page keys — it scrolled a pane that a full-screen agent never fills — and
+// one more of its own: what an agent expects for a wheel notch depends on
+// whether it asked for the mouse at all.
+func TestWheelGoesWhereTheAgentCanUseIt(t *testing.T) {
+	// An agent tracking the mouse gets a mouse report, in the SGR encoding
+	// swarm asks terminals for: 64 up, 65 down.
+	if got := wheelBytes(true, true); got != "\x1b[<64;1;1M" {
+		t.Errorf("wheel up for a mouse-tracking agent = %q", got)
+	}
+	if got := wheelBytes(true, false); got != "\x1b[<65;1;1M" {
+		t.Errorf("wheel down for a mouse-tracking agent = %q", got)
+	}
+
+	// One that is not gets arrows, which is what a terminal sends in their
+	// place and what makes a wheel scroll anything at all in less or a pager.
+	if got := wheelBytes(false, true); got != strings.Repeat("\x1b[A", 3) {
+		t.Errorf("wheel up for an agent without the mouse = %q", got)
+	}
+	if got := wheelBytes(false, false); got != strings.Repeat("\x1b[B", 3) {
+		t.Errorf("wheel down for an agent without the mouse = %q", got)
+	}
+}
