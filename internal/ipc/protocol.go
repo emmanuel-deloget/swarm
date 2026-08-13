@@ -34,6 +34,7 @@ const (
 	CmdBusPause = "bus-pause"
 	CmdThreads  = "bus-threads"
 	CmdDone     = "done"
+	CmdWhy      = "why"
 	CmdAttach   = "attach"
 	CmdShutdown = "shutdown"
 )
@@ -122,6 +123,7 @@ type Response struct {
 	Paused   string             `json:"paused,omitempty"`
 	Events   []event.Event      `json:"events,omitempty"`
 	Event    *event.Event       `json:"event,omitempty"`
+	Why      *hub.Why           `json:"why,omitempty"`
 
 	Text string `json:"text,omitempty"`
 	Path string `json:"path,omitempty"`

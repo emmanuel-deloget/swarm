@@ -292,6 +292,7 @@ swarm events -f                     # live event log
 swarm start dev-3                   # start / stop / restart one or a group
 swarm stop dev-3
 swarm restart dev-3
+swarm why dev-22                    # why it is stalled, and how it gets out
 swarm info                          # session, socket, web URL and token
 swarm shutdown
 swarm version                       # which build this is
@@ -505,6 +506,27 @@ pane header and `swarm ls`, with its own glyph, as well as in the event log and
 to an outgoing webhook. Both halves matter: an agent with nothing to do is quiet and
 that is normal. It is a signal only — swarm never restarts or interrupts an
 agent because of it, since the guess can be wrong and asking costs less.
+
+`swarm why` turns that signal into something anyone can act on:
+
+```sh
+swarm why dev-22      # or just `swarm why` inside an agent
+```
+
+It names who is waiting, what they asked, on which thread and since when, shows
+the message that opened the debt, and ends with the command that closes it.
+
+That last part is the reason it exists. An agent stalled for two days has been
+through several context compactions by then, so the message that put it there
+is gone from the one place a reader would think to look — the agent's own
+memory, which is also why asking the agent gets you nowhere. The bus still has
+it: a debt lives until it is settled, so who asked and when survive anything
+that happens inside the agent. swarm is the fleet's external memory, and this
+is the command that reads it back.
+
+Messages are bounded even though debts are not, so a question left long enough
+can outlive its own text. `swarm why` says so in as many words rather than
+printing a blank where the question should be.
 
 Beyond that, the configuration can bound the talking rather than hope for the
 best: `delivery_by_kind` lets the fleet defer while `blocked` still gets

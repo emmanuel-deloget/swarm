@@ -301,6 +301,23 @@ func (s *Server) handle(req Request) Response {
 				Text: fmt.Sprintf("settled %d, told %d", settled, len(msgs))}
 		}
 
+	case CmdWhy:
+		// Target rather than From: the usual caller is an agent asking about
+		// itself, but a person asking about an agent is the same question.
+		who := req.Target
+		if who == "" {
+			who = req.From
+		}
+		if who == "" {
+			return errorResponse(errors.New("why needs an agent name " +
+				"(inside an agent, $SWARM_AGENT is already set)"))
+		}
+		w, err := h.Why(who)
+		if err != nil {
+			return errorResponse(err)
+		}
+		return Response{OK: true, Why: &w}
+
 	case CmdThreads:
 		return Response{OK: true, Threads: h.Bus().Threads(h.Config().Bus.MaxTurns)}
 

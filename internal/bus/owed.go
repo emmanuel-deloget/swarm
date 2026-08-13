@@ -126,3 +126,52 @@ func (b *Bus) Settle(agent string, thread uint64) []debt {
 	}
 	return closed
 }
+
+// Opened returns the message that opened a debt: the one that reached this
+// agent on this thread and asked something of it.
+//
+// It is what turns "dev-22 owes an answer to triage-1" into something a reader
+// can act on, and it is the part most likely to be missing — a debt lives until
+// it is settled, but the messages are bounded, so a question left unanswered
+// for two days may well have been pushed out of history by everything said
+// since.
+//
+// live says the copy came from the recipient's own mailbox, where Pushed and
+// ReadAt are kept up to date. The fleet-wide history holds the message as it
+// was posted and is never marked afterwards, so its copy can say what was
+// asked but must not be asked whether it was delivered — it would always
+// answer no, which is a wrong answer rather than an unknown one.
+func (b *Bus) Opened(agent string, thread uint64) (m Message, live, ok bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if box, found := b.boxes[agent]; found {
+		for _, m := range box.seen {
+			if m.Thread == thread && opens(m.Kind) {
+				return m, true, true
+			}
+		}
+	}
+	for _, m := range b.recent {
+		if m.Thread == thread && m.To == agent && opens(m.Kind) {
+			return m, false, true
+		}
+	}
+	return Message{}, false, false
+}
+
+// Closing returns the kinds that settle a debt.
+//
+// Derived from Kinds and closes rather than written out, so that a new kind is
+// classified in exactly one place. The list has a reader: telling someone how
+// to get out of a debt means naming these, and a hand-kept copy of them would
+// be wrong the first time the classification changed — which is the failure
+// this area already had once, when `done` existed without settling anything.
+func Closing() []Kind {
+	var out []Kind
+	for _, k := range Kinds() {
+		if closes(k) {
+			out = append(out, k)
+		}
+	}
+	return out
+}

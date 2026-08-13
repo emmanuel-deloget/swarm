@@ -43,6 +43,7 @@ talking
   hook test <payload.json>  show what an incoming webhook would send
   hook post <payload.json>  send a payload to the running listener
 
+  why [agent]               why an agent is stalled, and how it gets out
   info                      session, socket, web URL and token
   config check [-fix]       report (and fix) a config that has gone stale
   version                   which build this is (also shown in the TUI header)
@@ -117,6 +118,8 @@ func main() {
 		err = cmdBus(args)
 	case "config":
 		err = cmdConfig(args)
+	case "why":
+		err = cmdWhy(args)
 	case "licenses", "licences":
 		err = cmdLicenses(args)
 	case "version", "-version", "--version", "-v":

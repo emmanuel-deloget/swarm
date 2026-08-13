@@ -743,13 +743,29 @@ func (h *Hub) Done(from string, thread uint64, note string) (settled int, out []
 func ackLine(kind bus.Kind, from string, thread uint64) string {
 	switch kind {
 	case bus.KindQuestion:
-		return fmt.Sprintf("\n\n[swarm] answer with: swarm send -kind answer -thread %d %s \"…\"",
-			thread, from)
+		return "\n\n[swarm] answer with: " + SettleCommand(kind, from, thread)
 	case bus.KindRequest, bus.KindBlocked:
-		return fmt.Sprintf("\n\n[swarm] when this is settled: swarm done -thread %d"+
-			" (or answer with -kind answer if there is something to say)", thread)
+		return "\n\n[swarm] when this is settled: " + SettleCommand(kind, from, thread) +
+			" (or answer with -kind answer if there is something to say)"
 	}
 	return ""
+}
+
+// SettleCommand is the exact command that closes a debt.
+//
+// One function, because it is now said in two places — appended to the message
+// that opens the debt, and printed by `swarm why` days later when that message
+// is long gone — and two spellings of a command is one spelling that is wrong.
+//
+// The flags come before the target on purpose: Go's flag parsing stops at the
+// first non-flag argument, so `swarm send dev-1 -kind answer` passes "-kind"
+// and "answer" through as message text. A command printed as advice has to be
+// one that runs.
+func SettleCommand(kind bus.Kind, from string, thread uint64) string {
+	if kind == bus.KindQuestion {
+		return fmt.Sprintf("swarm send -kind answer -thread %d %s \"…\"", thread, from)
+	}
+	return fmt.Sprintf("swarm done -thread %d", thread)
 }
 
 // threadFor decides which conversation a message belongs to, and refuses when
