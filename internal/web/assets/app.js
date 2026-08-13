@@ -208,6 +208,11 @@ function renderTitle() {
 // Fitting the width alone was not enough: a 37-row agent in a short pane had
 // its bottom below the fold, which is where an agent's prompt and its last
 // answer live. Both dimensions, or neither is worth much.
+// minScreenFont is the smallest type the single-agent view will draw at; below
+// it the pane scrolls rather than shrinking further. Larger than minTileFont
+// because a tile is looked at, and a screen is read.
+const minScreenFont = 10;
+
 function fitFont(el, cols, rows) {
   if (!cols) return;
   const probe = document.createElement("span");
@@ -224,9 +229,15 @@ function fitFont(el, cols, rows) {
     size = Math.min(byWidth, byHeight);
   }
   // A floor all the same: past a certain size nothing is readable and the pane
-  // scrolls instead, which loses nothing. The grid is where whole screens are
-  // meant to be taken in at a glance.
-  size = Math.max(6, Math.min(16, size));
+  // scrolls instead. The grid is where whole screens are meant to be taken in
+  // at a glance.
+  //
+  // The floor was 6px, which on a phone gave the worst of both: a 164-column
+  // agent came out 656px wide in a 412px pane, so it scrolled regardless, and
+  // what it scrolled over was too small to read. A floor is a decision to stop
+  // fitting and start scrolling — so it belongs where the type is still worth
+  // scrolling over.
+  size = Math.max(minScreenFont, Math.min(16, size));
   el.style.fontSize = size.toFixed(2) + "px";
 }
 
