@@ -384,7 +384,13 @@ func (s *Server) handle(req Request) Response {
 		}
 		return Response{OK: true, Text: "shutting down"}
 	}
-	return errorResponse(fmt.Errorf("unknown command %q", req.Cmd))
+	// Said differently from the client's own "unknown command", because the
+	// two are different problems with the same shape: a swarm runs for days
+	// while the binary that talks to it is upgraded underneath, and a reader
+	// who cannot tell which end is behind will reinstall the one that is fine.
+	return errorResponse(fmt.Errorf("the running swarm does not know the command %q; "+
+		"it was started with an older build than the one you are using — restart it to catch up",
+		req.Cmd))
 }
 
 func (s *Server) handleEvents(req Request, send func(Response) error) {
