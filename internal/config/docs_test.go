@@ -31,6 +31,7 @@ var docSections = map[string][]string{
 	"PatternConfig":  {"`patterns`"},
 	"WebConfig":      {"`web`"},
 	"BusConfig":      {"`bus`"},
+	"StalledRule":    {"`on_stalled`"},
 	"HookConfig":     {"`hooks`"},
 	"OutgoingConfig": {"`outgoing`"},
 }

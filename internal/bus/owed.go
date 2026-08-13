@@ -184,6 +184,12 @@ func (b *Bus) Opened(agent string, thread uint64) (m Message, live, ok bool) {
 	return Message{}, false, false
 }
 
+// Opening reports whether a kind asks something of its recipient, and so opens
+// a debt. Exported because a configuration that says what to do about a stalled
+// agent has to be able to refuse a rule that would give it a second debt while
+// it is stuck on the first.
+func Opening(k Kind) bool { return opens(k) }
+
 // Closing returns the kinds that settle a debt.
 //
 // Derived from Kinds and closes rather than written out, so that a new kind is

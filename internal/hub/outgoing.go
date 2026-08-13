@@ -165,9 +165,20 @@ func (h *Hub) watchStalled(after time.Duration) {
 					// Settled, busy, or has spoken since: whatever was said
 					// about it no longer holds.
 					delete(said, in.Name)
+					h.forget(in.Name)
 					continue
 				}
-				if !owes || said[in.Name] == d.Thread {
+				if !owes {
+					continue
+				}
+				// The rules run every tick, not only the first: one of them may
+				// be waiting on `after`, another on `every`. They keep their own
+				// count, per debt.
+				h.act(in.Name, debtView{
+					Thread: d.Thread, From: d.From, Kind: d.Kind,
+					Since: d.Since, Body: d.Body,
+				})
+				if said[in.Name] == d.Thread {
 					continue // already reported this one
 				}
 				said[in.Name] = d.Thread

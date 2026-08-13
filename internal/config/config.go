@@ -341,7 +341,71 @@ type BusConfig struct {
 	// a group, or a role. Their answer comes back as final, so it closes the
 	// matter instead of opening another.
 	EscalateTo string `yaml:"escalate_to"`
+
+	// OnStalled is what to do about an agent that has been stalled, in order.
+	// Empty means what swarm did before it existed: show the state, send it to
+	// the webhook, and leave it there.
+	//
+	// A list rather than one action, because asking the agent and telling
+	// somebody else are not alternatives — they are the same escalation a few
+	// hours apart, and a list says that without needing two mechanisms.
+	OnStalled []StalledRule `yaml:"on_stalled"`
 }
+
+// StalledSelf is the target that means the stalled agent itself.
+const StalledSelf = "self"
+
+// StalledRule is one thing to do about an agent that owes something and has
+// gone quiet.
+//
+// swarm does the asking and nothing else. It does not decide that the work is
+// abandoned, reassign it, or restart anything: the state is a guess — an agent
+// waiting on a nine-minute test gate is silent and does owe work — and the
+// cheapest way to turn a guess into a fact is to ask the one who knows. What
+// happens next belongs to whoever is told, which is usually an agent with more
+// context about the work than the hub will ever have.
+type StalledRule struct {
+	// To is who hears about it: "self" for the stalled agent, or an agent
+	// name, an @role or a @group for anyone else. Telling a triage agent is
+	// the more useful half — it knows what the work was, so it can open a real
+	// question the stalled agent then has to settle, which asking directly
+	// cannot do without piling a second debt on the first.
+	To string `yaml:"to"`
+
+	// Kind is the message kind. Empty means fyi, which tells without asking
+	// and so opens no debt.
+	Kind string `yaml:"kind"`
+
+	// After delays this rule past the point where the agent is called stalled,
+	// which is how one configuration can ask the agent first and tell somebody
+	// else only if it goes on.
+	After time.Duration `yaml:"after"`
+
+	// Every repeats the rule. Zero sends once and never again for that debt —
+	// enough for a gate that takes ten minutes, and not enough for an agent
+	// stuck for three days, which is why the two are configurable separately.
+	Every time.Duration `yaml:"every"`
+
+	// Max bounds the repeats, so a fleet nobody is watching over a weekend
+	// cannot send the same question four hundred times. Zero means the default,
+	// which is three when Every is set and one when it is not.
+	Max int `yaml:"max"`
+
+	// Text overrides the message. Empty is the useful case: swarm writes what
+	// `swarm why` would say — who is waiting, since when, the question itself
+	// and the command that settles it — which is precisely what a compacted
+	// agent has lost.
+	Text string `yaml:"text"`
+
+	// Push types the message into the recipient's terminal whatever delivery
+	// mode it is configured for, and defaults to true. An agent that is not
+	// reading its mailbox is exactly the one this needs to reach, so a message
+	// that waits politely in a queue is a message that will not arrive.
+	Push *bool `yaml:"push"`
+}
+
+// PushWanted reports whether the message should be typed into the terminal.
+func (r StalledRule) PushWanted() bool { return r.Push == nil || *r.Push }
 
 // HookConfig configures the inbound webhook listener: HTTP in, bus messages
 // out. It listens on its own address rather than sharing the web remote
@@ -771,6 +835,9 @@ func (c *Config) normalize() error {
 		}
 	}
 
+	if err := c.normalizeStalled(); err != nil {
+		return err
+	}
 	if err := c.normalizeHooks(); err != nil {
 		return err
 	}
@@ -781,6 +848,61 @@ func (c *Config) normalize() error {
 // groups, because a rule names a target and an unknown target is worth
 // reporting when the file is read rather than when the event arrives — by then
 // nobody is watching.
+// normalizeStalled fills in the defaults for on_stalled and refuses the shapes
+// that cannot work.
+func (c *Config) normalizeStalled() error {
+	for i := range c.Bus.OnStalled {
+		r := &c.Bus.OnStalled[i]
+		if r.To == "" {
+			r.To = StalledSelf
+		}
+		if r.Kind == "" {
+			// fyi both ways: it is the kind that carries something worth
+			// knowing and asks for nothing back, which is exactly what a
+			// reminder is.
+			r.Kind = "fyi"
+		}
+		if !bus.ValidKind(bus.Kind(r.Kind)) {
+			return fmt.Errorf("on_stalled[%d]: %q is not a message kind; one of %s",
+				i, r.Kind, strings.Join(kindNames(), ", "))
+		}
+		// Asking the stalled agent with something that opens a debt gives it a
+		// second one to settle, on top of the one it is already stuck on — and
+		// it would still be stalled after answering, so the same rule would
+		// fire again. Whoever wants a debt opened wants it opened by an agent
+		// that knows the work; that is what `to: <triage>` is for.
+		if r.To == StalledSelf && bus.Opening(bus.Kind(r.Kind)) {
+			return fmt.Errorf("on_stalled[%d]: a %q sent to the stalled agent opens "+
+				"a second debt on top of the one it is stuck on, and answering it "+
+				"settles neither; use note or fyi here, or send to an agent that can "+
+				"open a real one", i, r.Kind)
+		}
+		if r.Max < 0 {
+			return fmt.Errorf("on_stalled[%d]: max cannot be negative", i)
+		}
+		if r.Max == 0 {
+			r.Max = 1
+			if r.Every > 0 {
+				r.Max = 3
+			}
+		}
+		if r.Every > 0 && r.Every < time.Minute {
+			return fmt.Errorf("on_stalled[%d]: every is %s; anything under a minute "+
+				"is a message a second, not a reminder", i, r.Every)
+		}
+	}
+	return nil
+}
+
+// kindNames is the list of kinds, for an error that has to name them.
+func kindNames() []string {
+	var out []string
+	for _, k := range bus.Kinds() {
+		out = append(out, string(k))
+	}
+	return out
+}
+
 func (c *Config) normalizeHooks() error {
 	h := &c.Hooks
 	if h.Addr == "" {

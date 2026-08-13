@@ -504,8 +504,46 @@ so nobody has to guess. An agent that has owed something for `bus.stalled_after`
 and is idle is reported as **stalled** — in the agent list, the
 pane header and `swarm ls`, with its own glyph, as well as in the event log and
 to an outgoing webhook. Both halves matter: an agent with nothing to do is quiet and
-that is normal. It is a signal only — swarm never restarts or interrupts an
-agent because of it, since the guess can be wrong and asking costs less.
+that is normal. swarm never restarts, kills or reassigns anything because of
+it, since the guess can be wrong and asking costs less.
+
+Asking is the one thing it will do, and only if you ask it to:
+
+```yaml
+bus:
+  stalled_after: 15m
+  on_stalled:
+    - to: self          # ask the agent itself, three times, quarter-hour apart
+      every: 15m
+      max: 3
+    - to: myself        # still stuck two hours later? triage should know
+      after: 2h
+      kind: question
+```
+
+With no rules, stalled stays what it was: something shown and something sent,
+and nothing else.
+
+The message swarm writes is `swarm why`, addressed — who is waiting, since
+when, the question itself, and the commands that end it. That is the point of
+sending anything at all: an agent stalled long enough to be asked has been
+compacted, so *what are you doing?* gets an honest shrug, while the bus still
+has everything the agent lost.
+
+Two shapes are refused, both learned the hard way. A `question` to the stalled
+agent itself is rejected at load: it opens a second debt on top of the one the
+agent is stuck on, and answering it settles neither, so the rule fires for ever.
+When a debt is what you want opened, open it from an agent that knows the work —
+`to: <triage>` with `kind: question` — and let it ask properly. And a debt swarm
+opened itself never starts the rules again, or telling triage about a stalled
+agent makes triage stalled, and swarm ends up chasing its own notices. That one
+was seen on a real fleet within a minute of the feature working.
+
+Reminders are counted per debt and bounded by `max`; when a rule has used its
+last one it says so in the event log rather than going quiet as though it had
+worked. Messages are typed into the recipient's terminal whatever its
+`delivery` is — an agent that is not reading its mailbox is exactly the one this
+is for — which `push: false` turns off.
 
 `swarm why` turns that signal into something anyone can act on:
 

@@ -39,6 +39,8 @@ type Hub struct {
 	// so a saturated conversation raises one alarm rather than one per attempt.
 	escalateMu sync.Mutex
 	escalated  map[uint64]bool
+	// stalled counts what the on_stalled rules have already done, per debt.
+	stalled *stalledActor
 
 	// sender posts fleet events outwards. Nil when nothing is configured, and
 	// every call on it is nil-safe, so the rest of the hub need not care.
@@ -137,6 +139,10 @@ func New(o Options) (*Hub, error) {
 
 	// What was owed when the last process stopped. Before the watchers, so a
 	// restored debt is already there the first time anything looks.
+	if len(cfg.Bus.OnStalled) > 0 {
+		h.stalled = &stalledActor{seen: map[stalledKey]stalledSeen{}}
+	}
+
 	h.loadOwed()
 	h.owedStop = make(chan struct{})
 	h.owedDone = make(chan struct{})
@@ -907,6 +913,13 @@ type SendOptions struct {
 	Thread uint64
 	// NewThread starts a fresh conversation even when the sender is in one.
 	NewThread bool
+	// Push types the message into the recipient's terminal whatever delivery
+	// mode it is configured for. It is an interruption, and it is meant to be:
+	// the messages that use it are the ones aimed at an agent that has stopped
+	// reading its mailbox, where waiting politely in a queue means never
+	// arriving. A paused bus still holds it — pausing is the one instruction
+	// that outranks everything, or it would not be a pause.
+	Push bool
 }
 
 // SendOn delivers a message on a thread, applying whatever bounds the
@@ -970,6 +983,9 @@ func (h *Hub) SendOn(from, target string, kind bus.Kind, body string, files []st
 			Files:  files,
 		})
 		mode := h.deliveryFor(a, kind)
+		if o.Push {
+			mode = config.DeliveryPush
+		}
 		// A deferred recipient that is already quiet gets it now: waiting for a
 		// transition that has already happened would hold the message until the
 		// agent next did some work, which is the opposite of the intent.

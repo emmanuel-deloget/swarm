@@ -342,6 +342,7 @@ tunnel rather than binding `0.0.0.0` in the open.
 | `allow_self_inject` | `false` | Let an agent send a message to itself. |
 | `max_turns` | `0` | Messages allowed on one conversation. `0` means no bound. |
 | `escalate_to` | `""` | Who arbitrates when a conversation runs out of turns. |
+| `on_stalled` | *(none)* | What to do about an agent that is stalled: ask it, tell somebody else, or nothing. See [`on_stalled`](#on_stalled). |
 
 A *thread* is one conversation. An agent answering someone stays on the thread
 it was written to on, so nothing has to carry an identifier around; a person or
@@ -413,10 +414,14 @@ many things are outstanding. `Info.State` itself stays `idle`: the bus decides
 this, not the agent, and changing what `idle` means would change the delivery
 paths that key on it.
 
-**It is a signal and only a signal.** Nothing is restarted, injected or killed
-on the strength of it, because the state is a guess: an agent waiting on a long
-build is silent and does owe work. Ask it and it will say so — which is why the
-false positive costs a question rather than an interruption.
+**Nothing is restarted, injected or killed on the strength of it**, because the
+state is a guess: an agent waiting on a long build is silent and does owe work.
+Ask it and it will say so — which is why the false positive costs a question
+rather than an interruption.
+
+Asking is the one thing swarm will do about it, and only if you configure
+[`on_stalled`](#on_stalled). With no rules the state is a signal and nothing
+else, which is what it was for its first year.
 
 What is timed is the age of the debt, not the length of the silence. An agent
 parked on a configuration screen redraws every few minutes, and timing the
@@ -441,6 +446,57 @@ swarm bus threads                          # the open conversations
 A paused bus still records everything; it just stops interrupting anybody with
 it. The agents keep working — this stops the talking, not the fleet. Without
 `-flush`, resuming leaves what piled up in the mailboxes for `swarm inbox`.
+
+## `on_stalled`
+
+A list of things to do when an agent has been stalled. Each entry is a message
+swarm sends; the list is walked in order and every entry that applies fires.
+
+```yaml
+bus:
+  stalled_after: 15m
+  on_stalled:
+    # Ask the agent itself, three times, quarter of an hour apart.
+    - to: self
+      every: 15m
+      max: 3
+
+    # If it is still stuck two hours later, the triage agent should know.
+    - to: myself
+      after: 2h
+      kind: question
+      max: 1
+```
+
+| key | default | |
+|---|---|---|
+| `to` | `self` | Who is told. `self` is the stalled agent; anything else is an agent name, an `@role` or a `@group`. |
+| `kind` | `fyi` | The message kind. `fyi` tells without asking, so it opens no debt. |
+| `after` | `0` | Extra delay past `stalled_after` before this entry applies, so one list can ask now and escalate later. |
+| `every` | `0` | Repeat interval. `0` sends once for a given debt. Under a minute is refused. |
+| `max` | `1`, or `3` when `every` is set | How many times this entry may fire for one debt. |
+| `text` | *(composed)* | The message. Left empty, swarm writes what `swarm why` would say. |
+| `push` | `true` | Type it into the recipient's terminal whatever its `delivery` is. |
+
+**Why the default text is usually the right one.** An agent stalled for a day
+has been compacted several times, so the message that put it there is gone from
+its own memory — asking *what are you doing?* gets an honest shrug. What swarm
+sends instead is what it still knows: who is waiting, since when, the question
+itself, and the command that settles it.
+
+**Sending `question` or `request` to `self` is refused.** It would open a second
+debt on top of the one the agent is stuck on, and answering it would settle
+neither — so the same rule fires again, for ever. When a debt is what you want
+opened, open it from an agent that knows the work: `to: <your triage agent>`
+with `kind: question`, and let it ask properly.
+
+**`push` defaults to true** because an agent that is not reading its mailbox is
+exactly the one this is for, and a message that waits politely in a queue is a
+message that never arrives. It is an interruption, deliberately.
+
+**Repeats are counted per debt.** Settle it and the counter goes with it; a new
+question later starts again. Once an entry has used its `max`, it stops and says
+so in the event log rather than going quiet as if it had worked.
 
 ## `outgoing`
 
