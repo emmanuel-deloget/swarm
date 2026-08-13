@@ -285,7 +285,8 @@ footer {
   .counts { gap: 6px; }
 }
 
-/* Too narrow for two columns. The sidebar becomes a strip of agents above the
+/* Too narrow for two columns — the same 620 the grid uses to fall back to a
+   single column, in narrowGrid. The sidebar becomes a strip of agents above the
    screen — scrolled sideways rather than stacked, so it costs one row instead
    of a third of the width — and the composer takes a line of its own.
 

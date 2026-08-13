@@ -407,6 +407,10 @@ function openGrid() {
 // A cell's height follows from its width, because the terminal inside keeps its
 // proportions: a character is about twice as tall as it is wide, so a screen of
 // cols×rows drawn `w` pixels wide is about w × rows × 2.3 / cols tall.
+// narrowGrid is where the sidebar stops being a column, in the stylesheet; the
+// grid follows it rather than keeping a threshold of its own.
+const narrowGrid = 620;
+
 function layoutGrid(agents) {
   const grid = document.querySelector("#grid");
   const w = grid.clientWidth;
@@ -421,6 +425,16 @@ function layoutGrid(agents) {
     if (a.cols && a.rows) tallest = Math.max(tallest, (a.rows * 2.3) / a.cols);
   }
   if (!tallest) tallest = 0.5;
+
+  // Below the width where the sidebar stops being a column, so does the grid.
+  // The arithmetic below would sometimes agree and sometimes not — on a 360
+  // pixel screen it picks one column over two by thirteen pixels — and that is
+  // not a decision worth leaving to a rounding: a phone scrolls down without
+  // being asked, and half of 360 is a cell nobody can read anything in.
+  if (w < narrowGrid) {
+    grid.style.gridTemplateColumns = "1fr";
+    return Math.floor(w * tallest);
+  }
 
   // Every column count is tried and the widest cell wins, rather than the first
   // arrangement that happens to fit. Those are not the same: four agents in
