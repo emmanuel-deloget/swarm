@@ -196,6 +196,12 @@ main {
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 8px;
   align-content: start;
+  /* Rows at the size of what is in them, not at a share of the container.
+     #grid is a flex item with a height, and auto rows in a container that has
+     one are divided up to fit it — 530 pixels over four rows is 123 each,
+     against the 239 a screen needs, and the rest is cropped. align-content and
+     overflow do not change that; only asking for max-content does. */
+  grid-auto-rows: max-content;
 }
 .cell {
   border: 1px solid var(--line);

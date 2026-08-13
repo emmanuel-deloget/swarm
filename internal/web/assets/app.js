@@ -479,7 +479,10 @@ function layoutGrid(agents) {
   // past what fits, the grid scrolls. That is what a page does.
   let widest = 80;
   for (const a of agents) if (a.cols) widest = Math.max(widest, a.cols);
-  const minCellWidth = widest * minTileFont * charEm();
+  // The 10 pixels are the padding fitWhole takes off before scaling: without
+  // them here, a column count is allowed whose type then lands just under the
+  // floor — 5.8px where 6 was asked for.
+  const minCellWidth = widest * minTileFont * charEm() + 10;
   const columnCap = Math.max(1, Math.floor((w + gap) / (minCellWidth + gap)));
   const most = Math.min(agents.length, columnCap);
 
