@@ -164,15 +164,13 @@ func read(index string, bundled bool) ([]Notice, error) {
 		dir = "data/bundled"
 	}
 
+	rows, err := parseIndex(index, string(body))
+	if err != nil {
+		return nil, err
+	}
+
 	var out []Notice
-	for i, line := range strings.Split(string(body), "\n") {
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		f := strings.Split(line, "\t")
-		if len(f) != 4 {
-			return nil, fmt.Errorf("licenses: %s line %d has %d fields, want 4", index, i+1, len(f))
-		}
+	for _, f := range rows {
 		text, err := data.ReadFile(dir + "/" + f[3])
 		if err != nil {
 			return nil, fmt.Errorf("licenses: %s names %s, which is not here: %w", index, f[3], err)
@@ -182,6 +180,31 @@ func read(index string, bundled bool) ([]Notice, error) {
 			n.About, n.File = f[2], ""
 		}
 		out = append(out, n)
+	}
+	return out, nil
+}
+
+// parseIndex splits an index into its rows, of four fields each.
+//
+// Separate from read so that the line handling can be tested without an
+// embedded file to point at, which is how the carriage return below is now
+// checked rather than remembered.
+func parseIndex(index, body string) ([][4]string, error) {
+	var out [][4]string
+	for i, line := range strings.Split(body, "\n") {
+		// A Windows checkout rewrites these files to CRLF, and a field ending
+		// in a stray carriage return names a file that is not there. It cost a
+		// red CI job whose own error message ended, invisibly, halfway
+		// through — the terminal put the rest of it back over the beginning.
+		line = strings.TrimRight(line, "\r")
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		f := strings.Split(line, "\t")
+		if len(f) != 4 {
+			return nil, fmt.Errorf("licenses: %s line %d has %d fields, want 4", index, i+1, len(f))
+		}
+		out = append(out, [4]string{f[0], f[1], f[2], f[3]})
 	}
 	return out, nil
 }

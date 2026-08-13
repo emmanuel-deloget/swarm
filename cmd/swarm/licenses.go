@@ -138,17 +138,6 @@ func printList(notices []licenses.Notice) {
 	fmt.Println("`swarm licenses <name>` prints one in full, `-all` prints every one.")
 }
 
-// widestKind is how much room the right-hand column needs.
-func widestKind(notices []licenses.Notice) int {
-	w := 0
-	for _, n := range notices {
-		if k := len(n.Kind()); k > w {
-			w = k
-		}
-	}
-	return w
-}
-
 // termWidth is the width of the terminal, or eighty when there is no terminal
 // to ask — a pipe, a file, a CI log. Eighty rather than something generous:
 // output that is being captured is output someone may read anywhere.

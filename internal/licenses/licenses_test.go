@@ -235,3 +235,29 @@ func TestSwarmsLicenceIsTheSameInBothPlaces(t *testing.T) {
 			"run `go generate ./internal/licenses`")
 	}
 }
+
+// TestAnIndexSurvivesAWindowsCheckout: git rewrites text files to CRLF on a
+// Windows checkout, and splitting on \n alone leaves a carriage return on the
+// last field of every row — which then names a file that is not there. The
+// whole package failed that way on the Windows runner while passing everywhere
+// else, and the error message was itself unreadable: it ended in a carriage
+// return, so the terminal printed the rest of it back over the beginning.
+func TestAnIndexSurvivesAWindowsCheckout(t *testing.T) {
+	const crlf = "# a comment\r\n" +
+		"JuliaMono\t0.63.2\tthe font\tJuliaMono.txt\r\n"
+
+	rows, err := parseIndex("test.tsv", crlf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if rows[0][3] != "JuliaMono.txt" {
+		t.Errorf("the filename came out as %q; a carriage return here names a "+
+			"file that does not exist", rows[0][3])
+	}
+	if rows[0][0] != "JuliaMono" {
+		t.Errorf("first field is %q", rows[0][0])
+	}
+}
