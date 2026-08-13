@@ -27,6 +27,7 @@ import (
 	"github.com/emmanuel-deloget/swarm/internal/bus"
 	"github.com/emmanuel-deloget/swarm/internal/event"
 	"github.com/emmanuel-deloget/swarm/internal/hub"
+	"github.com/emmanuel-deloget/swarm/internal/licenses"
 )
 
 //go:embed assets
@@ -60,7 +61,7 @@ func New(h *hub.Hub, o Options) (*Server, error) {
 	if o.Token == "" {
 		return nil, errors.New("web: a token is required")
 	}
-	tmpl, err := template.ParseFS(assets, "assets/index.html")
+	tmpl, err := template.ParseFS(assets, "assets/index.html", "assets/licenses.html")
 	if err != nil {
 		return nil, err
 	}
@@ -80,6 +81,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/action", s.guard(s.handleAction))
 	s.mux.HandleFunc("/api/upload", s.guard(s.handleUpload))
 	s.mux.HandleFunc("/ws", s.guard(s.handleWS))
+	s.mux.HandleFunc("/licenses", s.guard(s.handleLicenses))
 	s.mux.HandleFunc("/style.css", s.guard(s.serveAsset("assets/style.css", "text/css; charset=utf-8")))
 	s.mux.HandleFunc("/app.js", s.guard(s.serveAsset("assets/app.js", "text/javascript; charset=utf-8")))
 
@@ -233,6 +235,40 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	if err := s.tmpl.Execute(w, data); err != nil {
+		s.h.Log().Emit(event.KindError, "", "web: "+err.Error())
+	}
+}
+
+// handleLicenses renders the terms of everything bundled in this binary.
+//
+// A page of its own rather than a third view in the app: it is long, it never
+// changes while the process runs, and it is the sort of thing someone opens
+// once to answer a question and then leaves. `swarm licenses` prints the same
+// list for anyone who would rather pipe it somewhere.
+func (s *Server) handleLicenses(w http.ResponseWriter, _ *http.Request) {
+	all, err := licenses.All()
+	if err != nil {
+		http.Error(w, "swarm: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	type row struct {
+		Title, About, Kind, File, Text, Anchor string
+	}
+	data := struct{ Notices []row }{}
+	for _, n := range all {
+		data.Notices = append(data.Notices, row{
+			Title: n.Title(), About: n.About, Kind: n.Kind(), File: n.File, Text: n.Text,
+			// The module path is the anchor, with the characters a fragment
+			// cannot carry taken out.
+			Anchor: strings.NewReplacer("/", "-", ".", "-", " ", "-").Replace(n.Name),
+		})
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	if err := s.tmpl.ExecuteTemplate(w, "licenses.html", data); err != nil {
 		s.h.Log().Emit(event.KindError, "", "web: "+err.Error())
 	}
 }

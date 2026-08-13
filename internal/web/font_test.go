@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/emmanuel-deloget/swarm/internal/licenses"
 )
 
 // The terminal font is bundled because a machine without a suitable monospace
@@ -210,4 +212,57 @@ func betweenQuotes(css, key string) string {
 		return v[1 : 1+j]
 	}
 	return ""
+}
+
+// TestTheLicencePageListsWhatIsBundled: the page answers for what is inside
+// the binary, so the failure that matters is not a broken layout — it is a
+// page that renders beautifully while leaving something out.
+func TestTheLicencePageListsWhatIsBundled(t *testing.T) {
+	h := newTestHub(t)
+	ts := newTestServer(t, h, Options{})
+
+	res, err := http.Get(ts.URL + "/licenses?t=secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("the licences page answers %d", res.StatusCode)
+	}
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(body)
+
+	all, err := licenses.All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range all {
+		if !strings.Contains(page, n.Name) {
+			t.Errorf("%s is bundled and the licences page does not name it", n.Name)
+		}
+	}
+
+	// And the font, whose licence is the one that requires the text to travel
+	// with the software rather than merely be referenced.
+	if !strings.Contains(page, "SIL OPEN FONT LICENSE") {
+		t.Error("the page names the font but not the terms it is offered under")
+	}
+}
+
+// TestTheLicencePageNeedsTheToken: it is served by the same process as the
+// control plane, and behind the same door.
+func TestTheLicencePageNeedsTheToken(t *testing.T) {
+	h := newTestHub(t)
+	ts := newTestServer(t, h, Options{})
+	res, err := http.Get(ts.URL + "/licenses")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("the licences page answers %d without a token", res.StatusCode)
+	}
 }

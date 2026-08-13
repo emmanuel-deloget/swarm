@@ -1,0 +1,20 @@
+github.com/mattn/go-localereader
+Yasuhiro Matsumoto (a.k.a. mattn)
+
+This module ships no licence file. Its README states, in full:
+
+    ## License
+
+    MIT
+
+    ## Author
+
+    Yasuhiro Matsumoto (a.k.a. mattn)
+
+That is the whole of what upstream declares, and it is reproduced here rather
+than expanded: writing out the MIT text on the author's behalf would be
+putting a copyright line in someone else's name. The terms are MIT as
+declared; the text is at https://github.com/mattn/go-localereader.
+
+It reaches swarm through bubbletea, which uses it to decode the Windows
+console code page.

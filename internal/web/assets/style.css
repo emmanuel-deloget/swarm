@@ -392,3 +392,49 @@ footer {
   #mode { max-width: 5.5em; }
   footer { padding: 5px 6px; gap: 5px; }
 }
+
+/* The licences page. Served on its own rather than as a third view: it is
+   long, it does not change while the process runs, and it is read once to
+   answer a question. `swarm licenses` prints the same thing. */
+.doc {
+  display: block;
+  /* A flex child of body, so its min-width resolves to min-content — and the
+     min-content of a page of hard-wrapped licence text is far wider than a
+     phone. Without this the page itself scrolls sideways instead of the one
+     block that needs to. */
+  min-width: 0;
+  overflow: auto;
+  padding: 16px;
+  /* min(), because ch here is a character of the interface font, not of the
+     monospace one: 82ch is 730px, which on a phone is a page wider than the
+     screen rather than a comfortable measure. */
+  max-width: min(82ch, 100%);
+  margin: 0 auto;
+  line-height: 1.5;
+}
+.doc h2 {
+  font-size: 15px;
+  margin: 28px 0 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  word-break: break-all;
+}
+.doc .toc { list-style: none; padding: 0; margin: 16px 0 0; }
+.doc .toc li { padding: 2px 0; display: flex; gap: 8px; justify-content: space-between; }
+.doc .toc a { word-break: break-all; }
+.doc .muted { color: var(--muted); font-size: 13px; }
+.doc code { font-family: var(--mono); font-size: 12px; }
+.doc pre {
+  font-family: var(--mono);
+  font-size: 12px;
+  /* Licence texts are hard-wrapped at 70-odd columns upstream, and rewrapping
+     them is editing them. They scroll instead. */
+  white-space: pre;
+  overflow-x: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 8px 0 0;
+}
+header a.ghost { text-decoration: none; display: inline-flex; align-items: center; }

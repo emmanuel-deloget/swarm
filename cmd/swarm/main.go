@@ -46,6 +46,7 @@ talking
   info                      session, socket, web URL and token
   config check [-fix]       report (and fix) a config that has gone stale
   version                   which build this is (also shown in the TUI header)
+  licenses [name]           the terms of everything bundled in this binary
 
 A target is an agent name, @group, @role, "all", or a comma-separated list.
 
@@ -116,6 +117,8 @@ func main() {
 		err = cmdBus(args)
 	case "config":
 		err = cmdConfig(args)
+	case "licenses", "licences":
+		err = cmdLicenses(args)
 	case "version", "-version", "--version", "-v":
 		err = cmdVersion(args)
 	case "help", "-h", "--help":

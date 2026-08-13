@@ -1,0 +1,3 @@
+# Works bundled in the binary that are not Go modules. Written by hand.
+# name	version	what it is	file in bundled/
+JuliaMono	0.63.2	the terminal font the web UI draws with	JuliaMono.txt

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>swarm — licences</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header>
+  <span class="brand">swarm</span>
+  <span class="session">licences</span>
+  <span class="grow"></span>
+  <a class="ghost" href="/">back</a>
+</header>
+
+<main class="doc">
+  <p>
+    Everything below is carried inside this binary. Nothing here is fetched
+    from the network, and the same list is printed by
+    <code>swarm licenses</code>.
+  </p>
+
+  <ul class="toc">
+    {{range .Notices}}<li><a href="#{{.Anchor}}">{{.Title}}</a> <span class="muted">{{.Kind}}</span></li>
+    {{end}}
+  </ul>
+
+  {{range .Notices}}
+  <section class="notice" id="{{.Anchor}}">
+    <h2>{{.Title}}</h2>
+    <p class="muted">
+      {{if .About}}{{.About}} — {{end}}{{.Kind}}{{if .File}}, as <code>{{.File}}</code> upstream{{end}}
+    </p>
+    <pre>{{.Text}}</pre>
+  </section>
+  {{end}}
+</main>
+
+</body>
+</html>

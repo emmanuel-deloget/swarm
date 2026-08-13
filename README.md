@@ -295,6 +295,7 @@ swarm restart dev-3
 swarm info                          # session, socket, web URL and token
 swarm shutdown
 swarm version                       # which build this is
+swarm licenses                      # the terms of everything bundled in the binary
 swarm config check [-fix]           # a config that has gone stale
 
 swarm hook test delivery.json       # what the rules would send, offline
@@ -734,6 +735,25 @@ golangci-lint run ./...        # config in .golangci.yml
 govulncheck ./...              # run it with the latest Go, as CI does
 ```
 
+Adding or upgrading a dependency changes what the binary contains, so the
+notices behind `swarm licenses` have to be regenerated:
+
+```sh
+go generate ./internal/licenses    # collects each module's licence from the module cache
+```
+
+You are unlikely to have to remember that. Nothing about a missing notice
+fails to build, so the check is a test instead: it asks the toolchain what is
+actually linked — once per operating system, since conpty is only linked on
+Windows and termios only away from it — and fails both ways, on a module with
+no notice and on a notice for a module that is gone. The failure names the
+module and the command to run.
+
+A module that ships no licence file at all stops the generator, on purpose.
+Write down what its terms actually are in `internal/licenses/data/manual/`,
+under the module's path; quoting what upstream declares is better than
+synthesising a licence text in someone else's name.
+
 CI runs the suite on Linux and macOS at the Go version in `go.mod`, plus the
 current Go release, and separately checks `go vet`, `gofmt`, `go mod tidy`,
 golangci-lint and govulncheck. It also runs weekly, so an advisory published
@@ -761,3 +781,23 @@ and those are fixed by the newest patch release.
 ## Licence
 
 MIT — see [LICENSE](LICENSE).
+
+swarm carries other people's work inside its binary: the Go modules it links
+against, and [JuliaMono](https://github.com/cormullion/juliamono), the font the
+web UI draws a terminal with. Their terms travel with it, and any copy can be
+asked for them:
+
+```
+swarm licenses                      # what is in this binary, and under what terms
+swarm licenses juliamono            # one of them in full
+swarm licenses -all > NOTICES.txt   # every text, for an audit or a release
+```
+
+The same list is a page in the web UI, linked from the header. Neither fetches
+anything from the network.
+
+The font is bundled rather than named in a CSS font stack because a stack can
+only ask for what the machine already has: a terminal draws its frames out of
+box-drawing characters, and a machine without them borrows them from a
+proportional font, which pulls every frame apart. It is the reason the binary
+is about two megabytes larger than it would otherwise be.
