@@ -333,7 +333,7 @@ function openGrid() {
   const grid = $("#grid");
   grid.textContent = "";
   closeGrid();
-  const cellHeight = layoutGrid(state.agents);
+  layoutGrid(state.agents);
   for (const a of state.agents) {
     const cell = document.createElement("div");
     cell.className = "cell" + (a.name === state.selected ? " sel" : "");
@@ -358,8 +358,9 @@ function openGrid() {
     const body = document.createElement("div");
     body.className = "cs";
     body.textContent = "";
-    body.dataset.maxHeight = cellHeight;
-    body.style.maxHeight = cellHeight + "px";
+    // No height is set on purpose: the type is scaled to the width, so the
+    // height that follows is the terminal's own. Imposing one as well cropped
+    // the last line whenever the two rounded differently.
 
     cell.append(head, body);
     grid.append(cell);
@@ -407,9 +408,14 @@ function openGrid() {
 // A cell's height follows from its width, because the terminal inside keeps its
 // proportions — see screenRatio, which measures the font rather than guessing
 // at it.
-// narrowGrid is where the sidebar stops being a column, in the stylesheet; the
-// grid follows it rather than keeping a threshold of its own.
-const narrowGrid = 620;
+// narrowGrid is where the grid gives up on columns entirely.
+//
+// Lower than the 620 at which the sidebar stops being a column, and
+// deliberately so: those answer different questions. The sidebar is a list of
+// names and gives up its width early; the grid holds terminals, and a terminal
+// half of 450 pixels wide is not worth the room it saves. Below this, one
+// column and a scroll.
+const narrowGrid = 450;
 
 // cellEm is the width of one character of the terminal font, in ems, measured
 // rather than assumed: a guess at it is a guess at the shape of every tile.
@@ -434,9 +440,13 @@ function screenRatio(cols, rows) {
   return (rows * 1.15) / (cols * charEm());
 }
 
-// minCellWidth is the narrowest a cell may be before the screen inside it is
-// not worth drawing. The grid scrolls rather than going below it.
-const minCellWidth = 280;
+// minTileFont is the smallest type a tile may draw its screen at. It is the
+// real constraint, and a width in pixels was the wrong way to say it: 280
+// pixels is comfortable for an 80-column agent and a smear for a 164-column
+// one, which is how a grid ended up rendering at 2.96px. What a tile needs is
+// therefore cols × minTileFont × charEm, and the grid scrolls rather than going
+// below that.
+const minTileFont = 6;
 
 function layoutGrid(agents) {
   const grid = document.querySelector("#grid");
@@ -463,10 +473,13 @@ function layoutGrid(agents) {
     return Math.floor(w * tallest);
   }
 
-  // Never narrower than this, whatever it costs. A fleet is not bounded by the
-  // page: at a hundred agents, fitting them all on it means rows four pixels
-  // tall, which is no longer a screen but a smear. Past what fits, the grid
-  // scrolls — that is what a page does.
+  // Wide enough for the widest agent to be drawn at minTileFont, whatever that
+  // costs in tiles per screen. A fleet is not bounded by the page — at a
+  // hundred agents, fitting them all on it means rows a few pixels tall — so
+  // past what fits, the grid scrolls. That is what a page does.
+  let widest = 80;
+  for (const a of agents) if (a.cols) widest = Math.max(widest, a.cols);
+  const minCellWidth = widest * minTileFont * charEm();
   const columnCap = Math.max(1, Math.floor((w + gap) / (minCellWidth + gap)));
   const most = Math.min(agents.length, columnCap);
 
@@ -482,14 +495,14 @@ function layoutGrid(agents) {
     const byHeight = ((h - gap * rows) / rows - headHeight) / tallest;
     const cellW = Math.min(byWidth, byHeight);
     if (cellW >= minCellWidth && (!best || cellW > best.width)) {
-      best = { columns, width: cellW, height: Math.floor(cellW * tallest) };
+      best = { columns, width: cellW, height: Math.round(cellW * tallest) };
     }
   }
 
   // Nothing fits: fill the width with as many as stay readable, and scroll.
   if (!best) {
     const cellW = (w - gap * (most - 1)) / most;
-    best = { columns: most, width: cellW, height: Math.floor(cellW * tallest) };
+    best = { columns: most, width: cellW, height: Math.round(cellW * tallest) };
   }
   grid.style.gridTemplateColumns = "repeat(" + best.columns + ", 1fr)";
   return best.height;
@@ -508,12 +521,11 @@ function fitWhole(el, cols, rows) {
   probe.remove();
   if (!per100) return;
 
-  // Width first, then a ceiling on the height so one tall agent cannot own the
-  // page. The cell itself has no fixed height, so what is left is exactly the
-  // terminal's own proportions — no letterboxing, no cropping.
-  const byWidth = ((el.clientWidth - 10) / cols) * (100 / per100);
-  const byHeight = (Number(el.dataset.maxHeight) || maxCellHeight) / (rows * 1.15); // 1.15 is the line-height in the stylesheet
-  const size = Math.max(1.5, Math.min(16, Math.min(byWidth, byHeight)));
+  // Width only. How many columns the grid has already decided that the height
+  // works out, and constraining it here as well made the two calculations
+  // disagree by a pixel or two — enough to crop the bottom line of every
+  // screen. What is left is exactly the terminal's proportions.
+  const size = Math.max(1.5, Math.min(16, ((el.clientWidth - 10) / cols) * (100 / per100)));
   el.style.fontSize = size.toFixed(2) + "px";
 }
 

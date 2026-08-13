@@ -220,10 +220,9 @@ main {
   white-space: pre;
   line-height: 1.15;
   overflow: hidden;
-  /* No fixed height: the type is scaled so the whole screen fits the width,
-     and the height then follows the terminal's own proportions. A ceiling
-     keeps one tall agent from owning the page — see maxCellHeight in app.js. */
-  max-height: 320px;
+  /* No height at all: the type is scaled to the cell's width and the height
+     that follows is the terminal's own. How many columns the grid takes is
+     what keeps a tall agent from owning the page — see layoutGrid. */
   padding: 4px 6px;
   background: var(--term-bg);
 }
@@ -285,8 +284,7 @@ footer {
   .counts { gap: 6px; }
 }
 
-/* Too narrow for two columns — the same 620 the grid uses to fall back to a
-   single column, in narrowGrid. The sidebar becomes a strip of agents above the
+/* Too narrow for two columns. The sidebar becomes a strip of agents above the
    screen — scrolled sideways rather than stacked, so it costs one row instead
    of a third of the width — and the composer takes a line of its own.
 
