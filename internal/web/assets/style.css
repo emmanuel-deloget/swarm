@@ -422,6 +422,17 @@ footer {
 .doc .toc { list-style: none; padding: 0; margin: 16px 0 0; }
 .doc .toc li { padding: 2px 0; display: flex; gap: 8px; justify-content: space-between; }
 .doc .toc a { word-break: break-all; }
+/* The page had no link style at all, so thirty-five module names rendered in
+   the browser's default link blue — saturated, underlined, on a dark
+   background. A table of contents where every line is underlined underlines
+   nothing. The accent colour already has a value per theme; links use it, and
+   keep the underline for the hover, where it means something. */
+.doc a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.doc a:visited { color: var(--accent); }
+.doc a:hover { text-decoration: underline; }
 .doc .muted { color: var(--muted); font-size: 13px; }
 .doc code { font-family: var(--mono); font-size: 12px; }
 .doc pre {
@@ -437,4 +448,17 @@ footer {
   padding: 10px 12px;
   margin: 8px 0 0;
 }
-header a.ghost { text-decoration: none; display: inline-flex; align-items: center; }
+/* The link back sits between two buttons and has to look like one, or it
+   reads as the only piece of blue in a header of grey controls. */
+header a.ghost {
+  font: inherit;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 5px 10px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+header a.ghost:hover { border-color: var(--accent); }
