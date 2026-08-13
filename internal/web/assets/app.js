@@ -422,15 +422,18 @@ function layoutGrid(agents) {
   }
   if (!tallest) tallest = 0.5;
 
-  let best = { columns: agents.length, height: maxCellHeight };
+  // Every column count is tried and the widest cell wins, rather than the first
+  // arrangement that happens to fit. Those are not the same: four agents in
+  // three columns fit at once and leave a row of one with the page half empty,
+  // where two columns of two fill it with cells half again as wide.
+  let best = { columns: agents.length, width: 0, height: maxCellHeight };
   for (let columns = 1; columns <= agents.length; columns++) {
     const rows = Math.ceil(agents.length / columns);
-    const cellW = (w - gap * (columns - 1)) / columns;
-    const screenH = cellW * tallest;
-    const total = rows * (screenH + headHeight + gap);
-    if (total <= h) {
-      best = { columns, height: Math.floor(screenH) };
-      break; // the first that fits is the one with the fewest columns
+    const byWidth = (w - gap * (columns - 1)) / columns;
+    const byHeight = ((h - gap * rows) / rows - headHeight) / tallest;
+    const cellW = Math.min(byWidth, byHeight);
+    if (cellW > best.width) {
+      best = { columns, width: cellW, height: Math.floor(cellW * tallest) };
     }
   }
   grid.style.gridTemplateColumns = "repeat(" + best.columns + ", 1fr)";
