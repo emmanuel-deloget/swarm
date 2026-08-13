@@ -672,10 +672,7 @@ function wire() {
   $("#btn-grid").onclick = () => setView(state.view === "grid" ? "screen" : "grid");
   $("#btn-log").onclick = () => setView(state.view === "log" ? "screen" : "log");
 
-  window.addEventListener("resize", () => {
-    if (state.view === "screen") fitFont($("#screen"), state.cols, state.lines.length);
-    else if (state.view === "grid") openGrid();
-  });
+  window.addEventListener("resize", relayout);
 
   document.addEventListener("keydown", (e) => {
     if (e.target.tagName === "INPUT" || e.target === screen) return;
@@ -687,6 +684,32 @@ function wire() {
       if (state.agents[next]) select(state.agents[next].name);
     }
   });
+}
+
+// relayout sizes whatever is on screen to the space it now has.
+function relayout() {
+  if (state.view === "screen") fitFont($("#screen"), state.cols, state.lines.length);
+  else if (state.view === "grid") openGrid();
+}
+
+// The bundled font has to be loaded before the page is measured, not merely
+// requested. charEm sizes every screen from the width of one character and
+// keeps the first answer for the session; asked too early it measures the font
+// the machine would have used instead, and the whole page is laid out for a
+// character width it will not draw at. So: load the two faces the terminal is
+// certain to use, drop the cached measurement, lay out again. Italic is
+// slanted from it by the browser, at the same advance width.
+//
+// The files come from this same process, which is what makes waiting cheap
+// enough to be the default rather than an optimisation to argue about.
+if (document.fonts) {
+  Promise.all([
+    document.fonts.load('400 16px "JuliaMono"'),
+    document.fonts.load('700 16px "JuliaMono"'),
+  ]).then(() => {
+    cellEmCache = 0;
+    relayout();
+  }).catch(() => {});
 }
 
 wire();

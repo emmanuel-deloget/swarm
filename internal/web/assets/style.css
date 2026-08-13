@@ -1,3 +1,34 @@
+/* The terminal font travels with the binary.
+   A terminal draws its frames out of box-drawing characters and its spinners
+   out of braille, and a machine whose monospace font lacks them borrows them
+   from one that is not monospace: on Android the frame of a 20-character box
+   came out wider than 20 characters, with its junctions landing between the
+   verticals of the rows above and below. Naming faces in a font stack cannot
+   fix that, because a stack can only ask for what the machine already has.
+   JuliaMono covers 11191 code points, which was every non-ASCII character a
+   real fleet was seen drawing. See fonts/LICENSE.txt. Nothing is fetched from
+   the network.
+   Two faces, not four: italic is left to the browser to slant from the
+   regular, which changes neither the advance width nor the coverage. Bold is
+   carried for real, because synthesising weight does widen glyphs. */
+@font-face {
+  font-family: "JuliaMono";
+  src: url("fonts/JuliaMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  /* block, not swap: the page measures a character to size every screen on
+     it, so laying out in one font and repainting in another is a resize of
+     everything. The file is served by this same process. */
+  font-display: block;
+}
+@font-face {
+  font-family: "JuliaMono";
+  src: url("fonts/JuliaMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
 :root {
   --bg: #ffffff;
   --panel: #f4f5f7;
@@ -11,7 +42,9 @@
   --dead: #b42318;
   --msg: #7a3ba8;
   --term-bg: #fbfbfd;
-  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  /* The bundled face first: what follows it is what the browser draws if
+     the @font-face above somehow fails to load, not a preference. */
+  --mono: "JuliaMono", ui-monospace, "SF Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -169,6 +202,11 @@ main {
 
 .screen {
   font-family: var(--mono);
+  /* A cell holds one character. JuliaMono ships calt and liga on by default,
+     which would draw "!=" as a single glyph and "->" as an arrow — a terminal
+     showing something other than what the agent wrote. */
+  font-variant-ligatures: none;
+  font-feature-settings: "calt" 0, "liga" 0, "dlig" 0;
   line-height: 1.2;
   white-space: pre;
   outline: none;
@@ -223,6 +261,10 @@ main {
 }
 .cell > .cs {
   font-family: var(--mono);
+  /* As in .screen: a tile draws a terminal, so no two characters may become
+     one glyph. */
+  font-variant-ligatures: none;
+  font-feature-settings: "calt" 0, "liga" 0, "dlig" 0;
   white-space: pre;
   line-height: 1.15;
   overflow: hidden;

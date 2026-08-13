@@ -82,6 +82,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/ws", s.guard(s.handleWS))
 	s.mux.HandleFunc("/style.css", s.guard(s.serveAsset("assets/style.css", "text/css; charset=utf-8")))
 	s.mux.HandleFunc("/app.js", s.guard(s.serveAsset("assets/app.js", "text/javascript; charset=utf-8")))
+
+	// The bundled terminal font. One route per face, built from a list, so a
+	// request can only ever name a file that exists — a handler that took the
+	// name from the path would be a directory of this binary's own assets
+	// addressable by anyone holding the token.
+	for _, face := range []string{"JuliaMono-Regular", "JuliaMono-Bold"} {
+		s.mux.HandleFunc("/fonts/"+face+".woff2",
+			s.guard(s.serveFont("assets/fonts/"+face+".woff2")))
+	}
 }
 
 // Start begins listening. It returns once the socket is bound, so the caller
@@ -178,6 +187,26 @@ func (s *Server) serveAsset(name, contentType string) http.HandlerFunc {
 		}
 		w.Header().Set("Content-Type", contentType)
 		w.Header().Set("Cache-Control", "no-cache")
+		_, _ = w.Write(data)
+	}
+}
+
+// serveFont serves one face of the bundled font.
+//
+// Separate from serveAsset for its caching alone: the four faces are half a
+// megabyte, they change only when this binary does, and a phone that re-fetches
+// them on every visit pays for them every time. private rather than public
+// because the token that got the request here can travel in the URL, and that
+// is not a thing to hand to a shared cache.
+func (s *Server) serveFont(name string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		data, err := assets.ReadFile(name)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "font/woff2")
+		w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 		_, _ = w.Write(data)
 	}
 }
