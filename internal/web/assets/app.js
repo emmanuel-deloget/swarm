@@ -405,11 +405,34 @@ function openGrid() {
 // cell is a bigger screen.
 //
 // A cell's height follows from its width, because the terminal inside keeps its
-// proportions: a character is about twice as tall as it is wide, so a screen of
-// cols×rows drawn `w` pixels wide is about w × rows × 2.3 / cols tall.
+// proportions — see screenRatio, which measures the font rather than guessing
+// at it.
 // narrowGrid is where the sidebar stops being a column, in the stylesheet; the
 // grid follows it rather than keeping a threshold of its own.
 const narrowGrid = 620;
+
+// cellEm is the width of one character of the terminal font, in ems, measured
+// rather than assumed: a guess at it is a guess at the shape of every tile.
+// 2.3 was the guess, against about 1.92 in fact, which reserved tiles a fifth
+// taller than their screens and left a band of nothing under each one.
+let cellEmCache = 0;
+function charEm() {
+  if (cellEmCache) return cellEmCache;
+  const probe = document.createElement("span");
+  probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font-family:var(--mono);font-size:100px";
+  probe.textContent = "0".repeat(10);
+  document.body.append(probe);
+  const w = probe.getBoundingClientRect().width / 10;
+  probe.remove();
+  cellEmCache = w / 100 || 0.6;
+  return cellEmCache;
+}
+
+// screenRatio is a terminal's height divided by its width, at any type size:
+// rows of line-height 1.15 over columns of charEm.
+function screenRatio(cols, rows) {
+  return (rows * 1.15) / (cols * charEm());
+}
 
 // minCellWidth is the narrowest a cell may be before the screen inside it is
 // not worth drawing. The grid scrolls rather than going below it.
@@ -423,10 +446,10 @@ function layoutGrid(agents) {
 
   const gap = 8;
   const headHeight = 26; // the cell's own title bar
-  // The widest ratio decides, so that no agent is the one that overflows.
+  // The tallest ratio decides, so that no agent is the one that overflows.
   let tallest = 0;
   for (const a of agents) {
-    if (a.cols && a.rows) tallest = Math.max(tallest, (a.rows * 2.3) / a.cols);
+    if (a.cols && a.rows) tallest = Math.max(tallest, screenRatio(a.cols, a.rows));
   }
   if (!tallest) tallest = 0.5;
 
