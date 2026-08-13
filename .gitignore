@@ -19,3 +19,7 @@
 # drops its copy here, and `git add -A` will take it if the pattern is narrow
 *.exe
 /swarm
+
+# playwright, installed to measure the web UI in a real browser rather than
+# guess at it. A tool for working on the project, not part of it.
+/.playwright-cli/
