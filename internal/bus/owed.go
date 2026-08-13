@@ -1,6 +1,9 @@
 package bus
 
-import "time"
+import (
+	"sort"
+	"time"
+)
 
 // What is owed.
 //
@@ -47,6 +50,27 @@ type debt struct {
 	From string
 	// Kind is what was asked, so a report can say what kind of silence this is.
 	Kind Kind
+	// Body is what was asked, in words.
+	//
+	// Carried by the debt rather than looked up when needed, because the two
+	// have different lifetimes: messages are bounded and debts are not, so the
+	// question an agent has been sitting on for three days is exactly the one
+	// whose text has been pushed out of history by everything said since. A
+	// debt that knows why it exists is one a restart can restore whole.
+	Body string
+}
+
+// debtBodyMax bounds what a debt carries of the message that opened it. Debts
+// are unbounded in number and outlive everything, and a fleet that staged a
+// large file into a message would otherwise keep a copy of it for as long as
+// nobody answered.
+const debtBodyMax = 2000
+
+func clipBody(s string) string {
+	if len(s) <= debtBodyMax {
+		return s
+	}
+	return s[:debtBodyMax] + "\n[…truncated; the message itself is in `swarm bus tail` while it lasts]"
 }
 
 // track records what a message opens or closes. The caller holds mu.
@@ -63,6 +87,7 @@ func (b *Bus) track(m Message) {
 		}
 		b.owed[m.To] = append(b.owed[m.To], debt{
 			Thread: m.Thread, Since: m.At, From: m.From, Kind: m.Kind,
+			Body: clipBody(m.Body),
 		})
 	case closes(m.Kind):
 		// The sender settles what it owed on this thread. A close with no debt
@@ -174,4 +199,85 @@ func Closing() []Kind {
 		}
 	}
 	return out
+}
+
+// Owing is one debt, with the agent that carries it, in a form that can be
+// written down. The bus keeps debts in memory and a process does not last
+// forever; what follows is how they outlive it.
+type Owing struct {
+	Agent  string    `json:"agent"`
+	Thread uint64    `json:"thread"`
+	Since  time.Time `json:"since"`
+	From   string    `json:"from"`
+	Kind   Kind      `json:"kind"`
+	Body   string    `json:"body,omitempty"`
+}
+
+// Snapshot returns everything currently owed, and the next thread id.
+//
+// The thread id matters as much as the debts. Restoring a debt on thread 42
+// into a bus whose counter starts at zero means the forty-second conversation
+// after the restart collides with it, and settling one settles the other —
+// a debt closed by a message that had nothing to do with it.
+func (b *Bus) Snapshot() (owing []Owing, nextThread uint64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for agent, debts := range b.owed {
+		for _, d := range debts {
+			owing = append(owing, Owing{
+				Agent: agent, Thread: d.Thread, Since: d.Since,
+				From: d.From, Kind: d.Kind, Body: d.Body,
+			})
+		}
+	}
+	// Sorted, because this comes out of a map and a caller comparing one
+	// snapshot to the next to decide whether anything changed would otherwise
+	// see a change every time and rewrite the file for ever.
+	sort.Slice(owing, func(i, j int) bool {
+		if owing[i].Agent != owing[j].Agent {
+			return owing[i].Agent < owing[j].Agent
+		}
+		return owing[i].Thread < owing[j].Thread
+	})
+	return owing, b.nextThrd
+}
+
+// Restore puts debts back, and moves the thread counter past anything they
+// mention. Existing debts are kept: this is meant for a bus that has just been
+// made, but a restore that dropped live state would be a worse failure than one
+// that duplicated it, and duplicates cannot happen — a thread already owed by
+// an agent is not owed twice.
+//
+// nextThread is honoured only if it is ahead of where the bus already is, so a
+// stale file cannot wind the counter backwards into ids that are in use.
+func (b *Bus) Restore(owing []Owing, nextThread uint64) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.owed == nil {
+		b.owed = map[string][]debt{}
+	}
+	n := 0
+	for _, o := range owing {
+		dup := false
+		for _, d := range b.owed[o.Agent] {
+			if d.Thread == o.Thread {
+				dup = true
+				break
+			}
+		}
+		if dup {
+			continue
+		}
+		b.owed[o.Agent] = append(b.owed[o.Agent], debt{
+			Thread: o.Thread, Since: o.Since, From: o.From, Kind: o.Kind, Body: o.Body,
+		})
+		if o.Thread > b.nextThrd {
+			b.nextThrd = o.Thread
+		}
+		n++
+	}
+	if nextThread > b.nextThrd {
+		b.nextThrd = nextThread
+	}
+	return n
 }

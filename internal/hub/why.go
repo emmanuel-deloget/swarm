@@ -112,8 +112,16 @@ func (h *Hub) Why(name string) (Why, error) {
 			Age:    time.Since(d.Since),
 		}
 		debt.Settle = SettleCommand(d.Kind, d.From, d.Thread)
+		// The debt's own copy first: it is the one that survives both the
+		// bounded history and a restart of this process.
+		if d.Body != "" {
+			debt.Text, debt.Kept = d.Body, true
+		}
 		if m, live, ok := h.bus.Opened(name, d.Thread); ok {
-			debt.Text, debt.Kept, debt.Files = m.Body, true, m.Files
+			debt.Kept, debt.Files = true, m.Files
+			if debt.Text == "" {
+				debt.Text = m.Body
+			}
 			// Only from the mailbox copy. Whether a message was typed into the
 			// terminal or collected tells a reader whether the silence is the
 			// delivery's fault or the agent's — and the history's copy is not

@@ -49,6 +49,11 @@ type Hub struct {
 	// have gone quiet.
 	stalledStop chan struct{}
 	stalledOnce sync.Once
+	// owedStop ends the writer that keeps the debts on disk. They are the one
+	// piece of state a restart must not destroy: see owedstore.go.
+	owedStop chan struct{}
+	owedDone chan struct{}
+	owedOnce sync.Once
 
 	// paused holds the reason deliveries are suspended, empty when they are not.
 	// A circuit breaker rather than a stop: the agents keep working, and what
@@ -129,6 +134,13 @@ func New(o Options) (*Hub, error) {
 		h.agents[ac.Name] = agent.New(opts)
 		h.order = append(h.order, ac.Name)
 	}
+
+	// What was owed when the last process stopped. Before the watchers, so a
+	// restored debt is already there the first time anything looks.
+	h.loadOwed()
+	h.owedStop = make(chan struct{})
+	h.owedDone = make(chan struct{})
+	go h.watchOwed(owedSaveEvery)
 
 	// Last, and not before: the watcher reads the agent list, which the loop
 	// above is still writing.
@@ -570,6 +582,22 @@ func (h *Hub) Shutdown(grace time.Duration) {
 	h.stalledOnce.Do(func() {
 		if h.stalledStop != nil {
 			close(h.stalledStop)
+		}
+	})
+	// Closing this writes the debts out one last time, on the way past: a
+	// shutdown is the most likely reason anyone will want them back.
+	h.owedOnce.Do(func() {
+		if h.owedStop == nil {
+			return
+		}
+		close(h.owedStop)
+		// Waited for, not just signalled: the last write happens on the way
+		// out, and a caller that tears down the state directory as soon as
+		// Shutdown returns would otherwise race a file being created inside it.
+		select {
+		case <-h.owedDone:
+		case <-time.After(2 * time.Second):
+			h.log.Emit(event.KindError, "", "timed out writing what is owed")
 		}
 	})
 	if h.outCancel != nil {

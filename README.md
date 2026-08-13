@@ -524,9 +524,24 @@ it: a debt lives until it is settled, so who asked and when survive anything
 that happens inside the agent. swarm is the fleet's external memory, and this
 is the command that reads it back.
 
-Messages are bounded even though debts are not, so a question left long enough
-can outlive its own text. `swarm why` says so in as many words rather than
-printing a blank where the question should be.
+What is outstanding survives a restart, in `owed.json` inside the state
+directory. It is the only thing swarm writes down that way, and the reason is
+circular: an agent stuck for days is itself why someone restarts the fleet — to
+upgrade the binary, to change the config, to try anything — and the restart used
+to take the explanation with it. The agents keep their own sessions across a
+restart; it was swarm that forgot, which is backwards for the part whose job is
+to remember what the agents cannot.
+
+Each debt carries the question that opened it, so what comes back is the whole
+answer rather than its metadata. Restoring is reported and never silent: how
+many came back, how old the oldest is, and any debt belonging to an agent the
+fleet no longer has, which is dropped because nobody could settle it. A debt
+that is no longer true is cleared with `swarm done`.
+
+Messages themselves are not persisted — they are bounded anyway, and `swarm bus
+tail` already answers for them. So a question can still outlive the history it
+was carried in, and `swarm why` says so in as many words rather than printing a
+blank where the question should be.
 
 Beyond that, the configuration can bound the talking rather than hope for the
 best: `delivery_by_kind` lets the fleet defer while `blocked` still gets
