@@ -411,6 +411,10 @@ function openGrid() {
 // grid follows it rather than keeping a threshold of its own.
 const narrowGrid = 620;
 
+// minCellWidth is the narrowest a cell may be before the screen inside it is
+// not worth drawing. The grid scrolls rather than going below it.
+const minCellWidth = 280;
+
 function layoutGrid(agents) {
   const grid = document.querySelector("#grid");
   const w = grid.clientWidth;
@@ -436,19 +440,33 @@ function layoutGrid(agents) {
     return Math.floor(w * tallest);
   }
 
-  // Every column count is tried and the widest cell wins, rather than the first
-  // arrangement that happens to fit. Those are not the same: four agents in
-  // three columns fit at once and leave a row of one with the page half empty,
-  // where two columns of two fill it with cells half again as wide.
-  let best = { columns: agents.length, width: 0, height: maxCellHeight };
-  for (let columns = 1; columns <= agents.length; columns++) {
+  // Never narrower than this, whatever it costs. A fleet is not bounded by the
+  // page: at a hundred agents, fitting them all on it means rows four pixels
+  // tall, which is no longer a screen but a smear. Past what fits, the grid
+  // scrolls — that is what a page does.
+  const columnCap = Math.max(1, Math.floor((w + gap) / (minCellWidth + gap)));
+  const most = Math.min(agents.length, columnCap);
+
+  // Among the arrangements that do fit the page, the widest cell wins: four
+  // agents in three columns fit at once and leave a row of one with the page
+  // half empty, where two columns of two fill it with cells a third wider.
+  let best = null;
+  for (let columns = 1; columns <= most; columns++) {
     const rows = Math.ceil(agents.length / columns);
+    // A cell may be narrower than its column, to leave room for the rows below
+    // it — that is what fills a page instead of overflowing it.
     const byWidth = (w - gap * (columns - 1)) / columns;
     const byHeight = ((h - gap * rows) / rows - headHeight) / tallest;
     const cellW = Math.min(byWidth, byHeight);
-    if (cellW > best.width) {
+    if (cellW >= minCellWidth && (!best || cellW > best.width)) {
       best = { columns, width: cellW, height: Math.floor(cellW * tallest) };
     }
+  }
+
+  // Nothing fits: fill the width with as many as stay readable, and scroll.
+  if (!best) {
+    const cellW = (w - gap * (most - 1)) / most;
+    best = { columns: most, width: cellW, height: Math.floor(cellW * tallest) };
   }
   grid.style.gridTemplateColumns = "repeat(" + best.columns + ", 1fr)";
   return best.height;
