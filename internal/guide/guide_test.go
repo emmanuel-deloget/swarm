@@ -122,3 +122,43 @@ agents:
 		t.Fatal("a template that does not exist loaded fine")
 	}
 }
+
+// TestTheCommandsAnAgentNeedsAreInTheGuide.
+//
+// AGENTS.md is the only place an agent learns what it can run. A command that
+// is not here does not exist as far as the fleet is concerned, however well it
+// works and however carefully the README describes it — nobody in the fleet
+// reads the README.
+//
+// `swarm why` was written, tested, documented and shipped without reaching
+// this file, and the gap is worse for that command than for most: it exists so
+// a stalled agent can find out why it is stalled, and an agent that does not
+// know about it will sit there instead. It was noticed by a person, which is
+// the part this test is meant to replace.
+//
+// Not every command belongs here — `run`, `attach` and `init` are for whoever
+// starts the fleet, not for the agents in it. This is the list of things an
+// agent does, so adding to it is a deliberate act.
+func TestTheCommandsAnAgentNeedsAreInTheGuide(t *testing.T) {
+	full := `
+bus: {max_turns: 6}
+web: {enabled: false}
+agents:
+  - name: alpha
+    command: [cat]
+  - name: beta
+    command: [cat]
+`
+	out := render(t, full)
+
+	for _, cmd := range []struct{ name, why string }{
+		{"swarm send", "an agent that cannot reach another agent is not in a fleet"},
+		{"swarm inbox", "messages that are never collected were never delivered"},
+		{"swarm done", "without it, finished work still counts as owed"},
+		{"swarm why", "the way out of stalled, for the agent that is in it"},
+	} {
+		if !strings.Contains(out, cmd.name) {
+			t.Errorf("the guide never mentions `%s`: %s", cmd.name, cmd.why)
+		}
+	}
+}

@@ -179,6 +179,17 @@ swarm done -thread 7 "note"     # just this one, with a word about it
 Until then you are counted as owing it. After a while of silence you are
 reported as stalled — which is a signal to whoever is watching, not a
 punishment: if you are waiting on something long, say so and it is understood.
+
+If you find yourself stalled and do not know why, ask:
+
+` + "```sh" + `
+swarm why                       # what you owe, to whom, since when, and the way out
+swarm why <agent>               # the same about someone else
+` + "```" + `
+
+Use it rather than searching your own history. Your context gets compacted and
+the message that put you here may be long out of it; swarm still has it, and
+the last thing it prints is the command that ends it.
 {{if .Deferred}}
 Some agents are configured to receive messages only once they fall quiet, so a
 message you send may sit for a while. That is the fleet working as intended,
