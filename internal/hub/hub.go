@@ -61,6 +61,11 @@ type Hub struct {
 	lifeStop chan struct{}
 	lifeDone chan struct{}
 	lifeOnce sync.Once
+	// spawnStop ends the writer that keeps instance names from being reused
+	// across restarts. See spawnstore.go.
+	spawnStop chan struct{}
+	spawnDone chan struct{}
+	spawnOnce sync.Once
 
 	// paused holds the reason deliveries are suspended, empty when they are not.
 	// A circuit breaker rather than a stop: the agents keep working, and what
@@ -164,6 +169,11 @@ func New(o Options) (*Hub, error) {
 	if len(cfg.Bus.OnStalled) > 0 {
 		h.stalled = &stalledActor{seen: map[stalledKey]stalledSeen{}}
 	}
+
+	h.loadSpawn()
+	h.spawnStop = make(chan struct{})
+	h.spawnDone = make(chan struct{})
+	go h.watchSpawn(owedSaveEvery)
 
 	h.loadOwed()
 	h.owedStop = make(chan struct{})
@@ -636,6 +646,12 @@ func (h *Hub) Shutdown(grace time.Duration) {
 	})
 	// Closing this writes the debts out one last time, on the way past: a
 	// shutdown is the most likely reason anyone will want them back.
+	h.spawnOnce.Do(func() {
+		if h.spawnStop != nil {
+			close(h.spawnStop)
+			<-h.spawnDone
+		}
+	})
 	h.lifeOnce.Do(func() {
 		if h.lifeStop != nil {
 			close(h.lifeStop)

@@ -362,3 +362,56 @@ func TestStoppingAnInstanceCollectsIt(t *testing.T) {
 		t.Error("stopping a declared agent took it out of the fleet")
 	}
 }
+
+// Names must not come back after a restart. The bus, the debts and the logs all
+// refer to agents by name, and the debts now survive a restart — which is
+// exactly when a repeated name would put two agents' history under one.
+func TestInstanceNamesSurviveARestart(t *testing.T) {
+	dir := t.TempDir()
+
+	first := fleetIn(t, dir, spawnFleet)
+	a, err := first.Spawn("triage", "worker", "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Shutdown(2 * time.Second)
+
+	second := fleetIn(t, dir, spawnFleet)
+	defer second.Shutdown(2 * time.Second)
+
+	b, err := second.Spawn("triage", "worker", "two")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b == a {
+		t.Errorf("after a restart the name %q was handed out again", b)
+	}
+}
+
+// An instance alive when the swarm stops dies with its pty, and something has
+// to remember it existed: its debt outlives it, and `swarm why` must be able to
+// say the agent is dead rather than that it never was.
+func TestAnInstanceAliveAtShutdownIsRemembered(t *testing.T) {
+	dir := t.TempDir()
+
+	first := fleetIn(t, dir, spawnFleet)
+	name, err := first.Spawn("", "worker", "interrupted work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Shutdown(2 * time.Second)
+
+	second := fleetIn(t, dir, spawnFleet)
+	defer second.Shutdown(2 * time.Second)
+
+	gone, ok := second.Dead(name)
+	if !ok {
+		t.Fatalf("%s is not remembered after the swarm stopped", name)
+	}
+	if gone.Task != "interrupted work" {
+		t.Errorf("what it was asked came back as %q", gone.Task)
+	}
+	if gone.Why == "" {
+		t.Error("nothing says why it is gone")
+	}
+}
