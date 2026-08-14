@@ -129,19 +129,50 @@ func RemoveWorktree(dir string) error {
 		return fmt.Errorf("%s holds work that removing it would delete:\n%s", dir, what)
 	}
 
+	out, err := git(repo, "worktree", "remove", dir)
+	if err == nil {
+		return nil
+	}
+	last := gitSays(out, err)
+
+	// Asking git again is useless, and that is what the first version of this
+	// did. On Windows the failed attempt is not a no-op: git deletes what it
+	// can, fails on the directory itself, and leaves something that is no
+	// longer a worktree — so every retry answers "not a working tree" and
+	// buries the real cause.
+	//
+	// Doing it directly is safe here, and only here: holdsWork has already
+	// established that nothing in the directory exists only there. What is
+	// left is a file system that will not let go of a directory it was
+	// finished with, which is a Windows behaviour and clears by itself.
+	if err := removeDirAndPrune(repo, dir); err != nil {
+		return fmt.Errorf("could not remove %s: %w (git said: %s)", dir, err, last)
+	}
+	return nil
+}
+
+// removeDirAndPrune deletes the directory and drops the registration git keeps
+// for it.
+//
+// The caller has established that nothing in there exists only there, so this
+// is not a decision about somebody's work — it is finishing a removal the file
+// system interrupted. Retried on Windows, where a directory written moments ago
+// is routinely held open for a second or two by the indexer or the scanner.
+func removeDirAndPrune(repo, dir string) error {
 	tries, wait := removeRetries()
-	var last string
+	var last error
 	for attempt := range tries {
-		out, err := git(repo, "worktree", "remove", dir)
-		if err == nil {
+		last = os.RemoveAll(dir)
+		if last == nil {
+			// The registration outlives the directory; prune drops it.
+			_, _ = git(repo, "worktree", "prune")
 			return nil
 		}
-		last = gitSays(out, err)
 		if attempt < tries-1 {
 			time.Sleep(wait)
 		}
 	}
-	return fmt.Errorf("could not remove %s: %s", dir, last)
+	return last
 }
 
 // holdsWork reports whether a worktree contains anything that exists only

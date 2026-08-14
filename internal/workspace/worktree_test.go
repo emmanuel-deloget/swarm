@@ -364,3 +364,41 @@ func TestTheRefusalDoesNotReadGitsProse(t *testing.T) {
 		t.Error("a worktree whose state cannot be read was reported as clean")
 	}
 }
+
+// The path taken when git cannot finish, which on Linux is never — so it is
+// exercised directly rather than shipped untested.
+//
+// On Windows a failed `git worktree remove` is not a no-op: git deletes what it
+// can, fails on the directory itself, and leaves something that is no longer a
+// worktree. Asking git again only gets "not a working tree", which is what the
+// CI reported.
+func TestTheFallbackFinishesWhatGitStarted(t *testing.T) {
+	src := repo(t)
+	dir := filepath.Join(t.TempDir(), "worker-1")
+	if err := AddWorktree(dir, src, BranchName("worker-1"), ""); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := removeDirAndPrune(src, dir); err != nil {
+		t.Fatalf("the fallback could not finish: %v", err)
+	}
+	if _, err := os.Stat(dir); err == nil {
+		t.Error("the directory is still there")
+	}
+	// And git no longer believes there is a worktree at that path: a
+	// registration left behind makes `git worktree list` describe a directory
+	// nobody can use.
+	dirs, err := Worktrees(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range dirs {
+		if strings.Contains(d, "worker-1") {
+			t.Errorf("git still lists %s", d)
+		}
+	}
+	// The branch survives, as ever.
+	if out, err := exec.Command("git", "-C", src, "branch", "--list", BranchName("worker-1")).Output(); err != nil || !strings.Contains(string(out), "worker-1") {
+		t.Error("the branch went with the directory")
+	}
+}
