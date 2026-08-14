@@ -229,7 +229,7 @@ agents:
 #   # an agent is the only thing that reads it. 0 means no bound.
 #   # How long an agent may be idle while owing something before swarm says so.
 #   # Counted from the moment it goes idle, so it adds to its idle_after.
-#   stalled_after: 10m
+#   stalled_after: 20m
 #   max_turns: 6
 #   escalate_to: triage-1 # arbitrates a thread that ran out of turns
 

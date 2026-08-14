@@ -364,8 +364,8 @@ type BusConfig struct {
 	// adds to that agent's idle_after rather than competing with it — there is
 	// no pair of values that can be set in a way that never fires.
 	//
-	// Ten minutes: an agent that has been idle that long while the bus waits on
-	// it is worth a look. Zero switches the state off.
+	// Twenty minutes: an agent that has been idle that long while the bus waits
+	// on it is worth a look. Zero switches the state off.
 	//
 	// False positives are expected and harmless — an agent waiting on a long
 	// background job is silent and does owe work, and will say so when asked.
@@ -769,7 +769,7 @@ func (c *Config) normalize() error {
 		c.Bus.Enabled = ptr(true)
 	}
 	if c.Bus.StalledAfter == 0 {
-		c.Bus.StalledAfter = 10 * time.Minute
+		c.Bus.StalledAfter = 20 * time.Minute
 	}
 	if c.Bus.StalledAfter < 0 {
 		return fmt.Errorf("bus: stalled_after cannot be negative")

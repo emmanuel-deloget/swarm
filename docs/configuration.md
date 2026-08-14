@@ -481,7 +481,7 @@ Whoever asked is told, on the thread they asked on — unless they have no mailb
 
 | key | default | |
 |---|---|---|
-| `stalled_after` | `10m` | How long an agent may be **idle** while owing something before swarm says so. Counted from the moment it goes idle, so it adds to that agent's `idle_after`. `0` switches it off. |
+| `stalled_after` | `20m` | How long an agent may be **idle** while owing something before swarm says so. Counted from the moment it goes idle, so it adds to that agent's `idle_after`. `0` switches it off. |
 
 An agent that has owed something for `stalled_after` and is idle right now is
 reported — in the event log, and as `agent.stalled` to an outgoing webhook.
@@ -512,7 +512,7 @@ full cycle to return, while nothing had been settled. A redraw settles nothing.
 Being idle stays a condition, since an agent that is writing may be working on
 exactly what is owed. The threshold adds to that agent's `idle_after`, so the
 two settings add up rather than compete: with `idle_after: 3s` and
-`stalled_after: 10m`, work owed for ten minutes and three seconds is reported as
+`stalled_after: 20m`, work owed for twenty minutes and three seconds is reported as
 soon as the agent is quiet.
 
 ### When it gets away from you
