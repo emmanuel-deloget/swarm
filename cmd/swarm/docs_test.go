@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -80,4 +81,42 @@ func commandCases(t *testing.T) [][]string {
 		t.Fatalf("found %d command cases in main.go; has the switch moved?", len(out))
 	}
 	return out
+}
+
+// commandLine matches a line of the usage listing: two spaces, the command,
+// then the gap before its description.
+var commandLine = regexp.MustCompile(`^(  \S[^\t]*?)(\s\s+)(\S.*)$`)
+
+// TestTheUsageListingIsAligned.
+//
+// `ls` sat one column left of everything else for a while, which nobody sees
+// while editing the string and everybody sees in a terminal. It is the sort of
+// defect a person has to notice, report and have fixed — three exchanges for
+// one space — and the sort a machine can hold to for nothing.
+func TestTheUsageListingIsAligned(t *testing.T) {
+	columns := map[int][]string{}
+	for _, line := range strings.Split(usage, "\n") {
+		m := commandLine.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		columns[len(m[1])+len(m[2])] = append(columns[len(m[1])+len(m[2])], strings.TrimSpace(m[1]))
+	}
+	if len(columns) <= 1 {
+		return
+	}
+
+	// The one most lines agree on is the right one; the rest are the mistake.
+	best, most := 0, 0
+	for col, cmds := range columns {
+		if len(cmds) > most {
+			best, most = col, len(cmds)
+		}
+	}
+	for col, cmds := range columns {
+		if col != best {
+			t.Errorf("`%s` describes itself at column %d, where %d other commands "+
+				"use column %d", strings.Join(cmds, "`, `"), col, most, best)
+		}
+	}
 }

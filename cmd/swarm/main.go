@@ -19,7 +19,7 @@ usage: swarm <command> [flags] [args]
 fleet
   run                       start the fleet, the TUI, the control socket and the web UI
   init [path]               write a starter swarm.yaml
-  ls                       list the agents and their state
+  ls                        list the agents and their state
   status [target]           detailed status of the matching agents
   start|stop|restart <target>
   shutdown                  stop the whole swarm
