@@ -45,6 +45,12 @@ func fleetIn(t *testing.T, dir, body string) *Hub {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Always stopped when the test ends. Its agents hold their log files open,
+	// and t.TempDir then cannot clean up — Unix deletes a file somebody is
+	// holding, Windows refuses, so the failure only appears on one of them and
+	// as a cleanup error rather than as anything the test did. Shutdown twice
+	// is harmless, so a test that stops the fleet itself still reads plainly.
+	t.Cleanup(func() { h.Shutdown(2 * time.Second) })
 	return h
 }
 

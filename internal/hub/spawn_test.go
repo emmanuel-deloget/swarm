@@ -486,7 +486,7 @@ func worktreeFleet(t *testing.T) (*Hub, string) {
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}
 	}
-	return fleetIn(t, dir, `
+	h := fleetIn(t, dir, `
 web: {enabled: false}
 defaults: {idle_after: 100ms}
 agents:
@@ -497,7 +497,8 @@ agents:
     ephemeral: true
     command: [probe-echo]
     workspace: worktree
-`), dir
+`)
+	return h, dir
 }
 
 func TestAnInstanceGetsItsOwnWorktree(t *testing.T) {
