@@ -44,6 +44,33 @@ type Why struct {
 	// first. Empty is an answer too: it means nothing is waiting on this agent,
 	// whatever it looks like on screen.
 	Debts []Debt `json:"debts,omitempty"`
+	// Gone is set when the agent is an ephemeral instance that has finished,
+	// been collected or died with the swarm. Nil for an agent that is running.
+	Gone *Gone `json:"gone,omitempty"`
+}
+
+// whyDead explains an instance that is no longer running. What it was, what it
+// was asked, when it went and why — plus whatever it still owes, since that is
+// the reason anyone is asking.
+func (h *Hub) whyDead(gone Gone) Why {
+	w := Why{
+		Agent: gone.Name,
+		State: "gone",
+		Gone:  &gone,
+	}
+	for _, d := range h.bus.Owed(gone.Name) {
+		w.Debts = append(w.Debts, Debt{
+			Thread: d.Thread,
+			From:   d.From,
+			Kind:   string(d.Kind),
+			Since:  d.Since,
+			Age:    time.Since(d.Since),
+			Text:   d.Body,
+			Kept:   d.Body != "",
+			Settle: SettleCommand(d.Kind, d.From, d.Thread),
+		})
+	}
+	return w
 }
 
 // Debt is one thing owed, with the message that opened it when the bus still
@@ -87,6 +114,13 @@ func (h *Hub) Why(name string) (Why, error) {
 		}
 	}
 	if !found {
+		// An ephemeral instance that is gone still answers. Its debt can
+		// outlive it — that is the rule for one a person spawned — and a debt
+		// whose owner is reported as never having existed is worse than no
+		// answer at all: it reads as a typo rather than as a death.
+		if gone, ok := h.Dead(name); ok {
+			return h.whyDead(gone), nil
+		}
 		return Why{}, fmt.Errorf("no agent named %q in this swarm", name)
 	}
 

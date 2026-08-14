@@ -58,6 +58,10 @@ func cmdWhy(args []string) error {
 }
 
 func printWhy(w hub.Why) {
+	if w.Gone != nil {
+		printGone(w)
+		return
+	}
 	state := w.State
 	if w.Stalled {
 		state = "stalled"
@@ -131,4 +135,46 @@ func short(d time.Duration) string {
 	default:
 		return fmt.Sprintf("%d days", int(d.Hours())/24)
 	}
+}
+
+// printGone answers for an ephemeral instance that is no longer running.
+//
+// The debt of one a person spawned outlives it deliberately, so this is the
+// only thing that can explain why something is still owed by a name that is not
+// in the fleet.
+func printGone(w hub.Why) {
+	g := w.Gone
+	fmt.Printf("%s is gone: %s\n", g.Name, g.Why)
+	fmt.Printf("  a %s, spawned %s", g.Template, g.Born.Format("2 Jan 15:04"))
+	if g.Parent != "" {
+		fmt.Printf(" by %s", g.Parent)
+	}
+	fmt.Printf(", gone %s\n", g.Died.Format("2 Jan 15:04"))
+
+	if g.Task != "" {
+		fmt.Println("\nit was asked to")
+		for _, line := range strings.Split(strings.TrimRight(g.Task, "\n"), "\n") {
+			fmt.Printf("    │ %s\n", line)
+		}
+	}
+
+	if len(w.Debts) == 0 {
+		fmt.Println("\nNothing is still owed in its name.")
+		return
+	}
+	fmt.Printf("\nand %d %s outlived it\n",
+		len(w.Debts), plural(len(w.Debts), "thing", "things"))
+	for _, d := range w.Debts {
+		fmt.Printf("\n  thread %d — a %s from %s, %s ago\n",
+			d.Thread, d.Kind, d.From, short(d.Age))
+		if d.Kept && d.Text != "" {
+			for _, line := range strings.Split(strings.TrimRight(d.Text, "\n"), "\n") {
+				fmt.Printf("    │ %s\n", line)
+			}
+		}
+	}
+	fmt.Println("\nThe agent cannot settle it: it no longer exists. Clear it when it")
+	fmt.Println("is no longer true, or hand the work to someone else:")
+	fmt.Printf("    swarm done -from %s -thread %d \"what happened\"\n",
+		w.Agent, w.Debts[0].Thread)
 }

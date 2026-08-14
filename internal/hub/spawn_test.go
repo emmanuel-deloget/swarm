@@ -415,3 +415,47 @@ func TestAnInstanceAliveAtShutdownIsRemembered(t *testing.T) {
 		t.Error("nothing says why it is gone")
 	}
 }
+
+// A debt whose owner is gone is the reason `swarm why` has to answer about the
+// dead: reported as never having existed, it reads as a typo rather than as a
+// death, and nobody looks for the work again.
+func TestWhyAnswersForAnInstanceThatIsGone(t *testing.T) {
+	h := fleet(t, spawnFleet)
+
+	name, err := h.Spawn("", "worker", "the work it never finished")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Collect(name, "stopped"); err != nil {
+		t.Fatal(err)
+	}
+
+	w, err := h.Why(name)
+	if err != nil {
+		t.Fatalf("why refuses an instance that is gone: %v", err)
+	}
+	if w.Gone == nil {
+		t.Fatal("the answer does not say the agent is gone")
+	}
+	if w.Gone.Task != "the work it never finished" {
+		t.Errorf("it does not say what the instance was asked: %q", w.Gone.Task)
+	}
+	// The reason it went, not a word that means nothing: "gone: gone" tells a
+	// reader whether it finished, was stopped, or ran out of time — which is
+	// the first thing anyone wants to know.
+	if w.Gone.Why != "stopped" {
+		t.Errorf("why it went came back as %q", w.Gone.Why)
+	}
+	if len(w.Debts) != 1 {
+		t.Fatalf("the debt that outlived it is not reported: %d", len(w.Debts))
+	}
+	if w.Debts[0].Settle == "" {
+		t.Error("no way out is offered for a debt nobody can settle from inside")
+	}
+
+	// A name that was never anything is still refused: "nothing is wrong with
+	// dev-99" is a bad thing to tell someone who misspelled dev-9.
+	if _, err := h.Why("worker-99"); err == nil {
+		t.Error("a name that never existed was explained rather than refused")
+	}
+}

@@ -128,7 +128,7 @@ func (h *Hub) Spawn(from, template, task string) (string, error) {
 	h.spawn.mu.Unlock()
 
 	if err := a.Start(); err != nil {
-		h.drop(name)
+		h.drop(name, "would not start")
 		return "", fmt.Errorf("starting %s: %w", name, err)
 	}
 	h.log.Emit(event.KindInfo, name, fmt.Sprintf(
@@ -140,7 +140,7 @@ func (h *Hub) Spawn(from, template, task string) (string, error) {
 	msgs, err := h.SendOn(orString(from, "user"), name, bus.KindRequest, task, nil,
 		SendOptions{NewThread: true, Push: true})
 	if err != nil {
-		h.drop(name)
+		h.drop(name, "could not be given its task")
 		return "", fmt.Errorf("giving %s its task: %w", name, err)
 	}
 	if len(msgs) > 0 {
@@ -275,7 +275,7 @@ func (h *Hub) Collect(name, why string) error {
 	}
 	h.settleOnDeath(in, debts, why)
 
-	h.drop(name)
+	h.drop(name, why)
 	h.log.Emit(event.KindInfo, name, "collected: "+why)
 	return nil
 }
@@ -332,8 +332,9 @@ func (h *Hub) tellParent(in *instance, why, extra string) {
 	}
 }
 
-// drop removes an instance from the fleet and records that it existed.
-func (h *Hub) drop(name string) {
+// drop removes an instance from the fleet and records that it existed, and
+// why it stopped — which is what `swarm why` reads back for the dead.
+func (h *Hub) drop(name, why string) {
 	h.mu.Lock()
 	delete(h.agents, name)
 	for i, n := range h.order {
@@ -353,7 +354,7 @@ func (h *Hub) drop(name string) {
 	}
 	h.spawn.gone = append(h.spawn.gone, Gone{
 		Name: name, Template: in.Template, Parent: in.Parent, Task: in.Task,
-		Thread: in.Thread, Born: in.Born, Died: time.Now(), Why: "gone",
+		Thread: in.Thread, Born: in.Born, Died: time.Now(), Why: why,
 	})
 	if len(h.spawn.gone) > goneKept {
 		h.spawn.gone = h.spawn.gone[len(h.spawn.gone)-goneKept:]
