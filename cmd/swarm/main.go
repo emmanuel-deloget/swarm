@@ -21,7 +21,9 @@ fleet
   init [path]               write a starter swarm.yaml
   ls                        list the agents and their state
   status [target]           detailed status of the matching agents
+  why [agent]               why an agent is stalled, and how it gets out
   start|stop|restart <target>
+  spawn <template> <task>   make an agent for one task; -f reads it from a file
   shutdown                  stop the whole swarm
 
 driving an agent
@@ -43,8 +45,6 @@ talking
   hook test <payload.json>  show what an incoming webhook would send
   hook post <payload.json>  send a payload to the running listener
 
-  spawn <template> <task>   make an agent for one task; -f reads it from a file
-  why [agent]               why an agent is stalled, and how it gets out
   info                      session, socket, web URL and token
   config check [-fix]       report (and fix) a config that has gone stale
   version                   which build this is (also shown in the TUI header)
