@@ -1130,6 +1130,13 @@ func (m *model) sidebarLines(height int) []string {
 		if in.Talking >= hub.TalkNoisy {
 			badge += styAttn.Render(" ‼")
 		}
+		if in.Ephemeral {
+			// An agent that appears and vanishes on its own reads as a fault
+			// unless the list says it was meant to. Dimmed rather than marked:
+			// the sidebar is scanned for the states that need something doing,
+			// and a temporary agent is the opposite of that.
+			badge += styMuted.Render(" ⧗")
+		}
 		prefix := "  "
 		style := styBase
 		if i == m.sel {

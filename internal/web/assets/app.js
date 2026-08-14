@@ -179,6 +179,10 @@ function renderTitle() {
     el.append(at);
   }
   const bits = [];
+  // An agent made for one task, which will be gone when it finishes. Said in
+  // the line that describes what an agent is, because that is the question it
+  // answers: not what state it is in, but what kind of thing it is.
+  if (a.ephemeral) bits.push("for one task");
   if (a.role) bits.push(a.role);
   if (a.pid) bits.push("pid " + a.pid);
   if (a.cols) bits.push(a.cols + "×" + a.rows);
@@ -190,7 +194,13 @@ function renderTitle() {
     el.append(meta);
   }
 
-  for (const [label, act] of [["restart", "restart"], ["stop", "stop"], ["start", "start"]]) {
+  // restart and start are refused on an instance — it would come back knowing
+  // nothing of the task it still owes — so they are not offered. A button that
+  // exists to return an error is a button that teaches nothing.
+  const actions = a.ephemeral
+    ? [["stop", "stop"]]
+    : [["restart", "restart"], ["stop", "stop"], ["start", "start"]];
+  for (const [label, act] of actions) {
     const b = document.createElement("button");
     b.className = "ghost";
     b.textContent = label;

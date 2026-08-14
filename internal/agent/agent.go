@@ -38,8 +38,13 @@ const (
 
 // Info is a serialisable view of an agent, for the CLI, the TUI and the web.
 type Info struct {
-	Name       string        `json:"name"`
-	Role       string        `json:"role"`
+	Name string `json:"name"`
+	Role string `json:"role"`
+	// Ephemeral marks an agent made for one task by `swarm spawn`, which will
+	// be gone when it finishes. It is worth showing: an agent that appears and
+	// disappears on its own reads as a fault unless the display says otherwise,
+	// and half of what you can do to a declared agent is refused on this one.
+	Ephemeral  bool          `json:"ephemeral,omitempty"`
 	Command    []string      `json:"command"`
 	Workdir    string        `json:"workdir"`
 	State      State         `json:"state"`
@@ -883,6 +888,7 @@ func (a *Agent) Info() Info {
 	info := Info{
 		Name:      a.cfg.Name,
 		Role:      a.cfg.Role,
+		Ephemeral: a.cfg.Ephemeral,
 		Command:   a.cfg.Command,
 		Workdir:   a.cfg.Workdir,
 		State:     a.state,
