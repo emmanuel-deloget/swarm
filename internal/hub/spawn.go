@@ -594,9 +594,15 @@ func (h *Hub) reportOrphanWorktrees() {
 		h.log.Emit(event.KindError, "", err.Error())
 		return
 	}
-	ours := filepath.Join(h.stateDir, "worktrees") + string(filepath.Separator)
+	ours := resolved(filepath.Join(h.stateDir, "worktrees")) + string(filepath.Separator)
 	for _, dir := range dirs {
-		if !strings.HasPrefix(dir, ours) {
+		// Resolved on both sides. git answers with the real path — macOS
+		// hands out /var/folders as a link to /private/var, and Windows
+		// reports C:/Users/runneradmin where the caller holds
+		// C:\Users\RUNNER~1 — so comparing what we built against what git
+		// says matches nothing, and every worktree looks like somebody
+		// else's.
+		if !strings.HasPrefix(resolved(dir)+string(filepath.Separator), ours) {
 			continue // somebody else's, and none of our business
 		}
 		name := filepath.Base(dir)
@@ -612,4 +618,14 @@ func (h *Hub) reportOrphanWorktrees() {
 		h.log.Emit(event.KindPattern, name, what+
 			" — nothing was deleted; `git worktree remove` takes it when you are done with it")
 	}
+}
+
+// resolved is a path with its links followed and its separators settled, or the
+// path itself when it cannot be resolved — a directory that is gone is still
+// worth comparing by name.
+func resolved(path string) string {
+	if actual, err := filepath.EvalSymlinks(path); err == nil {
+		return filepath.Clean(actual)
+	}
+	return filepath.Clean(path)
 }

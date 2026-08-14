@@ -11,6 +11,7 @@ import (
 
 	"github.com/emmanuel-deloget/swarm/internal/bus"
 	"github.com/emmanuel-deloget/swarm/internal/config"
+	"github.com/emmanuel-deloget/swarm/internal/workspace"
 )
 
 // An ephemeral instance is an ordinary agent whose life is the length of one
@@ -622,9 +623,72 @@ agents:
 	}
 
 	// And it can now be removed, which a lock from a dead process would
-	// otherwise prevent for good.
-	out, err := exec.Command("git", "-C", repo, "worktree", "remove", dir).CombinedOutput()
-	if err != nil {
-		t.Errorf("the worktree is still locked by a process that is gone: %v %s", err, out)
+	// otherwise prevent for good. Through swarm's own function, since Windows
+	// needs the retry it carries.
+	if err := workspace.RemoveWorktree(dir); err != nil {
+		t.Errorf("the worktree is still locked by a process that is gone: %v", err)
+	}
+}
+
+// The state directory reached through a symbolic link is the macOS case: git
+// answers with /private/var where the caller holds /var, so a worktree of ours
+// looks like somebody else's and is neither unlocked nor reported. Windows has
+// the same shape with short and long path names.
+func TestWorktreesAreRecognisedThroughASymlink(t *testing.T) {
+	actual := t.TempDir()
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(actual, link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	for _, args := range [][]string{
+		{"init", "-q"},
+		{"config", "user.email", "t@example.com"},
+		{"config", "user.name", "test"},
+		{"config", "commit.gpgsign", "false"},
+	} {
+		if out, err := exec.Command("git", append([]string{"-C", actual}, args...)...).CombinedOutput(); err != nil {
+			t.Skipf("no usable git here: %v %s", err, out)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(actual, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "a.txt"}, {"commit", "-qm", "first"}} {
+		if out, err := exec.Command("git", append([]string{"-C", actual}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+
+	body := `
+web: {enabled: false}
+defaults: {idle_after: 100ms}
+agents:
+  - name: triage
+    command: [probe-echo]
+    can_spawn: [worker]
+  - name: worker
+    ephemeral: true
+    command: [probe-echo]
+    workspace: worktree
+`
+	// The fleet is configured through the link, so its state directory is the
+	// unresolved path throughout.
+	first := fleetIn(t, link, body)
+	if _, err := first.Spawn("triage", "worker", "interrupted"); err != nil {
+		t.Fatal(err)
+	}
+	first.Shutdown(2 * time.Second)
+
+	second := fleetIn(t, link, body)
+	defer second.Shutdown(2 * time.Second)
+
+	var said bool
+	for _, e := range second.Log().History(-1) {
+		if strings.Contains(e.Text, "from before this start") {
+			said = true
+		}
+	}
+	if !said {
+		t.Error("a worktree reached through a link was not recognised as ours")
 	}
 }
