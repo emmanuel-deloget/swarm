@@ -710,7 +710,16 @@ func (h *Hub) Stop(target string, grace time.Duration) ([]TargetResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	return results(agents, func(a *agent.Agent) (string, error) { return "stopped", a.Stop(grace) }), nil
+	return results(agents, func(a *agent.Agent) (string, error) {
+		// Stopping an instance is collecting it. A declared agent that is
+		// stopped stays in the fleet and can be started again; an instance
+		// cannot — it would come back with no memory of the task it still owes
+		// — so leaving it listed would leave a corpse nothing could revive.
+		if _, ok := h.Ephemeral(a.Name()); ok {
+			return "collected", h.Collect(a.Name(), "stopped")
+		}
+		return "stopped", a.Stop(grace)
+	}), nil
 }
 
 // Restart restarts every agent matching target.

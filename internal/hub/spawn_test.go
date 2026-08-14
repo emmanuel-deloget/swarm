@@ -330,3 +330,35 @@ func TestLifetimeTickIsDerivedFromTheShortest(t *testing.T) {
 		t.Errorf("a fleet with no lifetimes watches anyway: %s", got)
 	}
 }
+
+// Stopping an instance collects it. A declared agent that is stopped can be
+// started again; an instance cannot, so leaving it listed would leave a corpse
+// in the fleet that nothing could revive.
+func TestStoppingAnInstanceCollectsIt(t *testing.T) {
+	h := fleet(t, spawnFleet)
+
+	name, err := h.Spawn("triage", "worker", "task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := h.Stop(name, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || !res[0].OK {
+		t.Fatalf("stop failed: %+v", res)
+	}
+	if _, err := h.Agent(name); err == nil {
+		t.Error("the instance is still in the fleet after being stopped")
+	}
+	if _, ok := h.Ephemeral(name); ok {
+		t.Error("the instance is still counted as alive")
+	}
+	// A declared agent, on the other hand, stays where it is.
+	if _, err := h.Stop("triage", time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Agent("triage"); err != nil {
+		t.Error("stopping a declared agent took it out of the fleet")
+	}
+}
