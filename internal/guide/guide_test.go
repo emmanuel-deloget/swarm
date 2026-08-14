@@ -206,3 +206,22 @@ agents:
 		}
 	}
 }
+
+// An instance whose worktree is taken back has one thing to do that no other
+// agent has: get the work somewhere else first.
+func TestWorktreeInstancesAreToldToPushFirst(t *testing.T) {
+	with := render(t, `
+web: {enabled: false}
+agents:
+  - name: alpha
+    command: [cat]
+    can_spawn: [worker]
+  - name: worker
+    ephemeral: true
+    command: [cat]
+    workspace: shared
+`)
+	if strings.Contains(with, "own git worktree") {
+		t.Error("a template with no worktree is described as having one")
+	}
+}

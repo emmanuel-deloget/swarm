@@ -43,6 +43,15 @@ agents:
   #   command: [claude]
   #   max_alive: 3          # how many may run at once
   #   max_lifetime: 2h      # collected if it never says it has finished
+  #   # Its own directory and branch, taken back when it is collected. swarm
+  #   # never removes one holding uncommitted work: git refuses, and swarm
+  #   # never passes --force.
+  #   #
+  #   # Do not also tell the agent to make its own worktree — some CLIs have a
+  #   # flag for it. Two managers on one tree is the one arrangement that goes
+  #   # wrong, and swarm cannot warn you: it runs whatever you name here and
+  #   # does not read its options.
+  #   workspace: worktree
   #
   # And who may start them. The ability to create agents is the ability to
   # spend, so it is declared rather than assumed:

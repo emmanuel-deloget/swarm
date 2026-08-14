@@ -50,6 +50,10 @@ type Data struct {
 	Hooks bool
 	From  string
 
+	// SpawnWorktrees is true when a spawnable template gets its own worktree,
+	// which changes what an instance has to do before reporting done.
+	SpawnWorktrees bool
+
 	// Spawnable are the ephemeral templates this agent may launch. Empty when
 	// it may not, which is most agents — and the section is left out entirely
 	// then, because an agent told about a command it cannot run will try it.
@@ -107,6 +111,11 @@ func Collect(c *config.Config) Data {
 		}
 	}
 	sort.Strings(d.Spawnable)
+	for _, name := range d.Spawnable {
+		if a, ok := c.Agent(name); ok && a.Workspace == config.WorkspaceWorktree {
+			d.SpawnWorktrees = true
+		}
+	}
 	for name := range c.Groups {
 		d.Groups = append(d.Groups, name)
 	}
@@ -231,7 +240,13 @@ be told when it goes, and what it had been asked, so you need not remember.
 Give it everything it needs in the task: it starts with no memory of this
 conversation. Ask for one agent per piece of work rather than one for
 everything, and do not spawn one for something you can do here.
-{{end}}{{if .MaxTurns}}
+{{if .SpawnWorktrees}}
+These agents get their own git worktree, on their own branch. Tell it to commit
+and push what it does before it reports done: the directory is taken back when
+it is collected, and while nothing that is uncommitted is ever deleted — the
+worktree is kept instead, and someone has to deal with it by hand — a branch
+that was never pushed is work only that machine has.
+{{end}}{{end}}{{if .MaxTurns}}
 ## Conversations end
 
 One exchange is a thread, and a thread here is worth {{.MaxTurns}} messages.

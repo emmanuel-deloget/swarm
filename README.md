@@ -454,6 +454,30 @@ which would return knowing nothing of the task it still owes; spawning without
 a task, which would make an agent nothing could ever collect; spawning past
 `max_alive`; and spawning at all without `can_spawn`.
 
+**`workspace: worktree`** gives each instance its own directory and branch,
+sharing the repository's object store — no clone, no fetch, and two instances
+cannot edit the same file. It is the ephemeral agent that makes this workable:
+a worktree belonging to an agent that never ends is a branch nobody ever
+merges.
+
+When an instance is collected, swarm takes its worktree back — and it has to,
+since a branch cannot be checked out in two worktrees at once, so leaving the
+directory would stop anyone picking the work up. What it will not do is take
+work with it. The refusal is git's own: `git worktree remove` declines a
+directory holding modified or untracked files, and swarm never passes
+`--force`, so a worktree with anything uncommitted in it is kept and its path
+printed. Committed work survives either way — removing a worktree keeps the
+branch — and the branch itself is only deleted once the remote has every commit
+on it.
+
+swarm manages only the worktrees it made, under `<state_dir>/worktrees/`. An
+agent that opens one for itself is doing its job, and swarm does not look. What
+it cannot do is both: giving an agent a worktree *and* letting it create its own
+inside it puts two managers on one tree, which is the one arrangement to avoid —
+swarm will not detect it, because knowing that `--worktree` means something to
+`claude` and something else to another CLI is exactly the knowledge it refuses
+to have.
+
 The [configuration reference](docs/configuration.md#ephemeral-agents) has the
 rest.
 
