@@ -56,6 +56,11 @@ type Hub struct {
 	owedStop chan struct{}
 	owedDone chan struct{}
 	owedOnce sync.Once
+	// lifeStop ends the watcher that collects instances which have outlived
+	// their max_lifetime.
+	lifeStop chan struct{}
+	lifeDone chan struct{}
+	lifeOnce sync.Once
 
 	// paused holds the reason deliveries are suspended, empty when they are not.
 	// A circuit breaker rather than a stop: the agents keep working, and what
@@ -164,6 +169,12 @@ func New(o Options) (*Hub, error) {
 	h.owedStop = make(chan struct{})
 	h.owedDone = make(chan struct{})
 	go h.watchOwed(owedSaveEvery)
+
+	if every := lifetimeTick(cfg); every > 0 {
+		h.lifeStop = make(chan struct{})
+		h.lifeDone = make(chan struct{})
+		go h.watchLifetimes(every)
+	}
 
 	// Last, and not before: the watcher reads the agent list, which the loop
 	// above is still writing.
@@ -625,6 +636,12 @@ func (h *Hub) Shutdown(grace time.Duration) {
 	})
 	// Closing this writes the debts out one last time, on the way past: a
 	// shutdown is the most likely reason anyone will want them back.
+	h.lifeOnce.Do(func() {
+		if h.lifeStop != nil {
+			close(h.lifeStop)
+			<-h.lifeDone
+		}
+	})
 	h.owedOnce.Do(func() {
 		if h.owedStop == nil {
 			return

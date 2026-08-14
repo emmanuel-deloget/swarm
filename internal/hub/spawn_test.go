@@ -1,11 +1,13 @@
 package hub
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/emmanuel-deloget/swarm/internal/bus"
+	"github.com/emmanuel-deloget/swarm/internal/config"
 )
 
 // An ephemeral instance is an ordinary agent whose life is the length of one
@@ -256,5 +258,75 @@ func TestADebtOutlivesAnInstanceNobodySpawned(t *testing.T) {
 	}
 	if _, ok := h.Dead(name); !ok {
 		t.Error("nothing remembers the instance existed, so its debt points at nobody")
+	}
+}
+
+// An instance is collected when it says it has finished, which assumes it says
+// something. One that never does would hold a slot against max_alive for ever.
+func TestAnInstanceThatNeverFinishesIsCollected(t *testing.T) {
+	h := fleet(t, `
+web: {enabled: false}
+defaults: {idle_after: 100ms}
+agents:
+  - name: triage
+    command: [probe-echo]
+    can_spawn: [worker]
+  - name: worker
+    ephemeral: true
+    command: [probe-tick]
+    max_lifetime: 400ms
+`)
+	name, err := h.Spawn("triage", "worker", "something that never ends")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, alive := h.Ephemeral(name); !alive {
+			// And its parent is told what happened, not left to notice.
+			var told string
+			for _, m := range h.bus.History("triage", -1) {
+				if strings.Contains(m.Body, name) {
+					told = m.Body
+				}
+			}
+			if !strings.Contains(told, "max_lifetime") {
+				t.Errorf("the parent was not told why it went:\n%s", told)
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Error("an instance past its max_lifetime is still running")
+}
+
+func TestLifetimeTickIsDerivedFromTheShortest(t *testing.T) {
+	tick := func(limits ...time.Duration) time.Duration {
+		c := &config.Config{}
+		for i, l := range limits {
+			c.Agents = append(c.Agents, config.AgentConfig{
+				Name: fmt.Sprint(i), Ephemeral: true, MaxLifetime: l,
+			})
+		}
+		return lifetimeTick(c)
+	}
+
+	// A quarter of the shortest: a two-minute limit enforced a minute late is
+	// not a limit.
+	if got := tick(2*time.Hour, 2*time.Minute); got != 30*time.Second {
+		t.Errorf("tick is %s, want a quarter of the shortest", got)
+	}
+	// Capped, so a fleet of long-lived instances is not polled all day.
+	if got := tick(8 * time.Hour); got != time.Minute {
+		t.Errorf("tick is %s, want the cap", got)
+	}
+	// And floored, so a limit measured in seconds is still enforced.
+	if got := tick(400 * time.Millisecond); got != 250*time.Millisecond {
+		t.Errorf("tick is %s, want the floor", got)
+	}
+	// Nothing to watch, no watcher.
+	if got := tick(); got != 0 {
+		t.Errorf("a fleet with no lifetimes watches anyway: %s", got)
 	}
 }

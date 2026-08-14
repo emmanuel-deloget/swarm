@@ -443,3 +443,77 @@ func (h *Hub) resolveEphemeral(target string) (names []string, handled bool, err
 	}
 	return nil, false, nil
 }
+
+// lifetimeTick is how often instances are checked against their max_lifetime.
+// Derived from the shortest one so a two-minute limit is not enforced a minute
+// late, and bounded so a fleet of long-lived instances is not polled all day.
+func lifetimeTick(cfg *config.Config) time.Duration {
+	shortest := time.Duration(0)
+	for i := range cfg.Agents {
+		a := &cfg.Agents[i]
+		if !a.Ephemeral || a.MaxLifetime <= 0 {
+			continue
+		}
+		if shortest == 0 || a.MaxLifetime < shortest {
+			shortest = a.MaxLifetime
+		}
+	}
+	if shortest == 0 {
+		return 0 // nothing to watch
+	}
+	return min(max(shortest/4, 250*time.Millisecond), time.Minute)
+}
+
+// watchLifetimes collects instances that have outlived their template's
+// max_lifetime.
+//
+// An instance is collected when it says it has finished, which assumes it
+// eventually says something. One that does not — wedged, waiting on something
+// that will never arrive, or simply unaware it was supposed to report — is a
+// permanent agent nobody declared, holding a slot against max_alive for ever.
+// This is the part that does not depend on its cooperation.
+func (h *Hub) watchLifetimes(every time.Duration) {
+	defer close(h.lifeDone)
+	tick := time.NewTicker(every)
+	defer tick.Stop()
+	for {
+		select {
+		case <-h.lifeStop:
+			return
+		case <-tick.C:
+			h.reapExpired()
+		}
+	}
+}
+
+// reapExpired collects what has run out of time.
+func (h *Hub) reapExpired() {
+	type expired struct {
+		name string
+		age  time.Duration
+		max  time.Duration
+	}
+	var out []expired
+
+	h.spawn.mu.Lock()
+	for name, in := range h.spawn.live {
+		limit := in.Config.MaxLifetime
+		if limit <= 0 {
+			continue
+		}
+		if age := time.Since(in.Born); age >= limit {
+			out = append(out, expired{name, age, limit})
+		}
+	}
+	h.spawn.mu.Unlock()
+
+	// Outside the lock: collecting takes it, and takes the fleet's as well.
+	for _, e := range out {
+		h.log.Emit(event.KindPattern, e.name, fmt.Sprintf(
+			"ran for %s without finishing, past its max_lifetime of %s",
+			e.age.Round(time.Second), e.max))
+		if err := h.Collect(e.name, fmt.Sprintf("max_lifetime of %s reached", e.max)); err != nil {
+			h.log.Emit(event.KindError, e.name, "collecting on lifetime: "+err.Error())
+		}
+	}
+}
