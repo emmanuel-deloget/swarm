@@ -264,6 +264,36 @@ type AgentConfig struct {
 	// choose freely who it wakes.
 	CanSend []string `yaml:"can_send"`
 
+	// Ephemeral makes this entry a template rather than an agent.
+	//
+	// Nothing is started for it: `swarm spawn <name>` makes an instance called
+	// <name>-1, <name>-2, and so on, which runs its task and is collected when
+	// it says it has finished. The template itself never appears in `swarm ls`,
+	// the TUI or the grid, because it is not an agent — it is the shape of one.
+	//
+	// This is what makes a per-task working copy possible without swarm having
+	// a notion of "task": an ephemeral agent is an ordinary agent whose life
+	// happens to be the length of one. See IDEAS/EPHEMERAL.md.
+	Ephemeral bool `yaml:"ephemeral"`
+
+	// MaxAlive bounds how many instances of this template may run at once.
+	// Zero means the default, which is small on purpose: an agent that can
+	// spawn agents can spend an API budget with no ceiling.
+	MaxAlive int `yaml:"max_alive"`
+
+	// MaxLifetime kills an instance that has not finished by then. An agent
+	// that never announces anything is otherwise a permanent agent nobody
+	// declared.
+	MaxLifetime time.Duration `yaml:"max_lifetime"`
+
+	// CanSpawn names the templates this agent may launch. Declared rather than
+	// inferred, for the same reason as CanSend: the ability to create agents is
+	// the ability to spend, and it should be visible in the file.
+	//
+	// Empty for an ephemeral instance unless explicitly given: a template that
+	// could spawn itself is a fleet that grows while nobody is watching.
+	CanSpawn []string `yaml:"can_spawn"`
+
 	// Patterns classify the agent state from what it prints.
 	Patterns []PatternConfig `yaml:"patterns"`
 }
@@ -594,6 +624,14 @@ func (c *Config) normalize() error {
 		}
 	}
 
+	// Before the defaults are filled in and inherited: until that happens, a
+	// nil pointer still means "the file did not say", which is the difference
+	// between someone asking for restart_on_exit: false and nobody mentioning
+	// it. Afterwards the two are indistinguishable.
+	if err := c.normalizeEphemeral(); err != nil {
+		return err
+	}
+
 	d := &c.Defaults
 	if d.Cols == 0 {
 		d.Cols = 200
@@ -835,6 +873,9 @@ func (c *Config) normalize() error {
 		}
 	}
 
+	if err := c.limitTemplates(); err != nil {
+		return err
+	}
 	if err := c.normalizeStalled(); err != nil {
 		return err
 	}
@@ -848,6 +889,96 @@ func (c *Config) normalize() error {
 // groups, because a rule names a target and an unknown target is worth
 // reporting when the file is read rather than when the event arrives — by then
 // nobody is watching.
+// DefaultMaxAlive is how many instances of a template may run at once when the
+// file does not say. Deliberately small: the failure mode of getting this wrong
+// is a fleet that grows on its own overnight, and the failure mode of getting it
+// too low is an error message.
+const DefaultMaxAlive = 3
+
+// normalizeEphemeral fills in the defaults for templates and refuses the shapes
+// that cannot work.
+func (c *Config) normalizeEphemeral() error {
+	templates := map[string]bool{}
+	for _, a := range c.Agents {
+		if a.Ephemeral {
+			templates[a.Name] = true
+		}
+	}
+
+	for i := range c.Agents {
+		a := &c.Agents[i]
+		if a.Ephemeral {
+			if a.MaxAlive < 0 {
+				return fmt.Errorf("agent %q: max_alive cannot be negative", a.Name)
+			}
+			// An instance is created for one task and dies with it. Restarting
+			// one would bring it back with no memory of the work and the same
+			// debt still open, which is a worse state than being dead.
+			//
+			// Pointers, so inheritance leaves them alone: it only fills in what
+			// is still nil. The numbers are forced after inheritance instead,
+			// since a zero there cannot be told from an empty field.
+			a.RestartOnExit = ptr(false)
+			a.Autostart = ptr(false)
+		}
+		if a.MaxLifetime < 0 {
+			return fmt.Errorf("agent %q: max_lifetime cannot be negative", a.Name)
+		}
+		if !a.Ephemeral && (a.MaxAlive != 0 || a.MaxLifetime != 0) {
+			return fmt.Errorf("agent %q: max_alive and max_lifetime only mean "+
+				"something for an ephemeral template", a.Name)
+		}
+
+		for _, t := range a.CanSpawn {
+			if !templates[t] {
+				return fmt.Errorf("agent %q: can_spawn names %q, which is not an "+
+					"ephemeral template in this file", a.Name, t)
+			}
+		}
+		if len(a.CanSpawn) == 0 {
+			continue
+		}
+		if a.Ephemeral {
+			// Allowed, but it has to be written down: a template that spawns
+			// its own kind is a fleet that grows while nobody is watching, and
+			// the only thing between it and the API bill is max_alive.
+			continue
+		}
+		// An agent that launches ephemerals has to be there when they finish.
+		// Their debts are settled by telling their parent, and a parent that
+		// died leaves orphans nobody will answer for.
+		if a.RestartOnExit != nil && !*a.RestartOnExit {
+			return fmt.Errorf("agent %q: can_spawn with restart_on_exit: false — "+
+				"an agent that launches ephemerals has to be there when they "+
+				"finish, or their debts have nobody to go back to. Drop the "+
+				"restart_on_exit line, or drop can_spawn", a.Name)
+		}
+		a.RestartOnExit = ptr(true)
+	}
+	return nil
+}
+
+// limitTemplates applies what a template must have regardless of the defaults
+// it inherited. It runs after inheritance because these are numbers: zero is
+// both a real value and an empty field, so setting them earlier would be undone
+// by the very inheritance that cannot tell the two apart.
+func (c *Config) limitTemplates() error {
+	for i := range c.Agents {
+		a := &c.Agents[i]
+		if !a.Ephemeral {
+			continue
+		}
+		if a.MaxAlive == 0 {
+			a.MaxAlive = DefaultMaxAlive
+		}
+		// Zero means "never stop restarting" everywhere else in this file, and
+		// it is the right value here for the opposite reason: an instance is
+		// never restarted at all, so the count has nothing to count.
+		a.RestartMax = 0
+	}
+	return nil
+}
+
 // normalizeStalled fills in the defaults for on_stalled and refuses the shapes
 // that cannot work.
 func (c *Config) normalizeStalled() error {

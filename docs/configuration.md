@@ -172,6 +172,10 @@ agents:
 | `patterns` | `[]` | Regexps classifying what the agent shows; see below. |
 | `workspace` | `shared` | What swarm does about this agent's working copy — see below. |
 | `on_start` | — | An argv run before the process is launched. A failure stops the agent rather than launching it into a half-prepared directory. |
+| `ephemeral` | `false` | Makes this entry a **template** rather than an agent — see [ephemeral agents](#ephemeral-agents). |
+| `max_alive` | `3` | Instances of this template that may run at once. Templates only. |
+| `max_lifetime` | `0` | Kills an instance that has not finished by then. `0` means no limit. Templates only. |
+| `can_spawn` | `[]` | Templates this agent may launch with `swarm spawn`. |
 | `on_exit` | — | An argv run after the process has gone. A stop waits for it, bounded by the grace period. |
 
 Plus every key from [`defaults`](#defaults), which overrides the inherited value
@@ -283,6 +287,51 @@ as of the last fetch) so you can see it without swarm acting on it.
 state of the process's actual directory rather than the configured one, since an
 agent that manages its own isolation is expected to have moved. Reading a
 process's directory needs `/proc`, so on macOS the configured one is used.
+
+## Ephemeral agents
+
+An entry with `ephemeral: true` is not an agent: it is the shape of one. Nothing
+is started for it, and it never appears in `swarm ls`, the TUI or the grid.
+`swarm spawn` makes instances from it, named after it — `worker-1`, `worker-2` —
+which run one task and are collected when they say they have finished.
+
+```yaml
+agents:
+  - name: triage
+    command: [claude]
+    can_spawn: [worker]        # who may launch them
+
+  - name: worker
+    ephemeral: true            # a template, not an agent
+    command: [claude]
+    role: dev
+    max_alive: 3
+    max_lifetime: 2h
+```
+
+```sh
+swarm spawn worker "take ticket 219"   # prints: worker-1
+swarm spawn worker -f brief.md         # or - for standard input
+```
+
+**Spawning opens a debt.** Launching an instance sends it a `request` carrying
+its task, so everything that already exists applies to it: `swarm why worker-1`
+says what it is on and since when, `on_stalled` asks it where it is if it goes
+quiet, and the debt survives a restart of the hub. `swarm done` is how it says
+it has finished — and its task being its life, that is what collects it.
+
+A template gives its instances a group: `@worker` is whichever of them are
+alive, which is what you write in another agent's `can_send`. Sending to it when
+none exist is an error rather than a silent success.
+
+Launched by an agent, an instance gets `SWARM_PARENT`, and the two are added to
+each other's `can_send`. Launched by you, it has no parent.
+
+**What is refused, and why.** `restart` on an instance: it would come back with
+no memory of the work and the same debt still open. `can_spawn` together with
+`restart_on_exit: false`: an agent that launches ephemerals has to be there when
+they finish, or their debts have nobody to go back to. `max_alive` or
+`max_lifetime` on something that is not a template: they would mean nothing.
 
 ## `patterns`
 
