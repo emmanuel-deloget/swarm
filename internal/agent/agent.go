@@ -234,6 +234,19 @@ func (a *Agent) Start() error {
 	// A clone is provisioned before the process is launched, never after: an
 	// agent started in a half-prepared directory would do real work in the
 	// wrong place. Already-provisioned is the common case and costs a stat.
+	if a.cfg.Workspace == config.WorkspaceWorktree {
+		branch := workspace.BranchName(a.cfg.Name)
+		if err := workspace.AddWorktree(a.cfg.Workdir, a.cloneFrom, branch, a.cfg.WorktreeBase); err != nil {
+			return fmt.Errorf("agent %s: %w", a.cfg.Name, err)
+		}
+		// Locked while the agent is in it, so a cleanup running elsewhere
+		// cannot remove a directory somebody is working in. A courtesy to other
+		// tools rather than something swarm's own collection needs, so a
+		// failure here is not worth refusing to start over.
+		if err := workspace.LockWorktree(a.cfg.Workdir, a.cfg.Name+" is running"); err != nil {
+			a.log.Emit(event.KindError, a.cfg.Name, "could not lock its worktree: "+err.Error())
+		}
+	}
 	if a.cfg.Workspace == config.WorkspaceClone {
 		if err := workspace.Provision(a.cfg.Workdir, a.cloneFrom); err != nil {
 			return fmt.Errorf("agent %s: %w", a.cfg.Name, err)

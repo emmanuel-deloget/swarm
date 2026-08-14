@@ -2,6 +2,9 @@ package hub
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -457,5 +460,118 @@ func TestWhyAnswersForAnInstanceThatIsGone(t *testing.T) {
 	// dev-99" is a bad thing to tell someone who misspelled dev-9.
 	if _, err := h.Why("worker-99"); err == nil {
 		t.Error("a name that never existed was explained rather than refused")
+	}
+}
+
+// worktreeFleet is a fleet in a real repository, since worktrees need one.
+func worktreeFleet(t *testing.T) (*Hub, string) {
+	t.Helper()
+	dir := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-q"},
+		{"config", "user.email", "t@example.com"},
+		{"config", "user.name", "test"},
+		{"config", "commit.gpgsign", "false"},
+	} {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Skipf("no usable git here: %v %s", err, out)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "a.txt"}, {"commit", "-qm", "first"}} {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	return fleetIn(t, dir, `
+web: {enabled: false}
+defaults: {idle_after: 100ms}
+agents:
+  - name: triage
+    command: [probe-echo]
+    can_spawn: [worker]
+  - name: worker
+    ephemeral: true
+    command: [probe-echo]
+    workspace: worktree
+`), dir
+}
+
+func TestAnInstanceGetsItsOwnWorktree(t *testing.T) {
+	h, _ := worktreeFleet(t)
+
+	a, err := h.Spawn("triage", "worker", "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := h.Spawn("triage", "worker", "two")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	one, _ := h.Agent(a)
+	two, _ := h.Agent(b)
+	dirA, dirB := one.Config().Workdir, two.Config().Workdir
+	if dirA == dirB {
+		t.Fatalf("both instances were given the same directory: %s", dirA)
+	}
+	for _, d := range []string{dirA, dirB} {
+		if _, err := os.Stat(filepath.Join(d, "a.txt")); err != nil {
+			t.Errorf("%s is not a checkout: %v", d, err)
+		}
+	}
+}
+
+// The whole point of collecting: the branch cannot be checked out twice, so
+// leaving the directory would stop anyone picking the work up.
+func TestACollectedInstanceGivesItsWorktreeBack(t *testing.T) {
+	h, _ := worktreeFleet(t)
+
+	name, err := h.Spawn("triage", "worker", "task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := h.Agent(name)
+	dir := a.Config().Workdir
+
+	if err := h.Collect(name, "stopped"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); err == nil {
+		t.Error("the worktree of a collected instance is still on disk")
+	}
+}
+
+// And the refusal, which is git's: a worktree holding work nobody has committed
+// is kept, and swarm says where it is.
+func TestAWorktreeWithWorkInItIsKept(t *testing.T) {
+	h, _ := worktreeFleet(t)
+
+	name, err := h.Spawn("triage", "worker", "task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := h.Agent(name)
+	dir := a.Config().Workdir
+	if err := os.WriteFile(filepath.Join(dir, "draft.txt"), []byte("hours of it\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.Collect(name, "stopped"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "draft.txt")); err != nil {
+		t.Fatal("the work was deleted with the instance")
+	}
+	var said bool
+	for _, e := range h.Log().History(-1) {
+		if strings.Contains(e.Text, "worktree is kept") {
+			said = true
+		}
+	}
+	if !said {
+		t.Error("a worktree was kept and nothing in the log says so")
 	}
 }

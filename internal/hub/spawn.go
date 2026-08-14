@@ -12,6 +12,7 @@ import (
 	"github.com/emmanuel-deloget/swarm/internal/bus"
 	"github.com/emmanuel-deloget/swarm/internal/config"
 	"github.com/emmanuel-deloget/swarm/internal/event"
+	"github.com/emmanuel-deloget/swarm/internal/workspace"
 )
 
 // Ephemeral agents.
@@ -115,6 +116,12 @@ func (h *Hub) Spawn(from, template, task string) (string, error) {
 	h.spawn.mu.Unlock()
 
 	ac := instanceConfig(tc, name, from)
+	if ac.Workspace == config.WorkspaceWorktree {
+		// Its own directory, named after the instance. Inherited from the
+		// template it would be the same one for every instance, and two agents
+		// in one worktree is exactly what the mode exists to prevent.
+		ac.Workdir = filepath.Join(h.stateDir, "worktrees", name)
+	}
 	a := h.newAgent(ac)
 
 	h.mu.Lock()
@@ -275,9 +282,56 @@ func (h *Hub) Collect(name, why string) error {
 	}
 	h.settleOnDeath(in, debts, why)
 
+	h.collectWorktree(in)
 	h.drop(name, why)
 	h.log.Emit(event.KindInfo, name, "collected: "+why)
 	return nil
+}
+
+// collectWorktree takes back the working copy of an instance that is gone.
+//
+// Only what swarm made, and only for an instance: a declared agent keeps its
+// workspace between runs, and a worktree an agent made for itself is none of
+// swarm's business.
+//
+// Nothing here decides whether there is work to lose. `git worktree remove`
+// refuses a directory holding modified or untracked files, and swarm never
+// passes --force, so a refusal means somebody's work is in there — which is
+// reported and left exactly where it is. The branch outlives the directory
+// either way, and is only deleted when the remote already has every commit on
+// it.
+func (h *Hub) collectWorktree(in *instance) {
+	if in.Config.Workspace != config.WorkspaceWorktree {
+		return
+	}
+	dir := in.Config.Workdir
+	repo, err := workspace.RepoRoot(dir)
+	if err != nil {
+		// Already gone, or never made: nothing to collect and nothing wrong.
+		return
+	}
+	branch := workspace.BranchName(in.Config.Name)
+
+	if err := workspace.RemoveWorktree(dir); err != nil {
+		h.log.Emit(event.KindPattern, in.Config.Name, fmt.Sprintf(
+			"its worktree is kept: %v — the branch %s still has it, and "+
+				"`git worktree remove --force %s` is the only way to drop it",
+			err, branch, dir))
+		return
+	}
+
+	deleted, err := workspace.DeleteBranch(repo, branch)
+	switch {
+	case err != nil:
+		h.log.Emit(event.KindError, in.Config.Name, "removing "+branch+": "+err.Error())
+	case deleted:
+		h.log.Emit(event.KindInfo, in.Config.Name, fmt.Sprintf(
+			"worktree collected, and %s deleted: the remote has all of it", branch))
+	default:
+		h.log.Emit(event.KindInfo, in.Config.Name, fmt.Sprintf(
+			"worktree collected; %s is kept, since the remote does not have "+
+				"every commit on it", branch))
+	}
 }
 
 // settleOnDeath decides what happens to what an instance still owed.

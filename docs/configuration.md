@@ -175,6 +175,7 @@ agents:
 | `ephemeral` | `false` | Makes this entry a **template** rather than an agent — see [ephemeral agents](#ephemeral-agents). |
 | `max_alive` | `3` | Instances of this template that may run at once. Templates only. |
 | `max_lifetime` | `0` | Kills an instance that has not finished by then. `0` means no limit. Templates only. |
+| `worktree_base` | *(the remote's default branch)* | What a `worktree` workspace branches from. `head` uses the repository's current commit instead. |
 | `can_spawn` | `[]` | Templates this agent may launch with `swarm spawn`. |
 | `on_exit` | — | An argv run after the process has gone. A stop waits for it, bounded by the grace period. |
 

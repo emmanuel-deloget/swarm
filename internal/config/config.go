@@ -210,6 +210,16 @@ type AgentConfig struct {
 	// {from}, {to}, {body}, {id}.
 	MessageTemplate string `yaml:"message_template"`
 
+	// WorktreeBase is what a `worktree` workspace branches from: "head" for the
+	// repository's current commit, anything else for the remote's default
+	// branch.
+	//
+	// The default is the remote's, so an instance starts from what is actually
+	// shared rather than from whatever happened to be checked out when it was
+	// spawned. "head" is for an instance meant to build on work in progress —
+	// reviewing or extending a branch that is not pushed yet.
+	WorktreeBase string `yaml:"worktree_base"`
+
 	// Workspace says what swarm does about this agent's working copy.
 	//
 	//	shared  nothing: the agent runs in Workdir, like everyone else
@@ -773,9 +783,14 @@ func (c *Config) normalize() error {
 		// with nowhere named goes under the state directory; one with a workdir
 		// is provisioned in place, which is what an existing fleet of
 		// hand-made clones already looks like.
-		if a.Workspace == WorkspaceClone && a.Workdir == "" {
+		switch {
+		// Under the state directory, each in a directory of its own: what
+		// swarm made is what swarm may collect, and nothing outside it ever is.
+		case a.Workspace == WorkspaceWorktree && a.Workdir == "":
+			a.Workdir = filepath.Join(c.StateDir, "worktrees", a.Name)
+		case a.Workspace == WorkspaceClone && a.Workdir == "":
 			a.Workdir = filepath.Join(c.StateDir, "workspaces", a.Name)
-		} else {
+		default:
 			a.Workdir = resolve(base, orString(a.Workdir, c.Workdir))
 		}
 		if a.Cols == 0 {
@@ -940,6 +955,15 @@ func (c *Config) normalizeEphemeral() error {
 		}
 		if a.MaxLifetime < 0 {
 			return fmt.Errorf("agent %q: max_lifetime cannot be negative", a.Name)
+		}
+		// A template's instances each need their own directory, and the hub
+		// names them after the instance. A workdir written on the template
+		// would be one directory for all of them, which is the thing the mode
+		// exists to prevent.
+		if a.Ephemeral && a.Workspace == WorkspaceWorktree && a.Workdir != "" {
+			return fmt.Errorf("agent %q: an ephemeral template with workspace: worktree "+
+				"cannot name a workdir — every instance needs its own, and swarm "+
+				"puts them under the state directory", a.Name)
 		}
 		if !a.Ephemeral && (a.MaxAlive != 0 || a.MaxLifetime != 0) {
 			return fmt.Errorf("agent %q: max_alive and max_lifetime only mean "+
