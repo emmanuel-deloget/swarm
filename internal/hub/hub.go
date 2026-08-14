@@ -74,6 +74,11 @@ type Hub struct {
 	agents map[string]*agent.Agent
 	order  []string
 
+	// spawn holds the ephemeral instances, which are agents of this fleet
+	// without being in the file that describes it. See spawn.go for why they
+	// are not simply appended to the configuration.
+	spawn *spawner
+
 	webURL string
 	token  string
 }
@@ -109,6 +114,11 @@ func New(o Options) (*Hub, error) {
 		agents:   make(map[string]*agent.Agent, len(cfg.Agents)),
 	}
 
+	h.spawn = &spawner{
+		live: map[string]*instance{},
+		next: map[string]int{},
+	}
+
 	shimDir, err := h.installShim()
 	if err != nil {
 		// Not fatal: without the shim agents can still be driven from the
@@ -116,8 +126,15 @@ func New(o Options) (*Hub, error) {
 		h.log.Emit(event.KindError, "", "could not install the swarm shim: "+err.Error())
 	}
 
+	h.spawn.shim = shimDir
+
 	for i := range cfg.Agents {
 		ac := &cfg.Agents[i]
+		if ac.Ephemeral {
+			// A template is the shape of an agent, not one: nothing is started
+			// for it, and it is not in the fleet.
+			continue
+		}
 		opts := agent.Options{
 			Config:    ac,
 			CloneFrom: cfg.Workdir,
@@ -327,6 +344,22 @@ func (h *Hub) Agents() []*agent.Agent {
 
 // Resolve expands a target expression ("dev-1", "@review", "all") into agents.
 func (h *Hub) Resolve(target string) ([]*agent.Agent, error) {
+	// Instances are agents of this fleet without being in the file that
+	// describes it, so the configuration cannot resolve them on its own.
+	if names, handled, err := h.resolveEphemeral(target); handled {
+		if err != nil {
+			return nil, err
+		}
+		out := make([]*agent.Agent, 0, len(names))
+		for _, n := range names {
+			a, err := h.Agent(n)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, a)
+		}
+		return out, nil
+	}
 	names, err := h.cfg.Resolve(target)
 	if err != nil {
 		return nil, err
@@ -669,7 +702,17 @@ func (h *Hub) Restart(target string, grace time.Duration) ([]TargetResult, error
 	if err != nil {
 		return nil, err
 	}
-	return results(agents, func(a *agent.Agent) (string, error) { return "restarted", a.Restart(grace) }), nil
+	return results(agents, func(a *agent.Agent) (string, error) {
+		// An instance restarted would come back with no memory of the work and
+		// the same debt still open — a worse state than being dead, and one
+		// nothing would ever get it out of. Spawn another instead.
+		if template, ok := h.Ephemeral(a.Name()); ok {
+			return "", fmt.Errorf("%s is an ephemeral instance and cannot be restarted: "+
+				"it would return knowing nothing of the task it still owes. "+
+				"`swarm spawn %s \"…\"` makes a new one", a.Name(), template)
+		}
+		return "restarted", a.Restart(grace)
+	}), nil
 }
 
 // Inject types text into every agent matching target.
@@ -769,6 +812,16 @@ func (h *Hub) Done(from string, thread uint64, note string) (settled int, out []
 		}
 	}
 	h.notify(from, OutDone, body, data)
+
+	// An ephemeral instance saying it has finished is an ephemeral instance
+	// saying it is done existing: it was made for this one task. Collected
+	// after the reporting above, so whoever asked hears about the work before
+	// hearing that the agent is gone.
+	if _, ok := h.Ephemeral(from); ok {
+		if err := h.Collect(from, "finished"); err != nil {
+			h.log.Emit(event.KindError, from, "could not collect: "+err.Error())
+		}
+	}
 	return len(closed), out, nil
 }
 
