@@ -121,6 +121,24 @@ func waitScreen(t *testing.T, term *vterm.Terminal, what string, wants ...string
 	t.Fatalf("timeout waiting for %s (%v); screen was:\n%s", what, wants, term.Text())
 }
 
+// waitGone waits for something to leave the screen.
+//
+// The other half of waitScreen, and the one that was missing: a key that
+// changes a view back can only be waited on by what stops being there. Waiting
+// on what is still there passes immediately and lets the next key go out into a
+// screen mid-change.
+func waitGone(t *testing.T, term *vterm.Terminal, what string, unwanted string) {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		if !strings.Contains(term.Text(), unwanted) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("timeout waiting for %s (%q still there); screen was:\n%s", what, unwanted, term.Text())
+}
+
 func TestTUIRendersFleetAndAcceptsCommands(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds the swarm binary and runs a full UI")
@@ -165,10 +183,15 @@ func TestTUIRendersFleetAndAcceptsCommands(t *testing.T) {
 	typeText(t, term, "k")
 	waitScreen(t, term, "the bus message in alpha", "hello alpha")
 
-	// The mosaic shows both agents at once.
+	// The mosaic shows both agents at once — which is what has to be waited
+	// for, and was not: "alpha" and "beta" are in the sidebar the whole time,
+	// so the old wait returned before the key had done anything and the next
+	// two keys went out on top of a screen still changing under them. What
+	// only the mosaic shows is the two agents' terminals together.
 	typeText(t, term, "m")
-	waitScreen(t, term, "the mosaic", "alpha", "beta")
+	waitScreen(t, term, "the mosaic", "hello alpha", "beta saw:typed from the tui")
 	typeText(t, term, "m")
+	waitGone(t, term, "the mosaic to close", "beta saw:typed from the tui")
 
 	// Help is reachable and mentions the keys.
 	typeText(t, term, "?")
