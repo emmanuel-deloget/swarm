@@ -13,6 +13,7 @@ import (
 	"github.com/emmanuel-deloget/swarm/internal/bus"
 	"github.com/emmanuel-deloget/swarm/internal/hook"
 	"github.com/emmanuel-deloget/swarm/internal/vterm"
+	"github.com/emmanuel-deloget/swarm/internal/workspace"
 	"gopkg.in/yaml.v3"
 )
 
@@ -551,6 +552,14 @@ const (
 	WorkspaceShared = "shared"
 	WorkspaceClone  = "clone"
 	WorkspaceNone   = "none"
+	// WorkspaceWorktree gives the agent a git worktree of the repository:
+	// its own directory and branch, sharing the one object store.
+	//
+	// Unlike a clone it costs no history and no fetch, and unlike `shared` two
+	// agents cannot edit the same file. What makes it usable at all is that
+	// swarm now has an agent whose life is the length of a task: a worktree
+	// belonging to an agent that never ends is a branch nobody ever merges.
+	WorkspaceWorktree = "worktree"
 )
 
 // DefaultMessageTemplate is what a pushed bus message looks like in a terminal.
@@ -748,9 +757,17 @@ func (c *Config) normalize() error {
 		}
 		switch a.Workspace {
 		case WorkspaceShared, WorkspaceClone, WorkspaceNone:
+		case WorkspaceWorktree:
+			// Checked here rather than when the agent starts: a fleet that
+			// half-launches and then reports that four agents cannot have a
+			// working copy is a worse way to learn it.
+			if !workspace.InRepo(orString(a.Workdir, c.Workdir)) {
+				return fmt.Errorf("agent %q: workspace: worktree needs a git repository, "+
+					"and %s is not in one", a.Name, orString(a.Workdir, c.Workdir))
+			}
 		default:
-			return fmt.Errorf("agent %q: workspace must be %q, %q or %q",
-				a.Name, WorkspaceShared, WorkspaceClone, WorkspaceNone)
+			return fmt.Errorf("agent %q: workspace must be %q, %q, %q or %q",
+				a.Name, WorkspaceShared, WorkspaceClone, WorkspaceNone, WorkspaceWorktree)
 		}
 		// Where, and what swarm does there, are separate questions. A clone
 		// with nowhere named goes under the state directory; one with a workdir

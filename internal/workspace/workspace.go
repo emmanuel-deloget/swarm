@@ -105,6 +105,16 @@ func isRepo(dir string) bool {
 	return err == nil
 }
 
+// InRepo reports whether dir is inside a git repository.
+//
+// Exported for the configuration, which refuses `workspace: worktree` where
+// there is no repository to make one in — at load, so the answer arrives before
+// a fleet is half-started rather than as an agent failing to launch.
+func InRepo(dir string) bool {
+	_, err := repoRoot(dir)
+	return err == nil
+}
+
 // repoRoot finds the repository holding dir.
 func repoRoot(dir string) (string, error) {
 	out, err := git(dir, "rev-parse", "--show-toplevel")

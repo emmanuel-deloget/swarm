@@ -1,6 +1,9 @@
 package config
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -133,5 +136,69 @@ agents:
 	}
 	if w.MaxAlive != 5 {
 		t.Errorf("max_alive came out as %d", w.MaxAlive)
+	}
+}
+
+// `workspace: worktree` needs a repository to make one in. Refused at load
+// rather than when the agent starts: a fleet that half-launches and then says
+// four agents have no working copy is a worse way to find out.
+func TestWorktreeNeedsARepository(t *testing.T) {
+	// t.TempDir is not a repository.
+	_, err := loadYAML(t, `
+web: {enabled: false}
+agents:
+  - name: worker
+    ephemeral: true
+    command: [cat]
+    workspace: worktree
+`)
+	if err == nil {
+		t.Fatal("workspace: worktree was accepted outside a git repository")
+	}
+	if !strings.Contains(err.Error(), "git repository") {
+		t.Errorf("the refusal does not say what is missing: %v", err)
+	}
+}
+
+func TestWorktreeIsAcceptedInARepository(t *testing.T) {
+	dir := t.TempDir()
+	if out, err := exec.Command("git", "-C", dir, "init", "-q").CombinedOutput(); err != nil {
+		t.Skipf("no usable git here: %v %s", err, out)
+	}
+	path := filepath.Join(dir, "swarm.yaml")
+	body := `
+web: {enabled: false}
+agents:
+  - name: worker
+    ephemeral: true
+    command: [cat]
+    workspace: worktree
+`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(path)
+	if err != nil {
+		t.Fatalf("workspace: worktree refused inside a repository: %v", err)
+	}
+	w, _ := c.Agent("worker")
+	if w.Workspace != WorkspaceWorktree {
+		t.Errorf("workspace came out as %q", w.Workspace)
+	}
+}
+
+func TestAnInventedWorkspaceNamesTheRealOnes(t *testing.T) {
+	_, err := loadYAML(t, `
+web: {enabled: false}
+agents:
+  - name: dev-1
+    command: [cat]
+    workspace: sandbox
+`)
+	if err == nil {
+		t.Fatal("an invented workspace mode was accepted")
+	}
+	if !strings.Contains(err.Error(), "worktree") {
+		t.Errorf("the error does not name the modes that exist: %v", err)
 	}
 }

@@ -78,7 +78,7 @@ Every key here is also an agent key. An agent that leaves one empty inherits it.
 | `message` | — | Sent to the agent once it is up. Multi-line, as a block scalar. |
 | `message_file` | — | Same, read from a file. One or the other, not both. |
 | `message_template` | `[swarm] message from {from}: {body}` | How a pushed bus message is rendered before injection. Placeholders: `{id}` `{thread}` `{from}` `{to}` `{body}` `{files}` `{time}`. |
-| `workspace` | `shared` | What swarm does about an agent's working copy — `shared`, `clone` or `none`, described under [`agents`](#agents). Inheritable, which is how a whole fleet is given its own clones in one line. |
+| `workspace` | `shared` | What swarm does about an agent's working copy — `shared`, `clone`, `worktree` or `none`, described under [`agents`](#agents). Inheritable, which is how a whole fleet is given its own clones in one line. |
 | `on_start` | — | Command run before the agent starts, as an argv. See [`agents`](#agents). |
 | `on_exit` | — | Command run after it exits, as an argv. See [`agents`](#agents). |
 
@@ -170,7 +170,7 @@ agents:
 | `workdir` | the top-level `workdir` | Where this agent's process runs. |
 | `env` | — | Added to (and overriding) the top-level `env`. |
 | `patterns` | `[]` | Regexps classifying what the agent shows; see below. |
-| `workspace` | `shared` | What swarm does about this agent's working copy — see below. |
+| `workspace` | `shared` | What swarm does about this agent's working copy: `shared`, `clone`, `worktree` or `none` — see below. |
 | `on_start` | — | An argv run before the process is launched. A failure stops the agent rather than launching it into a half-prepared directory. |
 | `ephemeral` | `false` | Makes this entry a **template** rather than an agent — see [ephemeral agents](#ephemeral-agents). |
 | `max_alive` | `3` | Instances of this template that may run at once. Templates only. |
@@ -256,6 +256,7 @@ script delays a shutdown rather than preventing one.
 |---|---|---|
 | `shared` | nothing | the common one |
 | `clone` | provisions a durable clone, once | `<state_dir>/workspaces/<name>` unless you name one |
+| `worktree` | provisions a git worktree, and collects it when an ephemeral instance ends | `<state_dir>/worktrees/<name>` |
 | `none` | nothing, and presumes nothing | yours; the agent is free to move |
 
 Following an agent that moves needs asking the operating system where a process
