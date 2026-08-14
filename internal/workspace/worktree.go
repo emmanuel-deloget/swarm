@@ -118,7 +118,11 @@ func RemoveWorktree(dir string) error {
 	_ = UnlockWorktree(dir)
 
 	if out, err := git(repo, "worktree", "remove", dir); err != nil {
-		return fmt.Errorf("%s still holds work that removing it would delete: %w%s", dir, err, out)
+		// git's own sentence, not the exit status: this is read by somebody
+		// looking for their work, and "exit status 128" is noise in front of
+		// the one line that says what is in the way.
+		return fmt.Errorf("%s still holds work that removing it would delete: %s",
+			dir, gitSays(out, err))
 	}
 	return nil
 }
@@ -177,4 +181,14 @@ func Worktrees(repo string) ([]string, error) {
 		dirs = append(dirs, path)
 	}
 	return dirs, nil
+}
+
+// gitSays is what git printed, or the error when it printed nothing.
+func gitSays(out string, err error) string {
+	msg := strings.TrimSpace(out)
+	msg = strings.TrimPrefix(msg, "fatal: ")
+	if msg == "" {
+		return err.Error()
+	}
+	return msg
 }

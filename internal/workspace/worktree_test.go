@@ -282,3 +282,27 @@ func TestALockedWorktreeIsProtectedUntilUnlocked(t *testing.T) {
 		t.Errorf("swarm could not remove its own locked worktree: %v", err)
 	}
 }
+
+// The refusal is read by somebody looking for their work, so it says what is in
+// the way rather than what git's exit status was.
+func TestTheRefusalReadsLikeASentence(t *testing.T) {
+	src := repo(t)
+	dir := filepath.Join(t.TempDir(), "worker-1")
+	if err := AddWorktree(dir, src, BranchName("worker-1"), ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "draft.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := RemoveWorktree(dir)
+	if err == nil {
+		t.Fatal("the worktree was removed")
+	}
+	if strings.Contains(err.Error(), "exit status") {
+		t.Errorf("the message leads with git's exit status: %v", err)
+	}
+	if !strings.Contains(err.Error(), "untracked") {
+		t.Errorf("the message does not say what is in the way: %v", err)
+	}
+}
