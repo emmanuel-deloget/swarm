@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Git worktrees, for agents that exist for one task.
@@ -117,14 +118,36 @@ func RemoveWorktree(dir string) error {
 	// removed, and one that was never locked simply refuses here.
 	_ = UnlockWorktree(dir)
 
-	if out, err := git(repo, "worktree", "remove", dir); err != nil {
-		// git's own sentence, not the exit status: this is read by somebody
-		// looking for their work, and "exit status 128" is noise in front of
-		// the one line that says what is in the way.
-		return fmt.Errorf("%s still holds work that removing it would delete: %s",
-			dir, gitSays(out, err))
+	// Retried, but only for the failures that are about the file system.
+	//
+	// On Windows a directory that was written moments ago often cannot be
+	// deleted yet — a handle held by the indexer or the virus scanner — and git
+	// reports "Permission denied". It goes away on its own. What must never be
+	// retried is the refusal this function exists to respect: a worktree
+	// holding modified or untracked files is a decision, not a hiccup, and
+	// asking again would only get the same answer more slowly.
+	var last string
+	for attempt := range 3 {
+		out, err := git(repo, "worktree", "remove", dir)
+		if err == nil {
+			return nil
+		}
+		last = gitSays(out, err)
+		if holdsWork(out) {
+			break
+		}
+		time.Sleep(time.Duration(attempt+1) * 200 * time.Millisecond)
 	}
-	return nil
+	// git's own sentence, not the exit status: this is read by somebody looking
+	// for their work, and "exit status 128" is noise in front of the one line
+	// that says what is in the way.
+	return fmt.Errorf("%s still holds work that removing it would delete: %s", dir, last)
+}
+
+// holdsWork reports whether git refused because the worktree contains work,
+// which is an answer rather than a failure to retry.
+func holdsWork(out string) bool {
+	return strings.Contains(out, "modified or untracked files")
 }
 
 // DeleteBranch removes a branch, and only if the remote already has every

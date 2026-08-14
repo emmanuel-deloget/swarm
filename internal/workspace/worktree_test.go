@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // repo makes a repository with one commit and returns its path.
@@ -304,5 +305,28 @@ func TestTheRefusalReadsLikeASentence(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "untracked") {
 		t.Errorf("the message does not say what is in the way: %v", err)
+	}
+}
+
+// The retry is for the file system, never for the refusal. A worktree holding
+// work is an answer, and asking three times would only get it more slowly.
+func TestARefusalIsNotRetried(t *testing.T) {
+	src := repo(t)
+	dir := filepath.Join(t.TempDir(), "worker-1")
+	if err := AddWorktree(dir, src, BranchName("worker-1"), ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "draft.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	if err := RemoveWorktree(dir); err == nil {
+		t.Fatal("the worktree was removed")
+	}
+	// Two retries would add at least 600ms of sleeping to an answer git gave
+	// straight away.
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Errorf("the refusal took %s, so it was retried", elapsed.Round(time.Millisecond))
 	}
 }
