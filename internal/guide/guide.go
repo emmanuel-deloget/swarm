@@ -50,6 +50,11 @@ type Data struct {
 	Hooks bool
 	From  string
 
+	// Spawnable are the ephemeral templates this agent may launch. Empty when
+	// it may not, which is most agents — and the section is left out entirely
+	// then, because an agent told about a command it cannot run will try it.
+	Spawnable []string
+
 	// MaxTurns is the budget per conversation, zero when unbounded.
 	MaxTurns int
 	// EscalateTo arbitrates, empty when nobody does.
@@ -90,6 +95,18 @@ func Collect(c *config.Config) Data {
 			d.Workspaces = true
 		}
 	}
+	// The guide is one file for the whole fleet, so this is every template
+	// anyone may spawn. An agent that may not simply never gets asked to.
+	seen := map[string]bool{}
+	for i := range c.Agents {
+		for _, t := range c.Agents[i].CanSpawn {
+			if !seen[t] {
+				seen[t] = true
+				d.Spawnable = append(d.Spawnable, t)
+			}
+		}
+	}
+	sort.Strings(d.Spawnable)
 	for name := range c.Groups {
 		d.Groups = append(d.Groups, name)
 	}
@@ -194,6 +211,26 @@ the last thing it prints is the command that ends it.
 Some agents are configured to receive messages only once they fall quiet, so a
 message you send may sit for a while. That is the fleet working as intended,
 not a failure: do not send it again.
+{{end}}{{if .Spawnable}}
+## Agents for one task
+
+Some work is better done by an agent of its own: a long refactor, a review, a
+ticket that will take a while. You can start one, if you are allowed:
+
+` + "```sh" + `
+swarm spawn <template> "what it should do"    # prints its name
+swarm spawn <template> -f brief.md            # or - for standard input
+` + "```" + `
+
+Templates: {{range $i, $t := .Spawnable}}{{if $i}}, {{end}}` + "`{{$t}}`" + `{{end}}.
+
+The new agent is created owing that task, so ` + "`swarm why <name>`" + ` says what it is
+on, and it disappears when it runs ` + "`swarm done`" + ` — its task is its life. You will
+be told when it goes, and what it had been asked, so you need not remember.
+
+Give it everything it needs in the task: it starts with no memory of this
+conversation. Ask for one agent per piece of work rather than one for
+everything, and do not spawn one for something you can do here.
 {{end}}{{if .MaxTurns}}
 ## Conversations end
 

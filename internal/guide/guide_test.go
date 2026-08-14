@@ -162,3 +162,47 @@ agents:
 		}
 	}
 }
+
+// TestSpawningIsOnlyExplainedWhenSomeoneMay.
+//
+// The guide is what an agent reads to learn what it can run, and a section
+// about a command nobody may use is worse than a missing one: an agent told
+// about `swarm spawn` will try it, be refused, and have spent a turn learning
+// what the file already knew.
+func TestSpawningIsOnlyExplainedWhenSomeoneMay(t *testing.T) {
+	without := render(t, `
+web: {enabled: false}
+agents:
+  - name: alpha
+    command: [cat]
+  - name: beta
+    command: [cat]
+`)
+	if strings.Contains(without, "swarm spawn") {
+		t.Error("a fleet where nobody may spawn is told how to spawn")
+	}
+
+	with := render(t, `
+web: {enabled: false}
+agents:
+  - name: alpha
+    command: [cat]
+    can_spawn: [worker]
+  - name: worker
+    ephemeral: true
+    command: [cat]
+`)
+	if !strings.Contains(with, "swarm spawn") {
+		t.Error("a fleet with a template is not told how to use it")
+	}
+	if !strings.Contains(with, "`worker`") {
+		t.Error("the guide does not name the template that can be spawned")
+	}
+	// The two things an agent has to know beyond the syntax: the instance
+	// starts with none of this context, and its task is what ends it.
+	for _, want := range []string{"no memory of this", "swarm done"} {
+		if !strings.Contains(with, want) {
+			t.Errorf("the guide never says %q", want)
+		}
+	}
+}
