@@ -43,6 +43,7 @@ talking
   hook test <payload.json>  show what an incoming webhook would send
   hook post <payload.json>  send a payload to the running listener
 
+  spawn <template> <task>   make an agent for one task; -f reads it from a file
   why [agent]               why an agent is stalled, and how it gets out
   info                      session, socket, web URL and token
   config check [-fix]       report (and fix) a config that has gone stale
@@ -118,6 +119,8 @@ func main() {
 		err = cmdBus(args)
 	case "config":
 		err = cmdConfig(args)
+	case "spawn":
+		err = cmdSpawn(args)
 	case "why":
 		err = cmdWhy(args)
 	case "licenses", "licences":

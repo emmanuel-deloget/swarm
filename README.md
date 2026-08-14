@@ -292,6 +292,7 @@ swarm events -f                     # live event log
 swarm start dev-3                   # start / stop / restart one or a group
 swarm stop dev-3
 swarm restart dev-3
+swarm spawn worker "take rq-219"    # an agent for one task, collected when it is done
 swarm why dev-22                    # why it is stalled, and how it gets out
 swarm info                          # session, socket, web URL and token
 swarm shutdown
@@ -411,6 +412,50 @@ cursor, scrolling region, and every mode the agent may have switched on —
 it never turns those off itself, and a terminal left reporting mouse events
 stops selecting text on its own. `M` in the TUI cannot help there: swarm did not
 turn it on, so it has nothing to turn off.
+
+### Agents for one task
+
+An entry with `ephemeral: true` is not an agent but the shape of one. Nothing is
+started for it; `swarm spawn` makes instances from it that run one task and are
+collected when they say they have finished.
+
+```yaml
+agents:
+  - name: triage
+    command: [claude]
+    can_spawn: [worker]      # who may launch them
+
+  - name: worker
+    ephemeral: true
+    command: [claude]
+    max_alive: 3
+```
+
+```sh
+swarm spawn worker "take ticket 219"      # prints: worker-1
+swarm spawn worker -f brief.md            # or - for standard input
+```
+
+**Spawning opens a debt**, and that is the whole design. The task arrives as a
+bus `request`, so everything already built for debts applies to it: `swarm why
+worker-1` says what it is on and since when, `on_stalled` asks it where it is
+when it goes quiet, the debt survives a restart of the hub, and `swarm done` —
+the agent saying the work is finished — is what collects it. Its task is its
+life.
+
+A template's name is a group of whatever is alive, `@worker`, which is what you
+write into another agent's `can_send`. Launched by an agent, an instance gets
+`SWARM_PARENT` and the two can reach each other; when it dies, its parent is
+told in a message that stands on its own, since a parent that restarted may
+never have known it existed.
+
+Refused, each because it fails later and less clearly: restarting an instance,
+which would return knowing nothing of the task it still owes; spawning without
+a task, which would make an agent nothing could ever collect; spawning past
+`max_alive`; and spawning at all without `can_spawn`.
+
+The [configuration reference](docs/configuration.md#ephemeral-agents) has the
+rest.
 
 ## Where an agent works
 

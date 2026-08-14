@@ -35,6 +35,7 @@ const (
 	CmdThreads  = "bus-threads"
 	CmdDone     = "done"
 	CmdWhy      = "why"
+	CmdSpawn    = "spawn"
 	CmdAttach   = "attach"
 	CmdShutdown = "shutdown"
 )

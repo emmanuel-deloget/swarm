@@ -301,6 +301,15 @@ func (s *Server) handle(req Request) Response {
 				Text: fmt.Sprintf("settled %d, told %d", settled, len(msgs))}
 		}
 
+	case CmdSpawn:
+		// Target is the template, Text the task, From whoever asked — an agent
+		// through the shim, or empty for a person.
+		name, err := h.Spawn(req.From, req.Target, req.Text)
+		if err != nil {
+			return errorResponse(err)
+		}
+		return Response{OK: true, Text: name}
+
 	case CmdWhy:
 		// Target rather than From: the usual caller is an agent asking about
 		// itself, but a person asking about an agent is the same question.
