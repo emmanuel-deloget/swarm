@@ -28,7 +28,7 @@ against your working directory. `~/` and `$VAR` are expanded.
 |---|---|---|
 | `session` | `default` | Names this swarm. It picks the control socket, so two swarms with different session names run side by side. No slashes or spaces. |
 | `workdir` | the config's directory | Working directory for every agent that does not override it. |
-| `state_dir` | `.swarm` | Everything swarm writes: the control socket, the logs, the CLI shim, the staged files, the TUI's command history, and `owed.json` — what each agent has been asked and has not settled, kept across restarts so `swarm why` can still answer afterwards. `swarm init` offers to add it to `.gitignore`. |
+| `state_dir` | `.swarm` | Everything swarm writes: the control socket, the logs, the CLI shim, the staged files, the TUI's command history, and `owed.json` — what each agent has been asked and has not settled, kept across restarts so `swarm why` can still answer afterwards, and `ephemeral.json` — the instance name counters, and what became of the ephemeral agents that are gone. `swarm init` offers to add it to `.gitignore`. |
 | `shared` | `<state_dir>/shared` | Where injected files are staged so every agent can reach them by path. Agents get it as `$SWARM_SHARED`. |
 | `env` | `{}` | Added to the environment of every agent. Per-agent `env` wins. |
 | `detach_key` | `ctrl+\`, `ctrl+g` on Windows | Leaves an attached agent, in the TUI and in `swarm attach`. Any name `swarm keys -list` marks as bindable: `ctrl+g`, `ctrl+]`, `f12`, `esc esc`, `ctrl+left`. Configurable because the default is what tmux, screen and asciinema like to grab. |
