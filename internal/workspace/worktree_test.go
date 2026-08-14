@@ -93,3 +93,192 @@ func TestBaseRefPrefersTheRemoteAndFallsBack(t *testing.T) {
 		t.Errorf("head resolved to %q", got)
 	}
 }
+
+// The safety property is git's refusal, not ours. These check that swarm never
+// asks it to make an exception.
+func TestRemovingRefusesToTakeWorkWithIt(t *testing.T) {
+	src := repo(t)
+	dir := filepath.Join(t.TempDir(), "worker-1")
+	if err := AddWorktree(dir, src, BranchName("worker-1"), ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// An untracked file: work that exists nowhere else.
+	if err := os.WriteFile(filepath.Join(dir, "draft.txt"), []byte("hours of it\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveWorktree(dir); err == nil {
+		t.Fatal("a worktree with untracked work in it was removed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "draft.txt")); err != nil {
+		t.Error("the work was deleted anyway")
+	}
+
+	// A modified tracked file is the same answer.
+	if err := os.Remove(filepath.Join(dir, "draft.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveWorktree(dir); err == nil {
+		t.Error("a worktree with uncommitted changes was removed")
+	}
+}
+
+func TestRemovingACleanWorktreeKeepsItsCommits(t *testing.T) {
+	src := repo(t)
+	dir := filepath.Join(t.TempDir(), "worker-1")
+	branch := BranchName("worker-1")
+	if err := AddWorktree(dir, src, branch, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// Committed but never pushed: the case that matters most.
+	if err := os.WriteFile(filepath.Join(dir, "done.txt"), []byte("the work\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "done.txt"}, {"commit", "-qm", "the work"}} {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+
+	if err := RemoveWorktree(dir); err != nil {
+		t.Fatalf("a clean worktree was not removed: %v", err)
+	}
+	if _, err := os.Stat(dir); err == nil {
+		t.Error("the directory is still there")
+	}
+	// The commit survives, on its branch: removing a worktree is not losing
+	// work, which is what makes collecting one acceptable at all.
+	out, err := exec.Command("git", "-C", src, "log", "--oneline", branch).Output()
+	if err != nil {
+		t.Fatalf("the branch is gone with the worktree: %v", err)
+	}
+	if !strings.Contains(string(out), "the work") {
+		t.Errorf("the commit did not survive:\n%s", out)
+	}
+}
+
+// Deleting a branch is the one operation that can lose commits, so it only
+// happens when the remote already has every one of them.
+func TestABranchThatWasNeverPushedIsKept(t *testing.T) {
+	src := repo(t)
+	branch := BranchName("worker-1")
+	dir := filepath.Join(t.TempDir(), "worker-1")
+	if err := AddWorktree(dir, src, branch, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveWorktree(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := DeleteBranch(src, branch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted {
+		t.Error("a branch the remote has never seen was deleted")
+	}
+	out, _ := exec.Command("git", "-C", src, "branch", "--list", branch).Output()
+	if !strings.Contains(string(out), branch) {
+		t.Error("the branch is gone")
+	}
+}
+
+func TestABranchFullyPushedIsDeleted(t *testing.T) {
+	src := repo(t)
+	branch := BranchName("worker-1")
+
+	// A remote, and the branch pushed to it.
+	remote := t.TempDir()
+	if out, err := exec.Command("git", "init", "-q", "--bare", remote).CombinedOutput(); err != nil {
+		t.Skipf("no usable git here: %v %s", err, out)
+	}
+	for _, args := range [][]string{
+		{"remote", "add", "origin", remote},
+		{"branch", branch},
+		{"push", "-q", "origin", branch},
+	} {
+		if out, err := exec.Command("git", append([]string{"-C", src}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+
+	deleted, err := DeleteBranch(src, branch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !deleted {
+		t.Error("a branch whose every commit is on the remote was kept")
+	}
+}
+
+// Pushed once and committed to since: the remote is behind, so deleting would
+// lose the difference.
+func TestABranchAheadOfTheRemoteIsKept(t *testing.T) {
+	src := repo(t)
+	branch := BranchName("worker-1")
+	remote := t.TempDir()
+	if out, err := exec.Command("git", "init", "-q", "--bare", remote).CombinedOutput(); err != nil {
+		t.Skipf("no usable git here: %v %s", err, out)
+	}
+	dir := filepath.Join(t.TempDir(), "worker-1")
+	if err := AddWorktree(dir, src, branch, ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"remote", "add", "origin", remote}} {
+		if out, err := exec.Command("git", append([]string{"-C", src}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	if out, err := exec.Command("git", "-C", dir, "push", "-q", "origin", branch).CombinedOutput(); err != nil {
+		t.Fatalf("push: %v %s", err, out)
+	}
+	// One more commit, not pushed.
+	if err := os.WriteFile(filepath.Join(dir, "more.txt"), []byte("later\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "more.txt"}, {"commit", "-qm", "later"}} {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	if err := RemoveWorktree(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := DeleteBranch(src, branch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted {
+		t.Error("a branch with a commit the remote does not have was deleted")
+	}
+}
+
+func TestALockedWorktreeIsProtectedUntilUnlocked(t *testing.T) {
+	src := repo(t)
+	dir := filepath.Join(t.TempDir(), "worker-1")
+	if err := AddWorktree(dir, src, BranchName("worker-1"), ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := LockWorktree(dir, "worker-1 is running"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Somebody else's cleanup cannot take it.
+	out, err := exec.Command("git", "-C", src, "worktree", "remove", dir).CombinedOutput()
+	if err == nil {
+		t.Fatal("a locked worktree was removed by a plain git command")
+	}
+	if !strings.Contains(strings.ToLower(string(out)), "lock") {
+		t.Errorf("the refusal is not about the lock: %s", out)
+	}
+
+	// Ours unlocks it on the way through.
+	if err := RemoveWorktree(dir); err != nil {
+		t.Errorf("swarm could not remove its own locked worktree: %v", err)
+	}
+}
