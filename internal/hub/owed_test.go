@@ -150,10 +150,16 @@ func stalledEvents(t *testing.T, h *Hub) int {
 // ends, so the two settings add up instead of competing. No pair of values can
 // be posed in a way that never fires.
 func TestStalledStartsWhenIdleDoes(t *testing.T) {
-	// idle_after 400ms, stalled_after 300ms: nothing before 700ms of silence.
+	// idle_after 400ms, stalled_after 1s: nothing before 1.4s.
+	//
+	// The threshold has to be the thing that decides, or the test measures
+	// something else. With a short one, the agent's own idle_after arrives
+	// last and the report waits for it either way — which is why an earlier
+	// version of this passed just as happily with the two settings added
+	// together as with only one of them.
 	h := fleet(t, `
 web: {enabled: false}
-bus: {stalled_after: 300ms}
+bus: {stalled_after: 1s}
 defaults: {idle_after: 400ms}
 agents:
   - name: alpha
@@ -168,16 +174,23 @@ agents:
 	if err := a.Start(); err != nil {
 		t.Fatal(err)
 	}
+	asked := time.Now()
 	if _, err := h.SendKind("beta", "alpha", bus.KindRequest, "look", nil); err != nil {
 		t.Fatal(err)
 	}
 
-	// Idle arrives at 400ms; stalled must not.
-	waitFor(t, func() bool { return a.Info().State == "idle" })
-	if n := stalledEvents(t, h); n != 0 {
-		t.Errorf("stalled reported %d times as soon as the agent went idle", n)
+	// Measured rather than watched. The first version of this waited for the
+	// agent to go idle and then checked that nothing had been reported yet,
+	// which is the same property observed through a window that the watching
+	// itself can close: on a loaded machine the poll noticing "idle" can land
+	// after the threshold has passed, and the test failed for being slow. What
+	// has to hold is that the report does not come early, and that is a
+	// duration.
+	waitUntil(t, 5*time.Second, func() bool { return stalledEvents(t, h) > 0 })
+	if waited := time.Since(asked); waited < 1400*time.Millisecond {
+		t.Errorf("stalled arrived %s after the request, before idle_after (400ms) "+
+			"and stalled_after (1s) had both passed", waited.Round(time.Millisecond))
 	}
-	waitFor(t, func() bool { return stalledEvents(t, h) > 0 })
 }
 
 // TestOutputDoesNotResetTheClock is the bug seen on a live fleet: an agent
