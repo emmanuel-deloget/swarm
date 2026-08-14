@@ -102,8 +102,8 @@ func (h *Hub) loadSpawn() {
 		}
 	}
 	h.spawn.gone = st.Gone
-	if len(h.spawn.gone) > goneKept {
-		h.spawn.gone = h.spawn.gone[len(h.spawn.gone)-goneKept:]
+	if keep := h.cfg.Ephemeral.Remember; len(h.spawn.gone) > keep {
+		h.spawn.gone = h.spawn.gone[len(h.spawn.gone)-keep:]
 	}
 }
 

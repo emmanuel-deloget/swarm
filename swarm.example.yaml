@@ -60,6 +60,15 @@ agents:
   #   command: [claude]
   #   can_spawn: [worker]
 
+# What applies to every ephemeral agent rather than to one template. A
+# template's own max_alive bounds one kind of work; this bounds the machine,
+# since three templates of three is nine agent processes nobody asked for.
+#
+# ephemeral:
+#   max_alive: 12         # instances at once across the whole fleet
+#   remember: 100         # gone instances kept on record, so swarm why can
+#                         # still answer for one that died owing something
+
 # Inherited by every agent that does not override them. These are the built-in
 # values, spelled out so you can see what you would be changing.
 #

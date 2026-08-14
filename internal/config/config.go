@@ -86,6 +86,9 @@ type Config struct {
 	// Outgoing configures what the fleet tells the world about itself.
 	Outgoing OutgoingConfig `yaml:"outgoing"`
 
+	// Ephemeral bounds and remembers the agents made for one task.
+	Ephemeral EphemeralConfig `yaml:"ephemeral"`
+
 	// Agents is the fleet itself.
 	Agents []AgentConfig `yaml:"agents"`
 
@@ -392,6 +395,38 @@ type BusConfig struct {
 	// hours apart, and a list says that without needing two mechanisms.
 	OnStalled []StalledRule `yaml:"on_stalled"`
 }
+
+// EphemeralConfig holds what applies to every ephemeral agent rather than to
+// one template.
+type EphemeralConfig struct {
+	// MaxAlive is how many instances may run at once across the whole fleet,
+	// all templates together.
+	//
+	// A per-template max_alive bounds one kind of work; this bounds the
+	// machine. Three templates of three is nine agents, and nine claude
+	// processes is a real amount of memory and a real API bill — neither of
+	// which anybody chose by writing three.
+	MaxAlive int `yaml:"max_alive"`
+
+	// Remember is how many finished instances are kept on record.
+	//
+	// An instance that is gone can still be owed something — that is the rule
+	// for one a person spawned — and `swarm why` has to be able to answer that
+	// the agent is dead rather than that it never existed, which reads as a
+	// typo and sends nobody looking for the work. Keeping the record is what
+	// makes that possible; keeping it for ever is not, so it is a count.
+	Remember int `yaml:"remember"`
+}
+
+// DefaultFleetMaxAlive is the fleet-wide ceiling when the file does not say.
+// Generous enough that nobody meets it by accident, small enough that a loop
+// nobody is watching is stopped before the machine is.
+const DefaultFleetMaxAlive = 12
+
+// DefaultRemember is how many gone instances are kept by default. Enough to
+// answer for a working day, not an archive: what matters beyond that is in the
+// event log and in git.
+const DefaultRemember = 100
 
 // StalledSelf is the target that means the stalled agent itself.
 const StalledSelf = "self"
@@ -1004,6 +1039,16 @@ func (c *Config) normalizeEphemeral() error {
 // both a real value and an empty field, so setting them earlier would be undone
 // by the very inheritance that cannot tell the two apart.
 func (c *Config) limitTemplates() error {
+	if c.Ephemeral.MaxAlive < 0 || c.Ephemeral.Remember < 0 {
+		return fmt.Errorf("ephemeral: max_alive and remember cannot be negative")
+	}
+	if c.Ephemeral.MaxAlive == 0 {
+		c.Ephemeral.MaxAlive = DefaultFleetMaxAlive
+	}
+	if c.Ephemeral.Remember == 0 {
+		c.Ephemeral.Remember = DefaultRemember
+	}
+
 	for i := range c.Agents {
 		a := &c.Agents[i]
 		if !a.Ephemeral {

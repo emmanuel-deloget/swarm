@@ -29,6 +29,7 @@ against your working directory. `~/` and `$VAR` are expanded.
 | `session` | `default` | Names this swarm. It picks the control socket, so two swarms with different session names run side by side. No slashes or spaces. |
 | `workdir` | the config's directory | Working directory for every agent that does not override it. |
 | `state_dir` | `.swarm` | Everything swarm writes: the control socket, the logs, the CLI shim, the staged files, the TUI's command history, and `owed.json` — what each agent has been asked and has not settled, kept across restarts so `swarm why` can still answer afterwards, and `ephemeral.json` — the instance name counters, and what became of the ephemeral agents that are gone. `swarm init` offers to add it to `.gitignore`. |
+| `ephemeral` | — | Limits that apply to every agent made for one task; see [`ephemeral`](#ephemeral). |
 | `shared` | `<state_dir>/shared` | Where injected files are staged so every agent can reach them by path. Agents get it as `$SWARM_SHARED`. |
 | `env` | `{}` | Added to the environment of every agent. Per-agent `env` wins. |
 | `detach_key` | `ctrl+\`, `ctrl+g` on Windows | Leaves an attached agent, in the TUI and in `swarm attach`. Any name `swarm keys -list` marks as bindable: `ctrl+g`, `ctrl+]`, `f12`, `esc esc`, `ctrl+left`. Configurable because the default is what tmux, screen and asciinema like to grab. |
@@ -334,6 +335,35 @@ no memory of the work and the same debt still open. `can_spawn` together with
 `restart_on_exit: false`: an agent that launches ephemerals has to be there when
 they finish, or their debts have nobody to go back to. `max_alive` or
 `max_lifetime` on something that is not a template: they would mean nothing.
+
+## `ephemeral`
+
+What applies to every agent made for one task, rather than to one template.
+
+```yaml
+ephemeral:
+  max_alive: 12     # across the whole fleet, all templates together
+  remember: 100     # instances kept on record after they are gone
+```
+
+| key | default | |
+|---|---|---|
+| `max_alive` | `12` | Instances that may run at once across the fleet. A template's own `max_alive` bounds one kind of work; this one bounds the machine. |
+| `remember` | `100` | How many finished instances are kept on record. |
+
+**Why a fleet-wide ceiling as well.** Three templates of three is nine agents,
+which is a number nobody chose by writing three — and nine agent processes is
+real memory and a real API bill. The per-template limit says how much of one
+kind of work may happen at once; this one says how much may happen at all.
+
+**What `remember` is for.** An instance that is gone can still be owed
+something: a debt outlives an instance spawned by a person, deliberately, since
+there is no parent to tell. `swarm why worker-3` then has to answer that the
+agent is dead — with what it was, what it was asked and when it went — rather
+than that no such agent exists, which reads as a typo and sends nobody looking
+for the work. Keeping that record is what makes the answer possible. Keeping it
+for ever is not the point, so it is a count: what matters beyond it is in the
+event log and in git.
 
 ## `patterns`
 

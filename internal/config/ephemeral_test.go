@@ -202,3 +202,34 @@ agents:
 		t.Errorf("the error does not name the modes that exist: %v", err)
 	}
 }
+
+// A per-template max_alive bounds one kind of work; the fleet needs its own,
+// or three templates of three quietly become nine agent processes.
+func TestTheFleetHasItsOwnCeiling(t *testing.T) {
+	c, err := loadYAML(t, ephemeralBase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Ephemeral.MaxAlive != DefaultFleetMaxAlive {
+		t.Errorf("ephemeral.max_alive defaults to %d", c.Ephemeral.MaxAlive)
+	}
+	if c.Ephemeral.Remember != DefaultRemember {
+		t.Errorf("ephemeral.remember defaults to %d", c.Ephemeral.Remember)
+	}
+
+	c, err = loadYAML(t, ephemeralBase+`
+ephemeral:
+  max_alive: 4
+  remember: 20
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Ephemeral.MaxAlive != 4 || c.Ephemeral.Remember != 20 {
+		t.Errorf("came back as max_alive %d, remember %d", c.Ephemeral.MaxAlive, c.Ephemeral.Remember)
+	}
+
+	if _, err := loadYAML(t, ephemeralBase+"\nephemeral: {max_alive: -1}\n"); err == nil {
+		t.Error("a negative ceiling was accepted")
+	}
+}

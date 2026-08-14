@@ -73,11 +73,6 @@ type Gone struct {
 	Why      string    `json:"why"`
 }
 
-// goneKept bounds the record of the dead. Enough to answer for what happened
-// this session, not a permanent archive: what matters long-term is in the event
-// log and in git.
-const goneKept = 100
-
 // Spawn makes an instance of a template and gives it its task.
 //
 // The task arrives as a bus request rather than as a prompt on the command
@@ -99,7 +94,7 @@ func (h *Hub) Spawn(from, template, task string) (string, error) {
 	}
 
 	h.spawn.mu.Lock()
-	alive := 0
+	alive, fleet := 0, len(h.spawn.live)
 	for _, in := range h.spawn.live {
 		if in.Template == template {
 			alive++
@@ -109,6 +104,14 @@ func (h *Hub) Spawn(from, template, task string) (string, error) {
 		h.spawn.mu.Unlock()
 		return "", fmt.Errorf("%d instances of %s are already running, which is its "+
 			"max_alive; wait for one to finish or raise the limit", alive, template)
+	}
+	// And the fleet-wide ceiling. Three templates of three is nine agents, a
+	// number nobody chose by writing three, and nine of them is real memory and
+	// a real bill.
+	if fleet >= h.cfg.Ephemeral.MaxAlive {
+		h.spawn.mu.Unlock()
+		return "", fmt.Errorf("%d ephemeral agents are already running across the fleet, "+
+			"which is ephemeral.max_alive; wait for one to finish or raise the limit", fleet)
 	}
 	h.spawn.next[template]++
 	name := fmt.Sprintf("%s-%d", template, h.spawn.next[template])
@@ -410,8 +413,8 @@ func (h *Hub) drop(name, why string) {
 		Name: name, Template: in.Template, Parent: in.Parent, Task: in.Task,
 		Thread: in.Thread, Born: in.Born, Died: time.Now(), Why: why,
 	})
-	if len(h.spawn.gone) > goneKept {
-		h.spawn.gone = h.spawn.gone[len(h.spawn.gone)-goneKept:]
+	if keep := h.cfg.Ephemeral.Remember; len(h.spawn.gone) > keep {
+		h.spawn.gone = h.spawn.gone[len(h.spawn.gone)-keep:]
 	}
 	h.spawn.dirty = true
 }

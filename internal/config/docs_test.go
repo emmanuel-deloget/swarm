@@ -25,15 +25,16 @@ import (
 // may have more than one home: an agent inherits every key in `defaults`, and
 // has a few of its own under `agents`.
 var docSections = map[string][]string{
-	"Config":         {"Top level"},
-	"AgentDefaults":  {"`defaults`"},
-	"AgentConfig":    {"`defaults`", "`agents`"},
-	"PatternConfig":  {"`patterns`"},
-	"WebConfig":      {"`web`"},
-	"BusConfig":      {"`bus`"},
-	"StalledRule":    {"`on_stalled`"},
-	"HookConfig":     {"`hooks`"},
-	"OutgoingConfig": {"`outgoing`"},
+	"Config":          {"Top level"},
+	"AgentDefaults":   {"`defaults`"},
+	"AgentConfig":     {"`defaults`", "`agents`"},
+	"PatternConfig":   {"`patterns`"},
+	"WebConfig":       {"`web`"},
+	"BusConfig":       {"`bus`"},
+	"EphemeralConfig": {"`ephemeral`"},
+	"StalledRule":     {"`on_stalled`"},
+	"HookConfig":      {"`hooks`"},
+	"OutgoingConfig":  {"`outgoing`"},
 }
 
 func TestEveryKeyIsDocumentedWhereItBelongs(t *testing.T) {

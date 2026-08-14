@@ -693,3 +693,47 @@ agents:
 		t.Error("a worktree reached through a link was not recognised as ours")
 	}
 }
+
+// The fleet-wide ceiling stops what the per-template ones cannot see: each
+// template within its own limit, and the machine past its.
+func TestTheFleetCeilingStopsSpawning(t *testing.T) {
+	h := fleet(t, `
+web: {enabled: false}
+defaults: {idle_after: 100ms}
+ephemeral: {max_alive: 2}
+agents:
+  - name: triage
+    command: [probe-echo]
+    can_spawn: [worker, helper]
+  - name: worker
+    ephemeral: true
+    command: [probe-echo]
+    max_alive: 5
+  - name: helper
+    ephemeral: true
+    command: [probe-echo]
+    max_alive: 5
+`)
+	if _, err := h.Spawn("triage", "worker", "one"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Spawn("triage", "helper", "two"); err != nil {
+		t.Fatal(err)
+	}
+	// Neither template is anywhere near its own limit of five.
+	_, err := h.Spawn("triage", "worker", "three")
+	if err == nil {
+		t.Fatal("the fleet ceiling of 2 allowed a third agent")
+	}
+	if !strings.Contains(err.Error(), "across the fleet") {
+		t.Errorf("the refusal does not say which limit was met: %v", err)
+	}
+
+	// Collecting one makes room again, whichever template it belonged to.
+	if err := h.Collect("helper-1", "stopped"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Spawn("triage", "worker", "three"); err != nil {
+		t.Errorf("no room after collecting one: %v", err)
+	}
+}
