@@ -572,3 +572,44 @@ func (h *Hub) reapExpired() {
 		}
 	}
 }
+
+// reportOrphanWorktrees says what was left behind by a previous run.
+//
+// Instances die with their ptys; their worktrees do not. A hub killed outright
+// leaves directories on disk, locked — and a lock set by a process that is gone
+// is never released, so nobody can remove the worktree without knowing to
+// unlock it first. Releasing those is the one thing done here.
+//
+// Nothing is deleted. What is in them may be hours of work, and a swarm
+// starting up is the worst possible moment to decide otherwise: it has no idea
+// yet what anybody wanted. So they are unlocked, named in the log with what
+// they were for, and left alone.
+func (h *Hub) reportOrphanWorktrees() {
+	repo, err := workspace.RepoRoot(h.cfg.Workdir)
+	if err != nil {
+		return // not a repository: there can be no worktrees of ours
+	}
+	dirs, err := workspace.Worktrees(repo)
+	if err != nil {
+		h.log.Emit(event.KindError, "", err.Error())
+		return
+	}
+	ours := filepath.Join(h.stateDir, "worktrees") + string(filepath.Separator)
+	for _, dir := range dirs {
+		if !strings.HasPrefix(dir, ours) {
+			continue // somebody else's, and none of our business
+		}
+		name := filepath.Base(dir)
+		// Its lock outlived the process that set it.
+		if err := workspace.UnlockWorktree(dir); err == nil {
+			h.log.Emit(event.KindInfo, name, "released the lock its worktree was left with")
+		}
+
+		what := "a worktree from before this start is still here: " + dir
+		if gone, ok := h.Dead(name); ok && gone.Task != "" {
+			what += fmt.Sprintf(" (it was asked to: %s)", strings.TrimSpace(gone.Task))
+		}
+		h.log.Emit(event.KindPattern, name, what+
+			" — nothing was deleted; `git worktree remove` takes it when you are done with it")
+	}
+}

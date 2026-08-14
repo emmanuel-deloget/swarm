@@ -575,3 +575,56 @@ func TestAWorktreeWithWorkInItIsKept(t *testing.T) {
 		t.Error("a worktree was kept and nothing in the log says so")
 	}
 }
+
+// A hub killed outright leaves worktrees on disk, locked. A lock set by a
+// process that is gone is never released, so nobody can remove the worktree
+// without knowing to unlock it first — and nothing said it was there.
+func TestWorktreesLeftBehindAreReportedAndUnlocked(t *testing.T) {
+	h, repo := worktreeFleet(t)
+
+	name, err := h.Spawn("triage", "worker", "interrupted work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := h.Agent(name)
+	dir := a.Config().Workdir
+
+	// The hub goes without collecting anything, as a kill -9 would leave it.
+	h.Shutdown(2 * time.Second)
+
+	second := fleetIn(t, repo, `
+web: {enabled: false}
+defaults: {idle_after: 100ms}
+agents:
+  - name: triage
+    command: [probe-echo]
+    can_spawn: [worker]
+  - name: worker
+    ephemeral: true
+    command: [probe-echo]
+    workspace: worktree
+`)
+	defer second.Shutdown(2 * time.Second)
+
+	// Still there — deleting somebody's work at startup would be the worst
+	// possible moment to decide it does not matter.
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("the worktree was removed at startup: %v", err)
+	}
+	var said bool
+	for _, e := range second.Log().History(-1) {
+		if strings.Contains(e.Text, "from before this start") {
+			said = true
+		}
+	}
+	if !said {
+		t.Error("a worktree was left behind and nothing says so")
+	}
+
+	// And it can now be removed, which a lock from a dead process would
+	// otherwise prevent for good.
+	out, err := exec.Command("git", "-C", repo, "worktree", "remove", dir).CombinedOutput()
+	if err != nil {
+		t.Errorf("the worktree is still locked by a process that is gone: %v %s", err, out)
+	}
+}

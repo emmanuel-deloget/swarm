@@ -175,6 +175,8 @@ func New(o Options) (*Hub, error) {
 	h.spawnDone = make(chan struct{})
 	go h.watchSpawn(owedSaveEvery)
 
+	h.reportOrphanWorktrees()
+
 	h.loadOwed()
 	h.owedStop = make(chan struct{})
 	h.owedDone = make(chan struct{})

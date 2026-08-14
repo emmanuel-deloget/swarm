@@ -156,3 +156,25 @@ func DeleteBranch(repo, branch string) (deleted bool, err error) {
 
 // RepoRoot is the repository holding dir, for callers that need to name it.
 func RepoRoot(dir string) (string, error) { return repoRoot(dir) }
+
+// Worktrees lists the worktrees of a repository, other than the main checkout.
+func Worktrees(repo string) ([]string, error) {
+	out, err := git(repo, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil, fmt.Errorf("listing worktrees of %s: %w%s", repo, err, out)
+	}
+	var dirs []string
+	main := true
+	for _, line := range strings.Split(out, "\n") {
+		path, ok := strings.CutPrefix(strings.TrimSpace(line), "worktree ")
+		if !ok {
+			continue
+		}
+		if main {
+			main = false // the first one listed is the checkout itself
+			continue
+		}
+		dirs = append(dirs, path)
+	}
+	return dirs, nil
+}
