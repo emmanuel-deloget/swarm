@@ -6,10 +6,14 @@
 // checkout that already has the dependencies, the ports and the git identity it
 // needs, because that is plumbing rather than a decision.
 //
-// A clone rather than a worktree, and for a hard reason: two worktrees cannot
-// have the same branch checked out. For a durable per-agent workspace, where
-// several agents may sit on the main branch between tasks, that rules worktrees
-// out. A clone has its own branches, its own index and its own configuration.
+// A clone rather than a worktree for a durable workspace, and for a hard reason:
+// two worktrees cannot have the same branch checked out. Where several agents
+// may sit on the main branch between tasks, that rules worktrees out. A clone
+// has its own branches, its own index and its own configuration.
+//
+// Worktrees do have a place, and it arrived with the ephemeral agent: one made
+// for a single task, on its own branch, ending when the work does. That is in
+// worktree.go, and it is the only kind of worktree swarm makes.
 package workspace
 
 import (
