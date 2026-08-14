@@ -32,6 +32,24 @@ agents:
   #   # What it is told at launch, typed once when it first falls quiet.
   #   message: |
   #     You review pull requests. Start with "swarm inbox".
+  #
+  # An entry with ephemeral: true is not an agent but the shape of one. Nothing
+  # is started for it: "swarm spawn worker <task>" makes worker-1, worker-2 and
+  # so on, each created owing that task and collected when it runs "swarm done".
+  # Its task is its life.
+  #
+  # - name: worker
+  #   ephemeral: true
+  #   command: [claude]
+  #   max_alive: 3          # how many may run at once
+  #   max_lifetime: 2h      # collected if it never says it has finished
+  #
+  # And who may start them. The ability to create agents is the ability to
+  # spend, so it is declared rather than assumed:
+  #
+  # - name: triage
+  #   command: [claude]
+  #   can_spawn: [worker]
 
 # Inherited by every agent that does not override them. These are the built-in
 # values, spelled out so you can see what you would be changing.
