@@ -100,15 +100,22 @@ func UnlockWorktree(dir string) error {
 
 // RemoveWorktree takes a worktree away, and refuses to take work with it.
 //
-// The refusal is git's, not ours: `git worktree remove` will not delete a
-// directory holding modified or untracked files unless --force is passed, and
-// this never passes it. That single rule is the whole safety property — there
-// is no detection here to get wrong, and no flag to add later without noticing
-// what it means.
+// It asks before it acts. `git status --porcelain` says whether the directory
+// holds anything that exists only there, in a format git documents as stable
+// across versions and configurations — and, unlike the sentence `git worktree
+// remove` prints when it refuses, one that is not translated. Reading that
+// prose was the first version of this, and it would have called a refusal a
+// system error on a machine whose git speaks French.
 //
-// Commits are a separate matter. Removing a worktree keeps the branch and
-// everything on it, so work that was committed survives even when it was never
-// pushed. Only DeleteBranch can lose that, and it refuses to.
+// Asking first also separates the two failures cleanly. A worktree with work in
+// it is a decision, returned as it is. Once it is known to be clean, anything
+// that goes wrong afterwards is the file system, and that is worth retrying —
+// on Windows a directory written moments earlier often cannot be deleted yet,
+// a handle held by the indexer or the virus scanner, and it clears on its own.
+//
+// --force is never passed. Commits are a separate matter: removing a worktree
+// keeps its branch, so committed work survives regardless. Only DeleteBranch
+// can lose that, and it refuses to.
 func RemoveWorktree(dir string) error {
 	repo, err := repoRoot(dir)
 	if err != nil {
@@ -118,36 +125,40 @@ func RemoveWorktree(dir string) error {
 	// removed, and one that was never locked simply refuses here.
 	_ = UnlockWorktree(dir)
 
-	// Retried, but only for the failures that are about the file system.
-	//
-	// On Windows a directory that was written moments ago often cannot be
-	// deleted yet — a handle held by the indexer or the virus scanner — and git
-	// reports "Permission denied". It goes away on its own. What must never be
-	// retried is the refusal this function exists to respect: a worktree
-	// holding modified or untracked files is a decision, not a hiccup, and
-	// asking again would only get the same answer more slowly.
+	if held, what := holdsWork(dir); held {
+		return fmt.Errorf("%s holds work that removing it would delete:\n%s", dir, what)
+	}
+
+	tries, wait := removeRetries()
 	var last string
-	for attempt := range 3 {
+	for attempt := range tries {
 		out, err := git(repo, "worktree", "remove", dir)
 		if err == nil {
 			return nil
 		}
 		last = gitSays(out, err)
-		if holdsWork(out) {
-			break
+		if attempt < tries-1 {
+			time.Sleep(wait)
 		}
-		time.Sleep(time.Duration(attempt+1) * 200 * time.Millisecond)
 	}
-	// git's own sentence, not the exit status: this is read by somebody looking
-	// for their work, and "exit status 128" is noise in front of the one line
-	// that says what is in the way.
-	return fmt.Errorf("%s still holds work that removing it would delete: %s", dir, last)
+	return fmt.Errorf("could not remove %s: %s", dir, last)
 }
 
-// holdsWork reports whether git refused because the worktree contains work,
-// which is an answer rather than a failure to retry.
-func holdsWork(out string) bool {
-	return strings.Contains(out, "modified or untracked files")
+// holdsWork reports whether a worktree contains anything that exists only
+// there, and what, so a refusal can name it rather than gesture at it.
+func holdsWork(dir string) (bool, string) {
+	out, err := git(dir, "status", "--porcelain")
+	if err != nil {
+		// Unreadable: assume there is something to protect. Being wrong this
+		// way costs a directory nobody deleted; being wrong the other way
+		// costs the work in it.
+		return true, "its state could not be read"
+	}
+	out = strings.TrimSpace(out)
+	if out == "" {
+		return false, ""
+	}
+	return true, out
 }
 
 // DeleteBranch removes a branch, and only if the remote already has every

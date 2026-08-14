@@ -303,7 +303,9 @@ func TestTheRefusalReadsLikeASentence(t *testing.T) {
 	if strings.Contains(err.Error(), "exit status") {
 		t.Errorf("the message leads with git's exit status: %v", err)
 	}
-	if !strings.Contains(err.Error(), "untracked") {
+	// It names the file rather than gesturing at "untracked files": somebody
+	// reading this wants to know what is in there, not that something is.
+	if !strings.Contains(err.Error(), "draft.txt") {
 		t.Errorf("the message does not say what is in the way: %v", err)
 	}
 }
@@ -328,5 +330,37 @@ func TestARefusalIsNotRetried(t *testing.T) {
 	// straight away.
 	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
 		t.Errorf("the refusal took %s, so it was retried", elapsed.Round(time.Millisecond))
+	}
+}
+
+// The refusal must not depend on the words git happens to print. git is
+// translated, and the first version of this read its prose to tell a refusal
+// from a system error — so on a machine whose git speaks French, a worktree
+// full of work would have been treated as a failed delete and retried.
+func TestTheRefusalDoesNotReadGitsProse(t *testing.T) {
+	src := repo(t)
+	dir := filepath.Join(t.TempDir(), "worker-1")
+	if err := AddWorktree(dir, src, BranchName("worker-1"), ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "draft.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// holdsWork is what decides, and it reads --porcelain, which git documents
+	// as stable across versions and configuration.
+	held, what := holdsWork(dir)
+	if !held {
+		t.Fatal("a worktree with an untracked file was reported as clean")
+	}
+	if !strings.Contains(what, "draft.txt") {
+		t.Errorf("what is in the way came back as %q", what)
+	}
+
+	// And an unreadable worktree is treated as holding something: being wrong
+	// that way costs a directory nobody deleted, the other way costs the work.
+	held, _ = holdsWork(filepath.Join(dir, "nowhere"))
+	if !held {
+		t.Error("a worktree whose state cannot be read was reported as clean")
 	}
 }
