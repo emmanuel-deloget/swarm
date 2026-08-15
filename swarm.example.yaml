@@ -216,6 +216,17 @@ agents:
 #   stalled_after: 20m
 #   max_turns: 6
 #   escalate_to: triage-1 # arbitrates a thread that ran out of turns
+#   # What to do about an agent that is stalled. Nothing, unless you say so:
+#   # swarm asks, and never restarts or reassigns anything, because the state
+#   # is a guess — an agent waiting on a long test run is silent and does owe
+#   # work. Left without text, the message is what "swarm why" would say.
+#   on_stalled:
+#     - to: self          # ask the agent itself
+#       every: 15m
+#       max: 3
+#     - to: triage-1      # still stuck two hours later? someone should know
+#       after: 2h
+#       kind: question
 
 # Overrides every agent's delivery for one kind of message: the fleet can defer
 # while "somebody is stuck" still gets through. Kinds are set with

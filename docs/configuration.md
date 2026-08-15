@@ -266,9 +266,11 @@ currently is, which only Linux answers (through `/proc`). On macOS and Windows,
 `workspace: none` reports the branch of the directory the agent was started in,
 even after it has wandered elsewhere.
 
-A clone rather than a worktree, because two worktrees cannot have the same
-branch checked out — which rules them out as soon as two agents sit on the main
-branch between tasks. It is taken from the local repository, so git hardlinks
+A clone rather than a worktree **for a durable workspace**, because two
+worktrees cannot have the same branch checked out — which rules them out as soon
+as two agents sit on the main branch between tasks. An agent made for one task
+is never between tasks, which is what `worktree` is for; see [ephemeral
+agents](#ephemeral-agents). It is taken from the local repository, so git hardlinks
 the object store: the cost is the working tree, not the history.
 
 Two things are fixed up afterwards, since a fresh clone does not inherit them

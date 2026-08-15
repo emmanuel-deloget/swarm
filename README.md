@@ -32,7 +32,9 @@ agent's terminal on the right, and the event log underneath](assets/tui.png)
 - **A state per agent**, derived from what it prints: `working`, `idle` — quiet
   long enough that it is probably waiting for input — plus whatever the
   configured regexps name, such as `approval` or `error`. The header counts
-  them by state.
+  them by state. An agent that owes an answer and has gone quiet is `stalled`,
+  and `swarm why` says what it owes, to whom, since when, and the command that
+  ends it — which the agent itself has usually forgotten by then.
 - **Input from anywhere.** Type into an agent from the TUI, from
   `swarm inject`, or from a browser. Send key presses (`esc`, `ctrl+c`, arrows).
   Stage a file or an image and inject its path.
@@ -51,6 +53,11 @@ agent's terminal on the right, and the event log underneath](assets/tui.png)
   receiving — and the TUI marks an agent putting a lot on the bus. Agents that
   coordinate instead of working is the failure mode of a fleet, and it is
   invisible from the terminals.
+- **Agents for one task.** A template rather than an agent: `swarm spawn worker
+  "take ticket 219"` makes `worker-1`, which is created owing that task and
+  collected when it says the task is done. With `workspace: worktree` it gets
+  its own directory and branch, taken back when it goes — and never taken with
+  work still in it.
 - **Incoming webhooks.** Declarative rules turn an HTTP delivery into a bus
   message, so the fleet reacts to a pull request or a ticket without you
   relaying it. The listener is signature-checked and lives on its own port.
@@ -490,17 +497,22 @@ Six agents on one checkout take turns at the index rather than working at once.
 |---|---|
 | `shared` | everyone works in `workdir`. The default, and right for agents that only read. |
 | `clone` | its own clone under `<state_dir>/workspaces/<agent>`, made once and kept between runs. |
+| `worktree` | its own git worktree and branch under `<state_dir>/worktrees/<agent>`, collected when an ephemeral instance ends. |
 | `none` | swarm provisions nothing and reads the directory the process is actually in — for a worktree you manage yourself. |
 
-A clone rather than a worktree for a hard reason: two worktrees cannot have the
-same branch checked out, and several agents sitting on `main` between tasks is
-the normal case. `origin`, `user.*` and `gpg.*` are carried over, or an agent
+A clone rather than a worktree for a durable workspace, and for a hard reason:
+two worktrees cannot have the same branch checked out, and several agents
+sitting on `main` between tasks is the normal case. An agent made for one task
+is never between tasks, which is why `worktree` exists for those and not for
+the rest. `origin`, `user.*` and `gpg.*` are carried over, or an agent
 commits unsigned under the wrong name. A directory that is already a checkout is
 left alone.
 
 **No fetch, no rebase, no merge.** swarm reports where each agent works and how
 far its base has drifted — `main* 3↑ 12↓` in `swarm ls` and in the pane header —
-and never acts on it. Telling agents to catch up is a webhook rule or a message,
+and never acts on it. Making and collecting a worktree for an ephemeral agent is
+the one thing it does to a repository, and it neither integrates nor reviews
+what comes out of one. Telling agents to catch up is a webhook rule or a message,
 not swarm running git behind their backs.
 
 The rest of what a working copy needs is not swarm's business either, so it
