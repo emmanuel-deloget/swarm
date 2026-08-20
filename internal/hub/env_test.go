@@ -38,7 +38,7 @@ agents:
 func TestEveryVariableIsDocumented(t *testing.T) {
 	h := fleet(t, oneAgent)
 
-	for _, doc := range []string{"../../README.md", "../../docs/configuration.md"} {
+	for _, doc := range []string{"../../docs/bus.md", "../../docs/configuration.md"} {
 		body, err := os.ReadFile(doc)
 		if err != nil {
 			t.Fatal(err)

@@ -3,7 +3,6 @@
 Every key swarm understands, with its default and what it does. `swarm init`
 writes a short starter file; this page is the exhaustive version.
 
-The file is looked up as described in [the README](../README.md#where-the-config-is-looked-up).
 Unknown keys are an error, not a warning — a typo in a key name would otherwise
 be silently ignored, and you would spend an evening wondering why a setting has
 no effect.
@@ -11,6 +10,7 @@ no effect.
 Relative paths resolve against **the directory holding the config file**, never
 against your working directory. `~/` and `$VAR` are expanded.
 
+- [Where the file is looked up](#where-the-file-is-looked-up)
 - [Top level](#top-level)
 - [`defaults`](#defaults)
 - [`agents`](#agents)
@@ -21,6 +21,30 @@ against your working directory. `~/` and `$VAR` are expanded.
 - [`outgoing`](#outgoing)
 - [`hooks`](#hooks)
 - [Durations](#durations)
+
+## Where the file is looked up
+
+`swarm run` uses `-c <path>` if you pass one. Otherwise it walks up from the
+working directory, and in each directory tries `swarm.yaml`, `swarm.yml`,
+`.swarm.yaml`, `.swarm.yml`, in that order — so any subdirectory of your project
+works. There is no global config; a swarm belongs to a project.
+
+Relative paths inside the file (`workdir`, `shared`, `tls_cert`) resolve against
+the directory holding the file, never against your working directory.
+
+The other commands do not really need the config — they only use it to find the
+control socket, in this order:
+
+1. `-socket <path>`
+2. `$SWARM_SOCKET` — already set inside every agent, which is why an agent can
+   just run `swarm send` with no arguments of its own
+3. the config found as above → `<config dir>/.swarm/<session>.sock`, or wherever
+   `<session>.socketpath` points if the socket had to be relocated
+4. `./.swarm/default.sock`, if it exists
+
+A **target** is an agent name, `@group`, `@role`, `all`, or a comma-separated
+list of those. Every command that acts on agents accepts one.
+
 
 ## Top level
 
@@ -649,7 +673,7 @@ restarts would be a message broker, which this is not.
 ## `hooks`
 
 Incoming webhooks, turned into bus messages by declarative rules. See the
-[README section](../README.md#webhooks) for the reasoning; this is the key list.
+[webhooks document](webhooks.md) for the reasoning; this is the key list.
 
 | key | default | |
 |---|---|---|
