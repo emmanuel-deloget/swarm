@@ -31,7 +31,9 @@ agents:
   #   workspace: clone
   #   # What it is told at launch, typed once when it first falls quiet.
   #   message: |
-  #     You review pull requests. Start with "swarm inbox".
+  #     Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this
+  #     fleet and it says how to reach the other agents. You review pull
+  #     requests.
   #
   # An entry with ephemeral: true is not an agent but the shape of one. Nothing
   # is started for it: "swarm spawn worker <task>" makes worker-1, worker-2 and

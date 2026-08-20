@@ -9,6 +9,10 @@ agents:
     # Nothing to provision: this agent reads and decides, it does not build.
     workspace: none
     message: |
+      Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+      and it says how to reach the other agents. Coordinate through swarm rather
+      than starting helpers of your own.
+
       There is a second agent called `box`. It is not an AI — it is a live ssh
       session on the staging host, and you drive it:
 

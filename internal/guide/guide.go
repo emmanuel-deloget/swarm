@@ -162,8 +162,11 @@ func Write(c *config.Config, dir string) error {
 // conditional block here is a mechanism an agent cannot discover on its own.
 const builtin = `# Talking to the swarm
 
-You are running inside ` + "`swarm`" + `, next to other agents. The ` + "`swarm`" + `
-command is on your PATH and already knows who you are:
+You are running inside ` + "`swarm`" + `, next to other agents. They are already
+running: reach them with the commands below rather than starting helpers of
+your own, which nobody else in this fleet can see, talk to, or account for.
+
+The ` + "`swarm`" + ` command is on your PATH and already knows who you are:
 
 | variable | meaning |
 |---|---|
@@ -281,8 +284,9 @@ and refuses the one after it. When that happens, decide alone{{if .EscalateTo}} 
 Something genuinely unrelated is not the same conversation:
 ` + "`swarm send <agent> -new-thread \"…\"`" + ` starts a fresh one.
 {{end}}
-Use ` + "`swarm send -final`" + ` when a matter is settled: the bus then refuses the
-recipient the right to answer. Reserve it for decisions.
+Use ` + "`swarm send -final`" + ` when a matter is settled: the bus then refuses
+its recipients the right to answer — all of them, so a decision sent to a role
+or a group binds every member. Reserve it for decisions.
 {{if .Restricted}}
 ## Who you may write to
 

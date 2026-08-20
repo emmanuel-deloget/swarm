@@ -18,6 +18,10 @@ agents:
     can_spawn: [worker]
     can_send: [all]
     message: |
+      Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+      and it says how to reach the other agents. Coordinate through swarm rather
+      than starting helpers of your own.
+
       You hand out work. One ticket, one agent:
 
         swarm spawn worker "take rq-219: the importer drops empty rows"
@@ -39,6 +43,10 @@ agents:
     max_lifetime: 4h
     can_send: [lead]
     message: |
+      Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+      and it says how to reach the other agents. Coordinate through swarm rather
+      than starting helpers of your own.
+
       You exist for one task, and it is the first thing in your mailbox.
       You have your own worktree and your own branch: commit there, do not
       touch anyone else's. When the work is finished, or when there was

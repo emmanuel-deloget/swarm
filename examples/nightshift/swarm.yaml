@@ -15,6 +15,10 @@ agents:
     can_spawn: [auditor]
     can_send: [all]
     message: |
+      Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+      and it says how to reach the other agents. Coordinate through swarm rather
+      than starting helpers of your own.
+
       You are woken by the webhook listener, not by a person. A delivery
       arrives in your mailbox naming a job; start the agent for it:
 
@@ -34,6 +38,10 @@ agents:
     max_lifetime: 90m
     can_send: [dispatcher]
     message: |
+      Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+      and it says how to reach the other agents. Coordinate through swarm rather
+      than starting helpers of your own.
+
       You exist for one overnight job, and it is the first thing in your
       mailbox. Write what you find where a person will read it in the
       morning, then `swarm done "..."`.

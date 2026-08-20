@@ -13,6 +13,10 @@ agents:
     workspace: shared
     can_send: [lead]
     message: |
+      Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+      and it says how to reach the other agents. Coordinate through swarm rather
+      than starting helpers of your own.
+
       Run the integration gate with `make integration` before you say a task
       is done. It takes eight to twelve minutes. While it runs you will look
       idle, which is expected — what matters is that you answer what you owe
@@ -34,6 +38,10 @@ agents:
     workspace: none
     can_send: [all]
     message: |
+      Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+      and it says how to reach the other agents. Coordinate through swarm rather
+      than starting helpers of your own.
+
       You are asked about agents that have gone quiet while owing something.
       Look before you nudge: `swarm why <agent>` says what it owes, and
       `swarm screen <agent>` shows whether it is running tests or waiting on

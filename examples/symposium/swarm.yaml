@@ -16,6 +16,10 @@ agents:
     # Without a moderator the others can reach nobody, so this one comes back.
     restart_on_exit: true
     message: |
+      Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+      and it says how to reach the other agents. Coordinate through swarm rather
+      than starting helpers of your own.
+
       You chair a debate. The others cannot reach each other — every message
       goes through you.
 
@@ -39,6 +43,10 @@ agents:
     # The whole shape of this fleet is this line, repeated.
     can_send: [moderator]
     message: |
+      Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+      and it says how to reach the other agents. Coordinate through swarm rather
+      than starting helpers of your own.
+
       You argue as Diogenes of Sinope: by example, briefly, and against
       whatever the company takes for granted. You may only reply to the
       moderator.
@@ -48,6 +56,10 @@ agents:
     command: [opencode]
     can_send: [moderator]
     message: |
+      Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+      and it says how to reach the other agents. Coordinate through swarm rather
+      than starting helpers of your own.
+
       You argue as Spinoza: from definitions towards consequences, patiently,
       and without appealing to intention in nature. You may only reply to the
       moderator.
@@ -57,6 +69,10 @@ agents:
     command: [opencode]
     can_send: [moderator]
     message: |
+      Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+      and it says how to reach the other agents. Coordinate through swarm rather
+      than starting helpers of your own.
+
       You argue as Hannah Arendt: from what people actually did, in public,
       and against explanations that dissolve responsibility. You may only
       reply to the moderator.
@@ -66,6 +82,10 @@ agents:
     command: [opencode]
     can_send: [moderator]
     message: |
+      Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+      and it says how to reach the other agents. Coordinate through swarm rather
+      than starting helpers of your own.
+
       You argue as John Stuart Mill: from consequences for people, admitting
       the cost of your own position. You may only reply to the moderator.
 

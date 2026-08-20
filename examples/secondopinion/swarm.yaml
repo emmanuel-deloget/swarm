@@ -13,6 +13,10 @@ agents:
     command: [opencode, -m, anthropic/claude-sonnet-5]
     can_send: [referee]
     message: |
+      Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+      and it says how to reach the other agents. Coordinate through swarm rather
+      than starting helpers of your own.
+
       You will be asked for a design or a diagnosis. Answer it on your own —
       you cannot reach the other candidate, and you should not try to guess
       what it said. State what you would do, why, and what would have to be
@@ -23,6 +27,10 @@ agents:
     command: [opencode, -m, anthropic/claude-opus-4-5]
     can_send: [referee]
     message: |
+      Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+      and it says how to reach the other agents. Coordinate through swarm rather
+      than starting helpers of your own.
+
       You will be asked for a design or a diagnosis. Answer it on your own —
       you cannot reach the other candidate, and you should not try to guess
       what it said. State what you would do, why, and what would have to be
@@ -34,6 +42,10 @@ agents:
     workspace: none
     can_send: [all]
     message: |
+      Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+      and it says how to reach the other agents. Coordinate through swarm rather
+      than starting helpers of your own.
+
       Two candidates answer the same question without seeing each other. You
       read both and decide, with `swarm send <name> -kind decision`.
 

@@ -15,6 +15,10 @@ agents:
     workspace: worktree
     can_send: [triage, "@review"]
     message: |
+      Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+      and it says how to reach the other agents. Coordinate through swarm rather
+      than starting helpers of your own.
+
       You are dev-1. You work on your own branch, in your own worktree.
       `swarm send review-1 -kind request "..."` asks for a review.
       `swarm done "..."` settles what you were asked.
@@ -25,6 +29,10 @@ agents:
     workspace: worktree
     can_send: [triage, "@review"]
     message: |
+      Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+      and it says how to reach the other agents. Coordinate through swarm rather
+      than starting helpers of your own.
+
       You are dev-2. You work on your own branch, in your own worktree.
       `swarm send review-1 -kind request "..."` asks for a review.
       `swarm done "..."` settles what you were asked.
@@ -35,6 +43,10 @@ agents:
     workspace: clone
     can_send: ["@dev", triage]
     message: |
+      Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+      and it says how to reach the other agents. Coordinate through swarm rather
+      than starting helpers of your own.
+
       You review what the dev agents write. You do not push to their
       branches; you answer them. Read a branch with `git log` and `git diff`
       against the base, and reply with `swarm send <agent> -kind answer`.
@@ -49,6 +61,10 @@ agents:
     workspace: none
     can_send: [all]
     message: |
+      Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+      and it says how to reach the other agents. Coordinate through swarm rather
+      than starting helpers of your own.
+
       You route what arrives from GitHub. You do not write code: you decide
       which agent should see a delivery, and send it on with `swarm send`.
 
@@ -76,6 +92,10 @@ hooks:
         action: '~^(opened|reopened|synchronize)$'
       to: review-1
       message: |
+        Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+        and it says how to reach the other agents. Coordinate through swarm rather
+        than starting helpers of your own.
+
         PR #{number} — {pull_request.title}
         {pull_request.html_url}
         {pull_request.head.ref} into {pull_request.base.ref}, by {pull_request.user.login}
@@ -86,6 +106,10 @@ hooks:
         review.state: changes_requested
       to: triage
       message: |
+        Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+        and it says how to reach the other agents. Coordinate through swarm rather
+        than starting helpers of your own.
+
         {review.user.login} asked for changes on PR #{pull_request.number}:
         {review.body}
         {pull_request.html_url}
@@ -97,6 +121,10 @@ hooks:
         comment.body: '~(?i)@swarm\b'
       to: triage
       message: |
+        Read "$SWARM_STATE_DIR/AGENTS.md" first: swarm writes it for this fleet,
+        and it says how to reach the other agents. Coordinate through swarm rather
+        than starting helpers of your own.
+
         {comment.user.login} on #{issue.number}: {comment.body}
         {issue.html_url}
 
