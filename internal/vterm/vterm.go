@@ -506,6 +506,27 @@ func (t *Terminal) Render() string {
 	return uv.TrimSpace(t.emu.Render())
 }
 
+// Repaint returns the screen followed by a move to where the agent's cursor
+// actually is. It is what a client prints to start again from nothing.
+//
+// Render alone is not enough for that. It is text, not a self-contained
+// repaint: it carries no absolute positioning, so a client that prints it and
+// stops leaves the cursor wherever the last row ended. Everything the agent
+// echoes from then on lands at the bottom of the screen instead of at its
+// prompt, until the agent happens to redraw with absolute positions of its
+// own.
+func (t *Terminal) Repaint() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.repaintLocked()
+}
+
+// repaintLocked is Repaint for callers already holding the lock.
+func (t *Terminal) repaintLocked() string {
+	pos := t.emu.CursorPosition()
+	return uv.TrimSpace(t.emu.Render()) + fmt.Sprintf("\x1b[%d;%dH", pos.Y+1, pos.X+1)
+}
+
 // Text returns the current screen as plain text, without styling. Useful for
 // pattern matching and for logs.
 func (t *Terminal) Text() string {
@@ -585,7 +606,8 @@ func (t *Terminal) Stop(grace time.Duration) error {
 // Subscription is a live feed of raw pty output, primed with a snapshot of the
 // screen as it was when the subscription started.
 type Subscription struct {
-	// Snapshot is the ANSI rendering of the screen at subscription time.
+	// Snapshot is the screen as it was at subscription time, ready to print:
+	// the ANSI rendering plus a move to the agent's cursor.
 	Snapshot string
 
 	t  *Terminal
@@ -612,7 +634,7 @@ func (t *Terminal) Subscribe(maxBuffer int) *Subscription {
 	defer t.mu.Unlock()
 	t.nextSub++
 	s := &Subscription{
-		Snapshot: t.emu.Render(),
+		Snapshot: t.repaintLocked(),
 		t:        t,
 		id:       t.nextSub,
 		max:      maxBuffer,
@@ -700,8 +722,8 @@ func (s *Subscription) Next() (data []byte, resync bool, err error) {
 	}
 }
 
-// Resnapshot returns a fresh screen rendering after an overflow.
-func (s *Subscription) Resnapshot() string { return s.t.Render() }
+// Resnapshot returns a fresh repaint after an overflow.
+func (s *Subscription) Resnapshot() string { return s.t.Repaint() }
 
 func flatten(chunks [][]byte) []byte {
 	n := 0

@@ -9,6 +9,7 @@
 package vterm
 
 import (
+	"fmt"
 	"strings"
 	"syscall"
 	"testing"
@@ -211,6 +212,47 @@ func TestRenderStopsAtTheContent(t *testing.T) {
 	if !strings.Contains(term.Render(), "\x1b[41m") {
 		t.Error("the coloured run was trimmed away with the padding")
 	}
+}
+
+// TestRepaintPutsTheCursorBack: a client that prints a snapshot and stops has
+// the cursor wherever the last row ended, not where the agent's cursor is. The
+// next thing the agent echoes then lands at the bottom of the screen — and if
+// the last row reached the last column, it wraps and scrolls too.
+//
+// A repaint says where the cursor goes, so the client does not have to guess.
+func TestRepaintPutsTheCursorBack(t *testing.T) {
+	term, err := Start(Options{
+		Command: []string{"sh", "-c", `printf 'ready\n'; sleep 5`},
+		Cols:    40,
+		Rows:    10,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer func() { _ = term.Stop(time.Second) }()
+
+	waitFor(t, "output", func() bool { return strings.Contains(term.Text(), "ready") })
+
+	x, y, _ := term.Cursor()
+	want := fmt.Sprintf("\x1b[%d;%dH", y+1, x+1)
+	repaint := term.Repaint()
+	if !strings.HasSuffix(repaint, want) {
+		t.Errorf("repaint ends with %q, want a move to the cursor at %d,%d (%q)",
+			tail(repaint), x, y, want)
+	}
+	if !strings.Contains(repaint, "ready") {
+		t.Errorf("repaint lost the screen: %q", repaint)
+	}
+	if got := term.Subscribe(1 << 20).Snapshot; got != repaint {
+		t.Errorf("a subscription's snapshot is not a repaint:\n got %q\nwant %q", tail(got), tail(repaint))
+	}
+}
+
+func tail(s string) string {
+	if len(s) > 24 {
+		return "..." + s[len(s)-24:]
+	}
+	return s
 }
 
 // TestFocusEventIsDeliveredWhenTheAgentAsksForIt covers a gap that is invisible
