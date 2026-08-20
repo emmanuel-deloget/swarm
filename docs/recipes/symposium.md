@@ -83,6 +83,29 @@ One message, four recipients — `@philosopher` is their role, which is a target
 for free. Collect the four answers, post one summary of where they actually
 disagree, and only then decide whether a second round earns its cost.
 
+## Closing it, or not
+
+`swarm send -final` closes a matter: the bus refuses anyone the right to answer,
+and a philosopher trying to reply is told to act on the decision or escalate.
+The moderator here does **not** use it, on purpose.
+
+A debate that stops the instant it is declared over loses the best part. Told
+that the question was settled, each of the four answered in its own way, and one
+of them was worth the whole run:
+
+> Le débat est clos, et c'est bien. J'ai vu un homme corriger un traité sur le
+> sommeil jusqu'au matin ; il savait tout du sommeil et n'en dormit pas. Le
+> savoir, comme le soleil, se prend une fois, puis on s'écarte — s'attarder est
+> un luxe d'Alexandre. Quatre NON pour tant de mots : la voix du peuple. Je
+> retourne à mon tonneau.
+
+Four extra messages is a price worth paying there. In a fleet writing code it is
+not, and `-final` is how you refuse it.
+
+One thing it will not buy you either way: `delivery: push` types the message
+into the agent, so a philosopher composes its reply whether the bus will carry
+it or not. `-final` decides who hears it, not what it costs.
+
 `allow_self_inject: false` is the default and worth leaving alone: an agent
 sending to itself is a loop with no moderator in it.
 

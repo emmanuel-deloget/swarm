@@ -148,6 +148,45 @@ agents:
 	}
 }
 
+// TestAFinalAnswerBindsEveryRecipient: a decision sent to a role reaches one
+// agent per member, so the thread's last message belongs to whoever was served
+// last. Asking about the thread alone bound that one and let the others answer
+// — which made `-final` on a fan-out close the debate for exactly one
+// philosopher.
+func TestAFinalAnswerBindsEveryRecipient(t *testing.T) {
+	h := fleet(t, `
+web: {enabled: false}
+agents:
+  - name: chair
+    role: chair
+    command: [probe-echo]
+  - name: first
+    role: member
+    command: [probe-echo]
+  - name: second
+    role: member
+    command: [probe-echo]
+`)
+	_, _ = h.Send("user", "chair", "put the question", nil)
+	msgs, err := h.SendOn("chair", "@member", bus.KindDecision, "it is settled", nil,
+		SendOptions{Final: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("a send to @member carried %d messages, want one per member", len(msgs))
+	}
+
+	// Both, not just the one the fan-out happened to end on.
+	for _, name := range []string{"first", "second"} {
+		if _, err := h.SendKind(name, "chair", bus.KindQuestion, "yes but", nil); err == nil {
+			t.Errorf("%s answered a final decision", name)
+		} else if !strings.Contains(err.Error(), "act on it") {
+			t.Errorf("%s: the refusal should say what to do instead, said %q", name, err)
+		}
+	}
+}
+
 // TestASaturatedThreadReachesTheArbiter: running out of turns is not an error
 // to swallow. Somebody is told, with what was said.
 func TestASaturatedThreadReachesTheArbiter(t *testing.T) {

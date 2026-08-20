@@ -158,13 +158,19 @@ func (b *Bus) Turns(thread uint64) int {
 	return n
 }
 
-// LastOn returns the most recent message carried on a thread, and whether there
-// was one. It is how a reply learns what it is replying to.
-func (b *Bus) LastOn(thread uint64) (Message, bool) {
+// LastTo returns the most recent message carried on a thread and addressed to
+// one agent, and whether there was one. It is how a reply learns what it is
+// replying to.
+//
+// Addressed to that agent, and not merely last on the thread: a send to a role
+// or a group produces one message per recipient, so the last of them belongs to
+// whoever happened to be served last. Asking about the thread alone made a
+// final decision bind that one agent and let the others answer.
+func (b *Bus) LastTo(thread uint64, agent string) (Message, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for i := len(b.recent) - 1; i >= 0; i-- {
-		if b.recent[i].Thread == thread {
+		if b.recent[i].Thread == thread && b.recent[i].To == agent {
 			return b.recent[i], true
 		}
 	}

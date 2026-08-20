@@ -925,7 +925,7 @@ func (h *Hub) threadFor(from string, o SendOptions) (uint64, error) {
 		return h.bus.NewThread(), nil
 	}
 
-	if last, ok := h.bus.LastOn(thread); ok && last.Final && last.To == from {
+	if last, ok := h.bus.LastTo(thread, from); ok && last.Final {
 		return 0, fmt.Errorf("that was a final answer on this thread; act on it or escalate to %s",
 			h.escalationTarget())
 	}
