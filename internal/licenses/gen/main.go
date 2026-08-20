@@ -101,12 +101,30 @@ func run() error {
 // outputDir is ../data relative to this file's package, resolved from the
 // working directory go generate hands us.
 func outputDir() (string, error) {
-	for _, dir := range []string{"data", "internal/licenses/data"} {
-		if st, err := os.Stat(dir); err == nil && st.IsDir() {
-			return dir, nil
-		}
+	root, err := moduleRoot()
+	if err != nil {
+		return "", err
 	}
-	return "", fmt.Errorf("cannot find the data directory; run this with `go generate ./internal/licenses`")
+	dir := filepath.Join(root, "internal", "licenses", "data")
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return "", fmt.Errorf("%s is not a directory", dir)
+	}
+	return dir, nil
+}
+
+// moduleRoot is the directory holding go.mod. go generate runs a generator in
+// the directory of the file that asked for it, which is not where the package
+// paths below resolve from, so nothing here relies on the working directory.
+func moduleRoot() (string, error) {
+	out, err := exec.Command("go", "env", "GOMOD").Output()
+	if err != nil {
+		return "", fmt.Errorf("go env GOMOD: %w", err)
+	}
+	gomod := strings.TrimSpace(string(out))
+	if gomod == "" || gomod == os.DevNull {
+		return "", fmt.Errorf("not inside a module")
+	}
+	return filepath.Dir(gomod), nil
 }
 
 // clean removes the generated notices but leaves anything else alone: the
@@ -134,19 +152,13 @@ func clean(dir string) error {
 // the build at run time, so a binary states the terms of the build in hand
 // rather than of whichever tree the notices were generated in.
 func copySelfLicence(out string) error {
-	// out is either data or internal/licenses/data; the root is above both.
-	root := filepath.Join(out, "..", "..", "..")
-	if filepath.Base(filepath.Dir(out)) == "licenses" {
-		root = filepath.Join(out, "..", "..", "..")
+	root, err := moduleRoot()
+	if err != nil {
+		return err
 	}
 	b, err := os.ReadFile(filepath.Join(root, "LICENSE"))
 	if err != nil {
-		// Try the working directory, which is the repository root under
-		// `go generate ./internal/licenses`.
-		b, err = os.ReadFile("LICENSE")
-		if err != nil {
-			return fmt.Errorf("cannot find swarm's own LICENSE: %w", err)
-		}
+		return fmt.Errorf("cannot find swarm's own LICENSE: %w", err)
 	}
 	return os.WriteFile(filepath.Join(out, "self.txt"), b, 0o644)
 }
@@ -156,11 +168,16 @@ type module struct{ Path, Version, Dir string }
 // modules returns every non-standard module linked into the command, across
 // every target, sorted and without duplicates.
 func modules() ([]module, error) {
+	root, err := moduleRoot()
+	if err != nil {
+		return nil, err
+	}
 	seen := map[string]module{}
 	for _, goos := range targets {
 		cmd := exec.Command("go", "list", "-deps",
 			"-f", "{{if and .Module (not .Standard)}}{{.Module.Path}}\t{{.Module.Version}}\t{{.Module.Dir}}{{end}}",
 			"./cmd/swarm")
+		cmd.Dir = root
 		cmd.Env = append(os.Environ(), "GOOS="+goos)
 		out, err := cmd.Output()
 		if err != nil {
