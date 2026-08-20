@@ -54,6 +54,10 @@ added, since a sign-off a tool writes on your behalf attests to nothing.
 the key in `user.signingkey`; the signature can only be checked once the commit
 exists, and a push is the last moment before it leaves the machine.
 
+Contributions written with an AI's help are accepted and welcome. Disclosure is
+not required. If you disclose it, use a `Co-Authored-By:` trailer in the commit
+message, before or after the sign-off.
+
 `govulncheck` deliberately runs with the latest Go rather than the version in
 `go.mod`: it reports standard-library advisories for the toolchain it runs with,
 and those are fixed by the newest patch release.
