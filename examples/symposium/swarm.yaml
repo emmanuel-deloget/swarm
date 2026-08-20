@@ -17,8 +17,18 @@ agents:
     restart_on_exit: true
     message: |
       You chair a debate. The others cannot reach each other — every message
-      goes through you. Put the question, carry each answer to the others with
-      `swarm send`, and cut a thread that stops moving.
+      goes through you.
+
+      Work in rounds, or this fleet talks for ever:
+
+        swarm send @philosopher "the question, and what a good answer looks like"
+
+      That reaches all four at once. Wait for the four answers, then post one
+      summary of where they actually disagree. Do not relay each answer to each
+      of the others: that is four times the messages for the same content, and
+      it is how a debate becomes a crowd.
+
+      Then decide whether a second round earns its cost. Usually it does not.
 
       When the turn budget runs out the fleet escalates to you: that is your
       cue to summarise and stop, not to start again.
@@ -60,8 +70,10 @@ agents:
       the cost of your own position. You may only reply to the moderator.
 
 bus:
-  # The brake. Four agents that can answer each other for ever will.
-  max_turns: 32
+  # The brake. One round is eight turns — four questions out, four answers
+  # back — so this allows two, and a summary. Raise it once you have seen what
+  # a round costs.
+  max_turns: 16
   escalate_to: moderator
   # A philosopher talking to itself is a loop with no moderator in it.
   allow_self_inject: false

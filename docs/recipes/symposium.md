@@ -48,18 +48,40 @@ defaults:
 are `pull`, which leaves it for `swarm inbox`, and `defer`, which holds it until
 the agent falls quiet — right for a fleet writing code, wrong for a debate.
 
-## The brake
+## The brake, and why it needs two parts
 
 ```yaml
 bus:
-  max_turns: 32
+  max_turns: 16
   escalate_to: moderator
   allow_self_inject: false
 ```
 
-Four agents that can answer each other will. `max_turns` bounds one
-conversation; when it runs out, the thread escalates to `escalate_to` — here the
-moderator, whose own prompt says that this is the cue to summarise and stop.
+`max_turns` bounds one conversation, and it really is one conversation: an
+agent's message inherits the thread it was last written to on, so the whole
+debate hangs off the thread the moderator opened. When the budget runs out the
+sender is refused, told the number, and told who arbitrates:
+
+```
+swarm: this thread has used its 4 turns; decide alone or escalate to moderator
+```
+
+Sixteen is two rounds. A round is eight turns — four questions out, four
+answers back — so raise it once you have seen what a round costs, not before.
+
+The budget alone is not enough, and this is the part worth taking from this
+recipe. A moderator that relays each answer to each of the others turns four
+answers into twelve messages, and twelve into thirty-six: the cost is
+quadratic in the number of philosophers, and the budget only decides how far
+along that curve you get. So the moderator's prompt puts it in rounds instead:
+
+```
+swarm send @philosopher "the question, and what a good answer looks like"
+```
+
+One message, four recipients — `@philosopher` is their role, which is a target
+for free. Collect the four answers, post one summary of where they actually
+disagree, and only then decide whether a second round earns its cost.
 
 `allow_self_inject: false` is the default and worth leaving alone: an agent
 sending to itself is a loop with no moderator in it.
@@ -79,9 +101,11 @@ a good place to learn what those numbers look like.
 
 ## The catch
 
-**This burns tokens with nothing to show for it.** That is not a criticism of
-the recipe, it is the recipe: five agents talking is exactly the shape you want
-to be able to recognise and stop. Set `max_turns` before you start, not after.
+**It still gets chatty, and quickly.** That is not a criticism of the recipe,
+it is the recipe: five agents talking is exactly the shape you want to be able
+to recognise and stop. Set `max_turns` before you start, not after — and keep
+`swarm bus pause "enough"` within reach, which holds every delivery without
+stopping the agents.
 
 **A moderator is a single point of failure by design.** If it exits, the
 philosophers can reach nobody, so the example gives it `restart_on_exit: true`
