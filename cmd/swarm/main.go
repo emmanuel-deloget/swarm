@@ -38,12 +38,14 @@ talking
   send <target> <message>   send a bus message (agents use this to reach peers)
   broadcast <message>       send to every agent
   inbox [agent]             collect the messages addressed to you
+  done [text]               settle what you were asked; -thread for one of them
   stage <file>              copy a file where every agent can read it
   events                    show the swarm event log
   bus tail [-f]             the messages agents send each other, as they go
   bus stats [-since 1h]     how much of the fleet's time went into talking
   hook test <payload.json>  show what an incoming webhook would send
   hook post <payload.json>  send a payload to the running listener
+  hook sign <payload.json>  print the digest the listener expects
 
   info                      session, socket, web URL and token
   config check [-fix]       report (and fix) a config that has gone stale

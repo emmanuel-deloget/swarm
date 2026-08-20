@@ -51,6 +51,32 @@ func TestEveryCommandIsDocumented(t *testing.T) {
 	}
 }
 
+// TestEveryCommandIsListed is the other direction, and the one that was
+// missing: a command absent from `swarm` with no arguments is a command nobody
+// finds. `done` was absent for its whole life — registered, written up in three
+// documents, and printed by `swarm why` as the thing an agent should run to
+// settle what it owes. The listing was the only place that never mentioned it,
+// which is the one place somebody looks first.
+//
+// The first label of a case is the command; the rest are aliases the listing
+// deliberately does not repeat, so only the first is required. `bus` and `hook`
+// hold their own listings, complete, which is why this one may show a selection
+// of their subcommands without being wrong.
+func TestEveryCommandIsListed(t *testing.T) {
+	// help is what prints the listing; it needs no line in it.
+	skip := map[string]bool{"help": true}
+
+	for _, aliases := range commandCases(t) {
+		name := aliases[0]
+		if skip[name] || strings.HasPrefix(name, "-") {
+			continue
+		}
+		if !regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`).MatchString(usage) {
+			t.Errorf("`swarm %s` is a command the usage listing does not mention", name)
+		}
+	}
+}
+
 // allProse is every document a reader could learn this project from, as one
 // string: the README, and everything under docs/.
 //
