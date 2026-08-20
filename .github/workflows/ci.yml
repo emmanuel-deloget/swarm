@@ -94,6 +94,16 @@ jobs:
       - name: Dependencies verify
         run: go mod verify
 
+      - name: Licence notices are current
+        run: |
+          go generate ./internal/licenses
+          if ! git diff --quiet -- internal/licenses/data; then
+            echo "The bundled notices are out of date. Run:"
+            echo "  go generate ./internal/licenses"
+            git diff --stat -- internal/licenses/data
+            exit 1
+          fi
+
   cross:
     # Windows is not supported yet: there is no pty, no process group and no
     # SIGWINCH, and the three stubs behind build tags say so rather than
