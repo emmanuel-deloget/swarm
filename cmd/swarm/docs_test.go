@@ -11,17 +11,20 @@ import (
 )
 
 // A command that exists and is written up nowhere is a command nobody runs.
-// Four of them had drifted out of the README before anyone noticed, and the
-// only reason it was noticed at all is that somebody went looking.
+// Four of them had drifted out of the documentation before anyone noticed, and
+// the only reason it was noticed at all is that somebody went looking.
 //
 // The list comes from the switch in main.go, read through go/ast, and the
-// check is whether "swarm <name>" appears in the README. Neither step reads a
-// sentence: one is Go source, the other is a substring.
-func TestEveryCommandIsInTheReadme(t *testing.T) {
-	readme, err := os.ReadFile("../../README.md")
-	if err != nil {
-		t.Fatal(err)
-	}
+// check is whether "swarm <name>" appears anywhere in the prose. Neither step
+// reads a sentence: one is Go source, the other is a substring.
+//
+// Anywhere, and not in README.md, because where a command is written up is a
+// question of how the documents are arranged — and a test that names one file
+// stops being about commands the moment the reference for them moves. It would
+// then either pass on a stale copy or force the prose to stay where the test
+// expects it.
+func TestEveryCommandIsDocumented(t *testing.T) {
+	prose := allProse(t)
 
 	// help lists the commands itself, so it needs no entry of its own.
 	skip := map[string]bool{"help": true}
@@ -36,16 +39,48 @@ func TestEveryCommandIsInTheReadme(t *testing.T) {
 				break
 			}
 			named = append(named, name)
-			if strings.Contains(string(readme), "swarm "+name) {
+			if strings.Contains(prose, "swarm "+name) {
 				documented = true
 				break
 			}
 		}
 		if !documented {
-			t.Errorf("`swarm %s` is a command the README never mentions",
+			t.Errorf("`swarm %s` is a command no document mentions",
 				strings.Join(named, "`/`swarm "))
 		}
 	}
+}
+
+// allProse is every document a reader could learn this project from, as one
+// string: the README, and everything under docs/.
+//
+// Read from disk rather than listed here, so a document added tomorrow is
+// searched without anybody remembering to say so.
+func allProse(t *testing.T) string {
+	t.Helper()
+	var b strings.Builder
+	paths := []string{"../../README.md", "../../CONTRIBUTING.md"}
+	if entries, err := os.ReadDir("../../docs"); err == nil {
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), ".md") {
+				paths = append(paths, "../../docs/"+e.Name())
+			}
+		}
+	}
+	found := 0
+	for _, p := range paths {
+		body, err := os.ReadFile(p)
+		if err != nil {
+			continue // CONTRIBUTING.md need not exist yet
+		}
+		found++
+		b.Write(body)
+		b.WriteString("\n")
+	}
+	if found < 2 {
+		t.Fatalf("only %d document(s) found to search; the paths are wrong", found)
+	}
+	return b.String()
 }
 
 // commandCases returns the names in each case of main's command switch, one
