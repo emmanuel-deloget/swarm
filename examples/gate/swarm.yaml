@@ -1,0 +1,68 @@
+# One agent whose test gate takes ten minutes, and a fleet that does not
+# mistake waiting for being stuck. See docs/recipes/gate.md.
+session: gate
+
+defaults:
+  # Long enough that a compile does not read as going quiet.
+  idle_after: 45s
+
+agents:
+  - name: dev-1
+    role: dev
+    command: [opencode]
+    workspace: shared
+    can_send: [lead]
+    message: |
+      Run the integration gate with `make integration` before you say a task
+      is done. It takes eight to twelve minutes. While it runs you will look
+      idle, which is expected — what matters is that you answer what you owe
+      when it finishes.
+    patterns:
+      - match: '(?i)^--- FAIL|^FAIL\b|\bBUILD FAILED\b'
+        state: error
+        notify: true
+      - match: '(?i)^(ok|PASS)\b.*integration'
+        state: green
+        notify: true
+      - match: '\? \[y/N\]|\(y/n\)'
+        state: waiting
+        notify: true
+
+  - name: lead
+    role: lead
+    command: [opencode]
+    workspace: none
+    can_send: [all]
+    message: |
+      You are asked about agents that have gone quiet while owing something.
+      Look before you nudge: `swarm why <agent>` says what it owes, and
+      `swarm screen <agent>` shows whether it is running tests or waiting on
+      a prompt. A gate takes minutes; do not wake an agent that is working.
+
+bus:
+  # Twenty minutes, because an integration gate takes twelve and an agent
+  # waiting for its own tests is not stalled.
+  stalled_after: 20m
+  on_stalled:
+    - to: self
+      kind: fyi
+    - to: lead
+      kind: question
+      after: 15m
+      every: 30m
+      max: 3
+
+outgoing:
+  enabled: true
+  url: https://hooks.example.com/swarm
+  secret_env: SWARM_OUTGOING_SECRET
+  signature_header: X-Swarm-Signature-256
+  rules:
+    - name: it stalled, and I am not watching the screen
+      when:
+        event: agent.stalled
+      body: '{agent} has been quiet {text}'
+    - name: it finished
+      when:
+        event: agent.done
+      body: '{agent}: {text}'

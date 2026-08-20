@@ -1,0 +1,55 @@
+# A lead that makes one agent per ticket, each on its own branch, collected
+# when it says it is done. See docs/recipes/tickets.md.
+session: tickets
+
+defaults:
+  idle_after: 30s
+
+ephemeral:
+  # The ceiling for the whole fleet, whatever any one template allows.
+  max_alive: 6
+  remember: 100
+
+agents:
+  - name: lead
+    role: lead
+    command: [opencode]
+    workspace: clone
+    can_spawn: [worker]
+    can_send: [all]
+    message: |
+      You hand out work. One ticket, one agent:
+
+        swarm spawn worker "take rq-219: the importer drops empty rows"
+
+      That opens a debt in the new agent's name — it owes you that task until
+      it runs `swarm done`. `swarm ls` shows who is alive, `swarm why <agent>`
+      what each still owes. You do not merge anything: you read what a worker
+      reports and decide whether the branch is worth keeping.
+
+  - name: worker
+    role: dev
+    command: [opencode]
+    # A template, not an agent. Nothing starts until `swarm spawn worker`.
+    ephemeral: true
+    # Its own directory and branch, taken back when it goes — and never taken
+    # with uncommitted work still in it.
+    workspace: worktree
+    max_alive: 3
+    max_lifetime: 4h
+    can_send: [lead]
+    message: |
+      You exist for one task, and it is the first thing in your mailbox.
+      You have your own worktree and your own branch: commit there, do not
+      touch anyone else's. When the work is finished, or when there was
+      nothing to do, say so with `swarm done "what happened"` — that is what
+      releases your branch and ends you.
+
+bus:
+  stalled_after: 20m
+  on_stalled:
+    - to: self
+      kind: fyi
+    - to: lead
+      kind: question
+      after: 20m

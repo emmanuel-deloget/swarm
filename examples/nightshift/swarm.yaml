@@ -1,0 +1,73 @@
+# A fleet nobody is watching, woken by a clock. See docs/recipes/nightshift.md.
+session: nightshift
+
+defaults:
+  idle_after: 30s
+
+ephemeral:
+  max_alive: 4
+
+agents:
+  - name: dispatcher
+    role: dispatcher
+    command: [opencode]
+    workspace: clone
+    can_spawn: [auditor]
+    can_send: [all]
+    message: |
+      You are woken by the webhook listener, not by a person. A delivery
+      arrives in your mailbox naming a job; start the agent for it:
+
+        swarm spawn auditor "audit the dependency updates on main"
+
+      A webhook rule cannot start an agent — it can only send a message. That
+      is why you exist. Do not do the work yourself: read the job, spawn, and
+      go back to waiting.
+
+  - name: auditor
+    role: audit
+    command: [opencode]
+    ephemeral: true
+    workspace: worktree
+    max_alive: 2
+    # Nobody is awake to notice one that hangs.
+    max_lifetime: 90m
+    can_send: [dispatcher]
+    message: |
+      You exist for one overnight job, and it is the first thing in your
+      mailbox. Write what you find where a person will read it in the
+      morning, then `swarm done "..."`.
+
+hooks:
+  enabled: true
+  # A local trigger, so a shared token is enough: nothing crosses a network.
+  addr: 127.0.0.1:7779
+  token: change-me-and-keep-it-out-of-git
+  from: clock
+  rules:
+    - name: the nightly dependency audit
+      when:
+        job: deps
+      to: dispatcher
+      message: 'scheduled job "{job}" is due: {what}'
+
+    - name: the nightly documentation sweep
+      when:
+        job: docs
+      to: dispatcher
+      message: 'scheduled job "{job}" is due: {what}'
+
+  unmatched:
+    to: dispatcher
+    message: 'a timer fired with a job I have no rule for: {job}'
+
+outgoing:
+  enabled: true
+  url: https://hooks.example.com/swarm-nightshift
+  secret_env: SWARM_OUTGOING_SECRET
+  signature_header: X-Swarm-Signature-256
+  rules:
+    - name: something to read over coffee
+      when:
+        event: '~^agent\.(done|error|stalled)$'
+      body: '{agent}: {text}'

@@ -1,0 +1,48 @@
+# An agent with hands on another machine: one opencode, one plain ssh session
+# it drives with `swarm inject`. See docs/recipes/ssh.md.
+session: ssh
+
+agents:
+  - name: ops
+    role: ops
+    command: [opencode]
+    # Nothing to provision: this agent reads and decides, it does not build.
+    workspace: none
+    message: |
+      There is a second agent called `box`. It is not an AI — it is a live ssh
+      session on the staging host, and you drive it:
+
+        swarm inject box 'uptime; echo "__rc=$?"'
+        swarm screen box
+
+      `inject` types, it does not run and it returns no exit status. Always
+      append `; echo "__rc=$?"` and read the marker back with `swarm screen`
+      before you decide anything. Never inject a command you would not be able
+      to undo from the same shell.
+
+  - name: box
+    role: shell
+    # swarm knows nothing about agents. This one is a terminal on another
+    # machine. -tt forces a pty, which is what makes it a terminal at all.
+    command: [ssh, -tt, -o, BatchMode=yes, deploy@staging.example.com]
+    workspace: none
+    # A shell that dies should come back; a shell that cannot connect should
+    # not be retried for ever.
+    restart_on_exit: true
+    restart_max: 5
+    patterns:
+      # These say what the screen is showing. Note that none of them carries a
+      # `reply:` — a prompt asking for a secret must reach a human.
+      - match: '(?i)(password|passphrase).*:'
+        state: attention
+        notify: true
+      - match: '(?i)permission denied|host key verification failed'
+        state: error
+        notify: true
+      - match: '__rc=[1-9]'
+        state: error
+        notify: true
+
+bus:
+  # ops talks to you, not to box: box is a shell and reads no mailbox.
+  stalled_after: 10m

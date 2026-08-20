@@ -1,0 +1,106 @@
+# Two agents writing code, one reading it, one routing what comes in from
+# GitHub. See docs/recipes/review.md.
+session: review
+
+defaults:
+  # A message waits until the recipient falls quiet, so an agent mid-edit is
+  # not interrupted by a pull request notification.
+  delivery: defer
+  idle_after: 30s
+
+agents:
+  - name: dev-1
+    role: dev
+    command: [opencode]
+    workspace: worktree
+    can_send: [triage, "@review"]
+    message: |
+      You are dev-1. You work on your own branch, in your own worktree.
+      `swarm send review-1 -kind request "..."` asks for a review.
+      `swarm done "..."` settles what you were asked.
+
+  - name: dev-2
+    role: dev
+    command: [opencode]
+    workspace: worktree
+    can_send: [triage, "@review"]
+    message: |
+      You are dev-2. You work on your own branch, in your own worktree.
+      `swarm send review-1 -kind request "..."` asks for a review.
+      `swarm done "..."` settles what you were asked.
+
+  - name: review-1
+    role: review
+    command: [opencode]
+    workspace: clone
+    can_send: ["@dev", triage]
+    message: |
+      You review what the dev agents write. You do not push to their
+      branches; you answer them. Read a branch with `git log` and `git diff`
+      against the base, and reply with `swarm send <agent> -kind answer`.
+    patterns:
+      - match: '(?i)\b(approved|lgtm)\b'
+        state: approved
+        notify: true
+
+  - name: triage
+    role: triage
+    command: [opencode]
+    workspace: none
+    can_send: [all]
+    message: |
+      You route what arrives from GitHub. You do not write code: you decide
+      which agent should see a delivery, and send it on with `swarm send`.
+
+bus:
+  stalled_after: 20m
+  on_stalled:
+    # Ask the agent first — it has usually forgotten what it owes.
+    - to: self
+      kind: fyi
+    # Still nothing twenty minutes later: somebody else needs to know.
+    - to: triage
+      kind: question
+      after: 20m
+
+hooks:
+  enabled: true
+  addr: 127.0.0.1:7778
+  secret_env: GITHUB_WEBHOOK_SECRET
+  signature_header: X-Hub-Signature-256
+  from: github
+  rules:
+    - name: a pull request wants reading
+      when:
+        header.X-GitHub-Event: pull_request
+        action: '~^(opened|reopened|synchronize)$'
+      to: review-1
+      message: |
+        PR #{number} — {pull_request.title}
+        {pull_request.html_url}
+        {pull_request.head.ref} into {pull_request.base.ref}, by {pull_request.user.login}
+
+    - name: changes were requested
+      when:
+        header.X-GitHub-Event: pull_request_review
+        review.state: changes_requested
+      to: triage
+      message: |
+        {review.user.login} asked for changes on PR #{pull_request.number}:
+        {review.body}
+        {pull_request.html_url}
+
+    - name: somebody called the fleet
+      when:
+        header.X-GitHub-Event: issue_comment
+        action: created
+        comment.body: '~(?i)@swarm\b'
+      to: triage
+      message: |
+        {comment.user.login} on #{issue.number}: {comment.body}
+        {issue.html_url}
+
+  # Everything else still gets seen once, by the agent whose job that is.
+  unmatched:
+    to: triage
+    message: 'unrouted {header.X-GitHub-Event} on {repository.full_name}'

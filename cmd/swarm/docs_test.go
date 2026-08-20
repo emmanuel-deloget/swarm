@@ -4,7 +4,9 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -86,13 +88,14 @@ func allProse(t *testing.T) string {
 	t.Helper()
 	var b strings.Builder
 	paths := []string{"../../README.md", "../../CONTRIBUTING.md"}
-	if entries, err := os.ReadDir("../../docs"); err == nil {
-		for _, e := range entries {
-			if strings.HasSuffix(e.Name(), ".md") {
-				paths = append(paths, "../../docs/"+e.Name())
-			}
+	// Everything under docs/, at any depth: the recipes live in a directory of
+	// their own, and a command explained only in a recipe is still explained.
+	_ = filepath.WalkDir("../../docs", func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && strings.HasSuffix(d.Name(), ".md") {
+			paths = append(paths, path)
 		}
-	}
+		return nil
+	})
 	found := 0
 	for _, p := range paths {
 		body, err := os.ReadFile(p)

@@ -87,6 +87,16 @@ published as a signed `.exe` yet, and an unsigned Go binary is regularly taken
 for malware by heuristics — `go install` compiles on your machine, so the
 question does not arise.
 
+## Recipes
+
+Fleets that do something, each with a configuration you can copy and a test that
+keeps it loading: code and review driven by GitHub webhooks, an agent whose test
+gate takes ten minutes, one agent per ticket on its own branch, an agent with
+hands on another machine over ssh, four philosophers and a moderator, a fleet
+woken by a clock, two models and a referee.
+
+**[docs/recipes/](docs/recipes/README.md)**
+
 ## Configuration
 
 `swarm init` writes a starter `swarm.yaml`: one agent, nothing listening on a

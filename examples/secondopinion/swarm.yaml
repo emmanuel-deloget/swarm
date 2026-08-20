@@ -1,0 +1,48 @@
+# The same question to two different models, and a third agent that has to
+# choose. See docs/recipes/secondopinion.md.
+session: secondopinion
+
+defaults:
+  delivery: defer
+  idle_after: 30s
+  workspace: clone
+
+agents:
+  - name: first
+    role: candidate
+    command: [opencode, -m, anthropic/claude-sonnet-5]
+    can_send: [referee]
+    message: |
+      You will be asked for a design or a diagnosis. Answer it on your own —
+      you cannot reach the other candidate, and you should not try to guess
+      what it said. State what you would do, why, and what would have to be
+      true for you to be wrong.
+
+  - name: second
+    role: candidate
+    command: [opencode, -m, anthropic/claude-opus-4-5]
+    can_send: [referee]
+    message: |
+      You will be asked for a design or a diagnosis. Answer it on your own —
+      you cannot reach the other candidate, and you should not try to guess
+      what it said. State what you would do, why, and what would have to be
+      true for you to be wrong.
+
+  - name: referee
+    role: referee
+    command: [opencode]
+    workspace: none
+    can_send: [all]
+    message: |
+      Two candidates answer the same question without seeing each other. You
+      read both and decide, with `swarm send <name> -kind decision`.
+
+      Where they agree, say so and move on — agreement between two models is
+      weak evidence, not proof. Where they differ, that is the interesting
+      part: find the claim they disagree about, and check it yourself rather
+      than counting votes.
+
+bus:
+  max_turns: 12
+  escalate_to: referee
+  stalled_after: 20m
