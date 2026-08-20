@@ -1134,14 +1134,39 @@ func (h *Hub) SendOn(from, target string, kind bus.Kind, body string, files []st
 }
 
 // Inbox collects the pending messages of an agent, optionally waiting for one.
-func (h *Hub) Inbox(name string, peek bool, wait time.Duration, cancel <-chan struct{}) ([]bus.Message, error) {
-	if _, err := h.Agent(name); err != nil {
-		return nil, err
+func (h *Hub) Inbox(name string, peek bool, wait time.Duration, cancel <-chan struct{}) ([]bus.Message, string, error) {
+	a, err := h.Agent(name)
+	if err != nil {
+		return nil, "", err
+	}
+	note := ""
+	if wait != 0 && !h.mailboxCanFill(a) {
+		// Waiting on a mailbox nothing is filed in blocks for the whole
+		// timeout and then reports nothing, every time. Agents ask for it
+		// anyway, so say why rather than making them find out slowly.
+		wait = 0
+		note = "not waiting: messages to " + name + " are typed straight into " +
+			"your terminal as they arrive, so nothing is left here to wait for. " +
+			"Read your screen, not your mailbox."
 	}
 	if wait != 0 {
 		h.bus.Wait(name, wait, cancel)
 	}
-	return h.bus.Collect(name, peek), nil
+	return h.bus.Collect(name, peek), note, nil
+}
+
+// mailboxCanFill reports whether any configured path leaves a message in this
+// agent's mailbox for `swarm inbox` to collect.
+//
+// Only push empties it: the message is typed into the terminal and taken out
+// again. defer leaves it there until the agent falls quiet, and pull is what
+// the mailbox is for — both are worth waiting on.
+func (h *Hub) mailboxCanFill(a *agent.Agent) bool {
+	if h.Paused() != "" {
+		// A paused bus queues everything, whatever anyone asked for.
+		return true
+	}
+	return config.MailboxCanFill(a.Config().DeliveryMode, h.cfg.DeliveryByKind)
 }
 
 var unsafeFilename = regexp.MustCompile(`[^A-Za-z0-9._-]+`)

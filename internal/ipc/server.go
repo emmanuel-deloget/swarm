@@ -353,11 +353,11 @@ func (s *Server) handle(req Request) Response {
 		case req.WaitMS > 0:
 			wait = time.Duration(req.WaitMS) * time.Millisecond
 		}
-		msgs, err := h.Inbox(name, req.Peek, wait, s.closed)
+		msgs, note, err := h.Inbox(name, req.Peek, wait, s.closed)
 		if err != nil {
 			return errorResponse(err)
 		}
-		return Response{OK: true, Messages: msgs}
+		return Response{OK: true, Messages: msgs, Text: note}
 
 	case CmdScreen:
 		agents, err := h.Resolve(target(req))

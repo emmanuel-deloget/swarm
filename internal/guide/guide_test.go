@@ -169,6 +169,53 @@ agents:
 // about a command nobody may use is worse than a missing one: an agent told
 // about `swarm spawn` will try it, be refused, and have spent a turn learning
 // what the file already knew.
+// TestEachAgentIsToldWhetherToWait: agents call `swarm inbox -wait` liberally,
+// including when their messages are typed into their terminal and the mailbox
+// is never filled. The guide is where they read, so the answer goes there —
+// per agent, because in one fleet it differs per agent.
+func TestEachAgentIsToldWhetherToWait(t *testing.T) {
+	out := render(t, `
+web: {enabled: false}
+agents:
+  - name: chair
+    delivery: push
+    command: [probe-echo]
+  - name: worker
+    delivery: pull
+    command: [probe-echo]
+  - name: builder
+    delivery: defer
+    command: [probe-echo]
+`)
+	for _, want := range []string{
+		"| `chair` | **no**",
+		"| `worker` | **yes**",
+		"| `builder` | **yes**",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the guide does not say %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestOneKindLeftForCollectionChangesEveryAnswer: delivery_by_kind overrides
+// every agent's mode for one kind, so a single pull entry means even a
+// push-delivered agent has something to wait for — and the guide has to say so,
+// or it contradicts what `swarm inbox` does.
+func TestOneKindLeftForCollectionChangesEveryAnswer(t *testing.T) {
+	out := render(t, `
+web: {enabled: false}
+delivery_by_kind: {blocked: pull}
+agents:
+  - name: chair
+    delivery: push
+    command: [probe-echo]
+`)
+	if !strings.Contains(out, "| `chair` | **yes**") {
+		t.Errorf("blocked messages are left for collection; the guide says otherwise:\n%s", out)
+	}
+}
+
 func TestSpawningIsOnlyExplainedWhenSomeoneMay(t *testing.T) {
 	without := render(t, `
 web: {enabled: false}

@@ -614,6 +614,31 @@ const DefaultMessageTemplate = "[swarm] message from {from}: {body}"
 const DefaultStateDir = ".swarm"
 
 // Load reads and validates a config file.
+// MailboxCanFill reports whether any configured path leaves a message in the
+// mailbox of an agent with this delivery mode, for `swarm inbox` to collect.
+//
+// Only push empties it: the message is typed into the terminal and taken out
+// again, so a wait on that mailbox blocks for its whole timeout and reports
+// nothing. defer leaves it there until the agent falls quiet, and pull is what
+// the mailbox is for — both are worth waiting on. One delivery_by_kind entry
+// that is not push is enough to make even a push agent worth waiting on.
+//
+// It lives here, and not beside either caller, because the hub answers it for
+// `swarm inbox` and the generated AGENTS.md answers it for the agents. Two
+// implementations of one rule is how a fleet ends up told the opposite of what
+// it is doing.
+func MailboxCanFill(mode string, byKind map[string]string) bool {
+	if mode != DeliveryPush {
+		return true
+	}
+	for _, m := range byKind {
+		if m != "" && m != DeliveryPush {
+			return true
+		}
+	}
+	return false
+}
+
 func Load(path string) (*Config, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {

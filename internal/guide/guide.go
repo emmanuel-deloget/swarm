@@ -24,6 +24,9 @@ type Agent struct {
 	Role      string
 	Delivery  string
 	Workspace string
+	// Mailbox says whether `swarm inbox -wait` is worth calling for this
+	// agent. Agents call it liberally; the answer belongs where they read.
+	Mailbox bool
 	// CanSend is empty when the agent may reach everyone.
 	CanSend []string
 }
@@ -87,6 +90,7 @@ func Collect(c *config.Config) Data {
 			Role:      a.Role,
 			Delivery:  a.DeliveryMode,
 			Workspace: a.Workspace,
+			Mailbox:   config.MailboxCanFill(a.DeliveryMode, c.DeliveryByKind),
 			CanSend:   a.CanSend,
 		})
 		if a.DeliveryMode == config.DeliveryDefer {
@@ -178,13 +182,33 @@ swarm ls                        # who is here and what they are doing
 swarm send <agent> "message"    # write to one agent
 swarm broadcast "message"       # write to everyone
 swarm inbox                     # read the messages addressed to you
-swarm inbox -wait 30s           # ... or wait for one
+swarm inbox -wait 30s           # ... or wait for one — see below first
 swarm send <agent> -file diff.patch "have a look"   # attach a file
 swarm stage <file>              # copy a file where everyone can read it
 ` + "```" + `
 {{if .Groups}}
 Groups you can write to: {{range $i, $g := .Groups}}{{if $i}}, {{end}}` + "`@{{$g}}`" + `{{end}}.
 {{end}}
+## Your mailbox, and whether to wait on it
+
+How a message reaches you decides whether there is anything to wait for:
+
+| how it arrives | ` + "`swarm inbox -wait`" + ` |
+|---|---|
+| typed into your terminal (` + "`push`" + `) | pointless — it is on your screen already, and nothing is left behind |
+| left for you to collect (` + "`pull`" + `) | this is what it is for |
+| held until you go quiet (` + "`defer`" + `) | works, and picks it up before you fall silent |
+
+In this fleet:
+
+| agent | wait on the mailbox? |
+|---|---|
+{{range .Agents}}| ` + "`{{.Name}}`" + ` | {{if .Mailbox}}**yes** — messages are left for you to collect{{else}}**no** — your messages are typed straight into your terminal{{end}} |
+{{end}}
+Calling it when the answer is no costs you the whole timeout and returns
+nothing, so swarm answers at once and says so rather than letting you block.
+Polling a mailbox nothing is filed in is sleeping while work waits.
+
 ## Saying what a message is for
 
 ` + "`swarm send -kind <kind> …`" + `, one of: {{range $i, $k := .Kinds}}{{if $i}}, {{end}}` + "`{{$k}}`" + `{{end}}.

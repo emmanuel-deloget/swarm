@@ -588,6 +588,9 @@ func cmdInbox(args []string) error {
 	if cf.asJSON {
 		return emitJSON(resp.Messages)
 	}
+	if resp.Text != "" {
+		fmt.Fprintln(os.Stderr, "swarm: "+resp.Text)
+	}
 	if len(resp.Messages) == 0 {
 		fmt.Println("no new message")
 		return nil

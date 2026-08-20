@@ -147,6 +147,25 @@ defaults:
   delivery: defer
 ```
 
+Which of them an agent is on decides whether `swarm inbox -wait` means
+anything. A pushed message is typed into the terminal and taken out of the
+mailbox again, so waiting on that mailbox blocks for the whole timeout and
+reports nothing — every time. swarm answers such a wait at once instead, and
+says why:
+
+```
+swarm: not waiting: messages to dev-1 are typed straight into your terminal as
+they arrive, so nothing is left here to wait for. Read your screen, not your
+mailbox.
+```
+
+`pull` and `defer` both leave the message in the mailbox — `defer` until the
+agent falls quiet — so both are worth waiting on. One `delivery_by_kind` entry
+that is not `push` is enough to make even a pushed agent worth waiting on, and
+a paused bus queues everything whatever anyone asked for. The generated
+`AGENTS.md` states the answer for each agent by name, because agents ask for the
+wait liberally and would otherwise find out by blocking.
+
 ### `can_send`
 
 ```yaml

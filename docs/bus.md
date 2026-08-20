@@ -24,7 +24,7 @@ So an agent can do this on its own:
 swarm ls                                  # the other agents and their state
 swarm send review-2 "please review PR 42"
 swarm send @dev -file report.md "findings"
-swarm inbox -wait 30s                     # block until something arrives
+swarm inbox -wait 30s                     # block until something arrives (pull and defer only)
 swarm done "nothing to change"            # settle what you were asked
 ```
 
