@@ -24,6 +24,7 @@ swarm send dev-1 -kind blocked "…"  # say what it is for
 swarm send dev-1 -final "we ship A" # settled: nobody may answer
 swarm broadcast "stopping in 5 min"
 swarm inbox dev-1                   # read a mailbox
+swarm inbox -wait 30s               # ... or wait for one, if anything is filed there
 swarm stage diff.patch              # copy a file where every agent can read it
 
 swarm bus tail -f                   # the messages agents send each other

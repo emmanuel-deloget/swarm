@@ -481,10 +481,11 @@ carries a warning, so the last turn can be spent on an answer rather than on
 discovering the limit. Something genuinely else to say is always allowed:
 `swarm send --new-thread` starts a fresh conversation with its own budget.
 
-`swarm send --final` closes a matter: the bus refuses its recipient the right to
-answer. Use it for decisions, which is what `escalate_to` produces — a saturated
-thread is handed to that agent with everything that was said, and its answer is
-expected to come back final.
+`swarm send --final` closes a matter: the bus refuses its recipients the right
+to answer. All of them — a send to a role or a group carries one message per
+member, and the decision binds every one. Use it for decisions, which is what
+`escalate_to` produces: a saturated thread is handed to that agent with
+everything that was said, and its answer is expected to come back final.
 
 ### Kinds, and what they commit you to
 
