@@ -179,6 +179,40 @@ func TestRenderKeepsColours(t *testing.T) {
 	}
 }
 
+// TestRenderStopsAtTheContent: the emulator pads every row out to the full
+// width, and a rendering that ends in the last column is a trap — whatever is
+// written next wraps and scrolls the window. An attach prints this string
+// directly, so the padding has to come off here.
+//
+// Styled blanks are not padding: a coloured run with nothing in it is what the
+// agent drew, and it survives.
+func TestRenderStopsAtTheContent(t *testing.T) {
+	term, err := Start(Options{
+		Command: []string{"sh", "-c", `printf 'Hi\n\033[41m    \033[0m\n'; sleep 5`},
+		Cols:    40,
+		Rows:    5,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer func() { _ = term.Stop(time.Second) }()
+
+	waitFor(t, "output", func() bool { return strings.Contains(term.Text(), "Hi") })
+
+	lines := strings.Split(term.Render(), "\n")
+	if got := lines[0]; got != "Hi" {
+		t.Errorf("first row is %q, want %q with no padding after it", got, "Hi")
+	}
+	for i, l := range lines {
+		if strings.HasSuffix(l, " ") {
+			t.Errorf("row %d still ends in a blank: %q", i, l)
+		}
+	}
+	if !strings.Contains(term.Render(), "\x1b[41m") {
+		t.Error("the coloured run was trimmed away with the padding")
+	}
+}
+
 // TestFocusEventIsDeliveredWhenTheAgentAsksForIt covers a gap that is invisible
 // until an agent CLI relies on it: swarm lets the application enable focus
 // reporting (DECSET 1004) and then never sends an event, so the agent stays in

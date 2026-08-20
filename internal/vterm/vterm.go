@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/vt"
 )
 
@@ -493,10 +494,16 @@ func (t *Terminal) Size() (cols, rows int) {
 
 // Render returns the current screen as a string with ANSI styling, ready to be
 // printed inside a TUI pane or pushed to a browser terminal.
+//
+// The trailing blanks come off each row. The emulator pads every row out to the
+// full width, which is honest about the screen and dangerous to print: the last
+// row then ends in the last column, where the next character written wraps and
+// scrolls the window. Nothing downstream wants the padding either — a pane
+// crops to its own width, and a browser lays out its own lines.
 func (t *Terminal) Render() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.emu.Render()
+	return uv.TrimSpace(t.emu.Render())
 }
 
 // Text returns the current screen as plain text, without styling. Useful for
