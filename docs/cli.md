@@ -54,6 +54,17 @@ While attached, the bottom row of the window is a status bar showing the agent
 name and the detach key; the agent gets the rows above it. `swarm attach
 -no-status` gives the whole window to the agent instead.
 
+On Windows there is no status bar: holding a line at the bottom of the screen
+needs a scrolling region the console does not honour, and the bar ends up
+stacked across the display rather than sitting on one row. The reminder goes in
+the window title instead — an agent that sets its own title takes it back, so
+keep the detach key in mind there.
+
+An attach follows the window on Windows too, by asking the console its size
+four times a second: there is no SIGWINCH, and the resize arrives as a console
+input record an attach cannot read without eating the keystrokes it is there to
+forward.
+
 ## The mouse
 
 Mouse reporting is **off by default**, and that is deliberate: a terminal that
@@ -114,6 +125,12 @@ detach_key: 'ctrl+g'      # any bindable name: ctrl+], f12, esc esc
 `swarm run -detach-key ctrl+g` and `swarm attach -detach-key ctrl+g` override it
 for one session — handy while recording. Whatever key it is no longer reaches
 the agent; the one it replaced does.
+
+Two things a Windows console never passes on, whatever you configure. It
+translates keys to escape sequences itself, and its support for ctrl with
+punctuation is incomplete: `ctrl+\` arrives as a plain backslash, while a
+letter becomes `0x07` the way `ctrl+a`..`ctrl+z` all do. And `alt+enter` is the
+console's own full-screen toggle, so it never reaches swarm at all.
 
 `swarm run --no-tui` runs it headless if you would rather drive it entirely from
 the CLI or the web.

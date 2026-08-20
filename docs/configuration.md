@@ -690,24 +690,6 @@ Incoming webhooks, turned into bus messages by declarative rules. See the
 | `rules` | `[]` | Tried against every delivery; every match fires. |
 | `unmatched` | — | One rule, used only when none of `rules` matched. |
 
-`swarm attach` follows the window on Windows too, by asking the console its
-size four times a second: there is no SIGWINCH, and the resize is reported as a
-console input record an attach cannot read without eating the keystrokes it is
-there to forward.
-
-`swarm attach` has no status bar on Windows: holding a line at the bottom of
-the screen needs a scrolling region the console does not honour, and the bar
-ends up stacked across the display rather than sitting on one row. The reminder
-goes in the window title instead — an agent that sets its own title takes it
-back, so keep the detach key in mind there.
-
-Two things a Windows console never passes on, whatever you configure. It
-translates keys to escape sequences itself, and its support for ctrl with
-punctuation is incomplete — `ctrl+\` arrives as a plain backslash, which is why
-the default is `ctrl+g` there: a letter becomes `0x07` the way `ctrl+a`..`ctrl+z`
-all do. And `alt+enter` is the console's own full-screen toggle, so it never
-reaches swarm at all.
-
 Exactly one of `secret`, `secret_env` and `secret_path` may be named. Two is an
 error rather than a precedence rule: silently preferring one is how a swarm ends
 up verifying against a secret its owner thought they had replaced.
