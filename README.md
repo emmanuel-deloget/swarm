@@ -891,14 +891,21 @@ golangci-lint run ./...        # config in .golangci.yml
 govulncheck ./...              # run it with the latest Go, as CI does
 ```
 
-Adding or upgrading a dependency changes what the binary contains, so the
-notices behind `swarm licenses` have to be regenerated:
+**Adding or removing** a dependency changes which notices the binary needs, so
+they have to be regenerated:
 
 ```sh
 go generate ./internal/licenses    # collects each module's licence from the module cache
 ```
 
-You are unlikely to have to remember that. Nothing about a missing notice
+Upgrading one does not. The notices hold licence texts, which a patch release
+does not change, and no versions at all — those come from the binary itself,
+which Go records at build time and `go version -m` reads back. A version copied
+beside a licence would be stale from the next bump onwards, and it was: every
+dependency update failed the licence test for a reason that had nothing to do
+with licences.
+
+You are unlikely to have to remember any of this. Nothing about a missing notice
 fails to build, so the check is a test instead: it asks the toolchain what is
 actually linked — once per operating system, since conpty is only linked on
 Windows and termios only away from it — and fails both ways, on a module with

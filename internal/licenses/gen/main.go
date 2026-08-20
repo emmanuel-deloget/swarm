@@ -78,11 +78,18 @@ func run() error {
 		if err := os.WriteFile(filepath.Join(out, file), []byte(text), 0o644); err != nil {
 			return err
 		}
-		index = append(index, strings.Join([]string{m.Path, m.Version, name, file}, "\t"))
+		// No version. It would be a copy of something the binary already
+		// records, and a copy that goes stale the moment a dependency is
+		// bumped — which made every dependabot pull request red for a reason
+		// that had nothing to do with licences. The text is what belongs here,
+		// and a patch release does not change it.
+		index = append(index, strings.Join([]string{m.Path, name, file}, "\t"))
 	}
 
 	header := "# Written by internal/licenses/gen. Do not edit; run `go generate ./internal/licenses`.\n" +
-		"# module\tversion\tlicence file as named upstream\tfile in this directory\n"
+		"# Versions are deliberately absent: the binary records its own, and a copy\n" +
+		"# here would go stale on every bump.\n" +
+		"# module\tlicence file as named upstream\tfile in this directory\n"
 	body := header + strings.Join(index, "\n") + "\n"
 	if err := os.WriteFile(filepath.Join(out, "modules.tsv"), []byte(body), 0o644); err != nil {
 		return err

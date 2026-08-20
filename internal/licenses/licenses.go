@@ -20,6 +20,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"runtime/debug"
 	"sort"
 	"strings"
 
@@ -93,6 +94,32 @@ func (n Notice) Kind() string {
 	return "see text"
 }
 
+// linked returns the version of every module compiled into this binary.
+//
+// Go records them at build time, which makes this the only source that cannot
+// be wrong: a version written down beside a licence is a copy, and a copy is
+// stale from the next bump onwards. `go version -m` reads the same table.
+//
+// Empty for a test binary, which records no dependencies — so a notice shown
+// from a test carries no version rather than a wrong one.
+func linked() map[string]string {
+	out := map[string]string{}
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return out
+	}
+	for _, d := range bi.Deps {
+		v := d.Version
+		// A replaced module runs as its replacement, so that is the version in
+		// the binary.
+		if d.Replace != nil && d.Replace.Version != "" {
+			v = d.Replace.Version
+		}
+		out[d.Path] = v
+	}
+	return out
+}
+
 // Self returns swarm's own terms.
 //
 // The version comes from the build rather than from the generated data, so a
@@ -164,20 +191,30 @@ func read(index string, bundled bool) ([]Notice, error) {
 		dir = "data/bundled"
 	}
 
-	rows, err := parseIndex(index, string(body))
+	// A bundled work names its own version, since nothing else knows it: the
+	// font is not a Go module and the binary records nothing about it.
+	fields := 3
+	if bundled {
+		fields = 4
+	}
+	rows, err := parseIndex(index, string(body), fields)
 	if err != nil {
 		return nil, err
 	}
+	versions := linked()
 
 	var out []Notice
 	for _, f := range rows {
-		text, err := data.ReadFile(dir + "/" + f[3])
+		file := f[fields-1]
+		text, err := data.ReadFile(dir + "/" + file)
 		if err != nil {
-			return nil, fmt.Errorf("licenses: %s names %s, which is not here: %w", index, f[3], err)
+			return nil, fmt.Errorf("licenses: %s names %s, which is not here: %w", index, file, err)
 		}
-		n := Notice{Name: f[0], Version: f[1], File: f[2], Text: string(text), Bundled: bundled}
+		n := Notice{Name: f[0], Text: string(text), Bundled: bundled}
 		if bundled {
-			n.About, n.File = f[2], ""
+			n.Version, n.About = f[1], f[2]
+		} else {
+			n.File, n.Version = f[1], versions[f[0]]
 		}
 		out = append(out, n)
 	}
@@ -189,7 +226,7 @@ func read(index string, bundled bool) ([]Notice, error) {
 // Separate from read so that the line handling can be tested without an
 // embedded file to point at, which is how the carriage return below is now
 // checked rather than remembered.
-func parseIndex(index, body string) ([][4]string, error) {
+func parseIndex(index, body string, fields int) ([][4]string, error) {
 	var out [][4]string
 	for i, line := range strings.Split(body, "\n") {
 		// A Windows checkout rewrites these files to CRLF, and a field ending
@@ -201,10 +238,13 @@ func parseIndex(index, body string) ([][4]string, error) {
 			continue
 		}
 		f := strings.Split(line, "\t")
-		if len(f) != 4 {
-			return nil, fmt.Errorf("licenses: %s line %d has %d fields, want 4", index, i+1, len(f))
+		if len(f) != fields {
+			return nil, fmt.Errorf("licenses: %s line %d has %d fields, want %d",
+				index, i+1, len(f), fields)
 		}
-		out = append(out, [4]string{f[0], f[1], f[2], f[3]})
+		var row [4]string
+		copy(row[:], f)
+		out = append(out, row)
 	}
 	return out, nil
 }

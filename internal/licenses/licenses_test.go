@@ -73,16 +73,15 @@ func TestEveryLinkedModuleHasItsNotice(t *testing.T) {
 		}
 	}
 
-	for path, version := range linked {
-		n, ok := have[path]
-		if !ok {
+	// Presence, not version. A version beside a licence would be a copy of what
+	// the binary already records, stale from the next bump onwards — which is
+	// what made every dependency update fail here for a reason that had nothing
+	// to do with licences. What still has to hold is that a module linked into
+	// swarm has its terms carried, and only adding or removing one changes that.
+	for path := range linked {
+		if _, ok := have[path]; !ok {
 			t.Errorf("%s is linked into swarm and its licence is not carried; "+
 				"run `go generate ./internal/licenses`", path)
-			continue
-		}
-		if n.Version != version {
-			t.Errorf("%s is linked at %s but the notice is for %s; "+
-				"run `go generate ./internal/licenses`", path, version, n.Version)
 		}
 	}
 
@@ -246,7 +245,7 @@ func TestAnIndexSurvivesAWindowsCheckout(t *testing.T) {
 	const crlf = "# a comment\r\n" +
 		"JuliaMono\t0.63.2\tthe font\tJuliaMono.txt\r\n"
 
-	rows, err := parseIndex("test.tsv", crlf)
+	rows, err := parseIndex("test.tsv", crlf, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
