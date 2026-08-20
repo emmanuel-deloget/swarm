@@ -199,9 +199,41 @@ func (b *Bus) NewThread() uint64 {
 	return b.nextThrd
 }
 
-// Post files a message in the recipient's mailbox and returns it with its id
-// assigned. Callers set Pushed afterwards with MarkPushed.
+// Post files a message in the recipient's mailbox, wakes anyone blocked in
+// Wait for it, and returns it with its id assigned. Callers set Pushed
+// afterwards with MarkPushed.
 func (b *Bus) Post(m Message) Message {
+	return b.post(m, true)
+}
+
+// PostPushed files a message that is about to be typed into the recipient's
+// terminal, and wakes nobody: the terminal is the delivery, and MarkPushed
+// takes the message out of the mailbox as soon as the injection lands.
+//
+// Waking them anyway is a race against that removal, and the client that wins
+// it collects a message the agent is being shown at the same time — one
+// message, handled twice. Losing the race is the ordinary case, which is what
+// made it easy to miss: `swarm inbox -wait` on a pushed message normally waits
+// out its whole timeout and reports nothing.
+func (b *Bus) PostPushed(m Message) Message {
+	return b.post(m, false)
+}
+
+// Wake tells anyone blocked in Wait for this agent to look again. It is for a
+// push that failed: the message stays in the mailbox after all, and nobody was
+// woken when it was filed.
+func (b *Bus) Wake(to string) {
+	b.mu.Lock()
+	box := b.box(to)
+	waiters := box.waiters
+	box.waiters = nil
+	b.mu.Unlock()
+	for _, w := range waiters {
+		close(w)
+	}
+}
+
+func (b *Bus) post(m Message, wake bool) Message {
 	b.mu.Lock()
 	b.nextID++
 	m.ID = b.nextID
@@ -227,7 +259,11 @@ func (b *Bus) Post(m Message) Message {
 		box.pending = box.pending[len(box.pending)-b.history:]
 	}
 	waiters := box.waiters
-	box.waiters = nil
+	if wake {
+		box.waiters = nil
+	} else {
+		waiters = nil
+	}
 	b.mu.Unlock()
 
 	for _, w := range waiters {

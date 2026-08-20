@@ -1070,7 +1070,24 @@ func (h *Hub) SendOn(from, target string, kind bus.Kind, body string, files []st
 		if a.Name() == from && !h.cfg.Bus.AllowSelfInject {
 			continue
 		}
-		msg := h.bus.Post(bus.Message{
+		// The mode is settled before the message is filed, because filing is
+		// what wakes anyone blocked on `swarm inbox`, and a message on its way
+		// into a terminal is not for the mailbox.
+		mode := h.deliveryFor(a, kind)
+		if o.Push {
+			mode = config.DeliveryPush
+		}
+		if h.Paused() != "" {
+			// Queued and left there: a paused bus still records what happened,
+			// it just stops interrupting anybody with it.
+			mode = config.DeliveryPull
+		}
+
+		file := h.bus.Post
+		if mode == config.DeliveryPush {
+			file = h.bus.PostPushed
+		}
+		msg := file(bus.Message{
 			Thread: thread,
 			From:   from,
 			To:     a.Name(),
@@ -1079,24 +1096,18 @@ func (h *Hub) SendOn(from, target string, kind bus.Kind, body string, files []st
 			Body:   body,
 			Files:  files,
 		})
-		mode := h.deliveryFor(a, kind)
-		if o.Push {
-			mode = config.DeliveryPush
-		}
 		// A deferred recipient that is already quiet gets it now: waiting for a
 		// transition that has already happened would hold the message until the
 		// agent next did some work, which is the opposite of the intent.
-		if h.Paused() != "" {
-			// Queued and left there: a paused bus still records what happened,
-			// it just stops interrupting anybody with it.
-			mode = config.DeliveryPull
-		}
 		if mode == config.DeliveryDefer && a.Info().State == agent.StateIdle {
 			go h.flushDeferred(a.Name())
 		}
 		if mode == config.DeliveryPush {
 			rendered := msg.Render(a.Config().MessageTemplate)
 			if _, err := a.Inject(rendered, agent.InjectOptions{Submit: true}); err != nil {
+				// It stays in the mailbox, so whoever is waiting on it has to
+				// be told: nobody was woken when it was filed.
+				h.bus.Wake(a.Name())
 				h.log.Publish(event.Event{
 					Kind:  event.KindMessage,
 					Agent: a.Name(),

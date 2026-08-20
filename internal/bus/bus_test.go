@@ -120,6 +120,53 @@ func TestWaitReturnsImmediatelyWhenMailIsWaiting(t *testing.T) {
 	}
 }
 
+// TestAPushedMessageWakesNobody: a message on its way into a terminal is not
+// for the mailbox. Waking a client blocked on `swarm inbox` races MarkPushed,
+// and the client that wins collects a message the agent is being shown at the
+// same moment — one message, handled twice.
+func TestAPushedMessageWakesNobody(t *testing.T) {
+	b := New(10)
+	// Whether the waiter was released, not what it found: MarkPushed empties
+	// the mailbox either way, so a test that reads Wait's answer passes for the
+	// wrong reason and would not notice the wake coming back.
+	released := make(chan struct{})
+	go func() { _ = b.Wait("a", 5*time.Second, nil); close(released) }()
+	time.Sleep(50 * time.Millisecond)
+
+	m := b.PostPushed(Message{To: "a", Body: "typed in, not filed for collection"})
+	b.MarkPushed("a", m.ID)
+
+	select {
+	case <-released:
+		t.Error("a waiter was released by a message that went into the terminal")
+	case <-time.After(200 * time.Millisecond):
+	}
+	if n := b.Pending("a"); n != 0 {
+		t.Errorf("%d message(s) left to collect after a push, want none", n)
+	}
+}
+
+// TestWakeTellsThemAfterAFailedPush: the push did not land, so the message
+// stayed in the mailbox — and nobody was woken when it was filed.
+func TestWakeTellsThemAfterAFailedPush(t *testing.T) {
+	b := New(10)
+	done := make(chan bool, 1)
+	go func() { done <- b.Wait("a", 5*time.Second, nil) }()
+	time.Sleep(50 * time.Millisecond)
+
+	b.PostPushed(Message{To: "a", Body: "the injection failed"})
+	b.Wake("a") // what the hub does when Inject returns an error
+
+	select {
+	case ok := <-done:
+		if !ok {
+			t.Fatal("Wait returned false although the message is still pending")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Wake did not release the waiter")
+	}
+}
+
 func TestWaitWakesOnDelivery(t *testing.T) {
 	b := New(10)
 	done := make(chan bool, 1)
