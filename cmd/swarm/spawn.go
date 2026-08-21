@@ -69,6 +69,9 @@ func cmdSpawn(args []string) error {
 	if err != nil {
 		return err
 	}
+	if cf.asJSON {
+		return emitJSON(resp)
+	}
 	if *quiet {
 		fmt.Println(resp.Text)
 		return nil

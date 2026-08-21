@@ -57,8 +57,9 @@ func (b *Bus) Since(id uint64) []Message {
 
 // Pair counts what passed between two agents, in one direction.
 type Pair struct {
-	From, To string
-	Count    int
+	From  string `json:"from"`
+	To    string `json:"to"`
+	Count int    `json:"count"`
 }
 
 // Stats is what the bus looked like over a window. It answers the question the
@@ -66,33 +67,33 @@ type Pair struct {
 // time went into saying it.
 type Stats struct {
 	// Window is how far back the numbers reach, and Since when that starts.
-	Window time.Duration
-	Since  time.Time
+	Window time.Duration `json:"window"`
+	Since  time.Time     `json:"since"`
 
 	// Messages is the total, Threads the number of distinct conversations.
-	Messages int
-	Threads  int
+	Messages int `json:"messages"`
+	Threads  int `json:"threads"`
 
 	// Sent and Received are per agent. "user" appears among the senders, which
 	// is worth seeing: a fleet where every message comes from you is not
 	// coordinating, and one where none does may not need you.
-	Sent     map[string]int
-	Received map[string]int
+	Sent     map[string]int `json:"sent"`
+	Received map[string]int `json:"received"`
 
 	// Pairs are the directed exchanges, busiest first.
-	Pairs []Pair
+	Pairs []Pair `json:"pairs"`
 
 	// Kinds counts what the messages were for. Twelve questions and no
 	// decisions in an hour is a verdict, not a statistic — which is the whole
 	// reason kinds exist.
-	Kinds map[Kind]int
+	Kinds map[Kind]int `json:"kinds"`
 
 	// Deepest is the longest conversation in the window, measured in messages
 	// on one thread. A thread nobody can end is the shape the trouble takes.
-	Deepest int
+	Deepest int `json:"deepest"`
 
 	// Unread is what is still sitting in mailboxes.
-	Unread map[string]int
+	Unread map[string]int `json:"unread"`
 }
 
 // StatsSince summarises the messages carried after t.
@@ -168,14 +169,14 @@ func (b *Bus) SentSince(agent string, t time.Time) int {
 // run, and whether anything closed it. A thread is the only unit on the bus
 // that can be *too long*, so it is the only one worth listing on its own.
 type Thread struct {
-	ID       uint64
-	Turns    int
-	Started  time.Time
-	Last     time.Time
-	Agents   []string
-	Subject  string
-	Final    bool
-	Escalate bool
+	ID       uint64    `json:"id"`
+	Turns    int       `json:"turns"`
+	Started  time.Time `json:"started"`
+	Last     time.Time `json:"last"`
+	Agents   []string  `json:"agents"`
+	Subject  string    `json:"subject"`
+	Final    bool      `json:"final"`
+	Escalate bool      `json:"escalate"`
 }
 
 // Threads summarises the conversations still in the ring, busiest first. budget

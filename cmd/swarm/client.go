@@ -34,9 +34,16 @@ type clientFlags struct {
 }
 
 func (c *clientFlags) register(fs *flag.FlagSet) {
+	c.registerWithout(fs)
+	fs.BoolVar(&c.asJSON, "json", false, "print the raw JSON response")
+}
+
+// registerWithout leaves out -json, for a command that has no response to
+// print one of. Offering the flag and ignoring it is worse than not offering
+// it: a script gets prose where it asked for JSON, and nothing says so.
+func (c *clientFlags) registerWithout(fs *flag.FlagSet) {
 	fs.StringVar(&c.socket, "socket", "", "path to the swarm control socket")
 	fs.StringVar(&c.config, "c", "", "path to swarm.yaml (used to locate the socket)")
-	fs.BoolVar(&c.asJSON, "json", false, "print the raw JSON response")
 }
 
 func (c *clientFlags) dial() (*ipc.Client, error) {
@@ -464,6 +471,9 @@ func cmdScreen(args []string) error {
 	if err != nil {
 		return err
 	}
+	if cf.asJSON {
+		return emitJSON(resp)
+	}
 	fmt.Println(resp.Text)
 	fmt.Print("\x1b[0m")
 	return nil
@@ -635,6 +645,9 @@ func cmdStage(args []string) error {
 	if err != nil {
 		return err
 	}
+	if cf.asJSON {
+		return emitJSON(paths)
+	}
 	for _, p := range paths {
 		fmt.Println(p)
 	}
@@ -743,6 +756,9 @@ func cmdShutdown(args []string) error {
 	if err != nil {
 		return err
 	}
+	if cf.asJSON {
+		return emitJSON(resp)
+	}
 	fmt.Println(resp.Text)
 	return nil
 }
@@ -750,7 +766,7 @@ func cmdShutdown(args []string) error {
 func cmdLogs(args []string) error {
 	var cf clientFlags
 	fs := newFlagSet("logs")
-	cf.register(fs)
+	cf.registerWithout(fs)
 	follow := fs.Bool("f", false, "follow the file as it grows")
 	raw := fs.Bool("raw", false, "keep the terminal escape sequences")
 	_ = parseArgs(fs, args, -1)
@@ -867,6 +883,9 @@ func cmdDone(args []string) error {
 	})
 	if err != nil {
 		return err
+	}
+	if cf.asJSON {
+		return emitJSON(resp)
 	}
 	fmt.Println(resp.Text)
 	return nil

@@ -136,6 +136,25 @@ console's own full-screen toggle, so it never reaches swarm at all.
 `swarm run --no-tui` runs it headless if you would rather drive it entirely from
 the CLI or the web.
 
+## Machine-readable output
+
+`-json` prints the response instead of the prose, on every command that has a
+response: `ls`, `status`, `why`, `spawn`, `send`, `inbox`, `done`, `screen`,
+`stage`, `events`, `info`, `inject`, `keys`, `shutdown`, and all four of
+`swarm bus`. `events` and `bus tail` print one document per line as they arrive,
+so they can be piped into something that reads a stream.
+
+```sh
+swarm ls -json | jq -r '.[] | select(.state=="stalled") | .name'
+swarm why dev-1 -json | jq '.debts[].thread'
+swarm bus stats -since 1h -json | jq '.pairs[:3]'
+swarm spawn worker "take rq-219" -json | jq -r .text
+```
+
+`attach` and `logs` do not offer it: one hands over a terminal and the other
+pours out the bytes an agent printed. Neither has a response to serialise, and a
+flag that is accepted and ignored is worse than one that is not there.
+
 Flags are accepted after the target, so `swarm inject dev-1 -file shot.png "..."`
 works. Free text is taken literally from the first plain word onwards, so a
 message can contain `-json` without it being parsed as a flag; use `--` for a

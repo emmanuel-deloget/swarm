@@ -132,7 +132,7 @@ func (s *statusBar) clear() {
 func cmdAttach(args []string) error {
 	var cf clientFlags
 	fs := newFlagSet("attach")
-	cf.register(fs)
+	cf.registerWithout(fs)
 	keepSize := fs.Bool("keep-size", false, "do not resize the agent to this window")
 	noStatus := fs.Bool("no-status", false, "do not reserve the last row for the detach reminder")
 	detachKey := fs.String("detach-key", "", "key that detaches, overriding the configured one (e.g. ctrl+g)")

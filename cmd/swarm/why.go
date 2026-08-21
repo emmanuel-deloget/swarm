@@ -50,6 +50,9 @@ func cmdWhy(args []string) error {
 	if err != nil {
 		return err
 	}
+	if cf.asJSON {
+		return emitJSON(resp.Why)
+	}
 	if resp.Why == nil {
 		return fmt.Errorf("no explanation came back")
 	}

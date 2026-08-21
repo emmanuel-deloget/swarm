@@ -64,6 +64,10 @@ func cmdBusTail(args []string) error {
 	return c.Stream(ipc.Request{Cmd: ipc.CmdBusTail, Lines: *n, Follow: *follow},
 		func(resp ipc.Response) bool {
 			for _, m := range resp.Messages {
+				if cf.asJSON {
+					_ = emitJSON(m)
+					continue
+				}
 				fmt.Println(tailLine(m))
 			}
 			return true
@@ -115,6 +119,9 @@ func cmdBusThreads(args []string) error {
 	if err != nil {
 		return err
 	}
+	if cf.asJSON {
+		return emitJSON(resp.Threads)
+	}
 	if len(resp.Threads) == 0 {
 		fmt.Println("no conversations yet")
 		return nil
@@ -154,6 +161,9 @@ func cmdBusStats(args []string) error {
 	}
 	if resp.Stats == nil {
 		return fmt.Errorf("no statistics came back")
+	}
+	if cf.asJSON {
+		return emitJSON(resp.Stats)
 	}
 	printStats(*resp.Stats)
 	return nil
@@ -255,6 +265,15 @@ func cmdBusPause(action string, args []string) error {
 	})
 	if err != nil {
 		return err
+	}
+	if cf.asJSON {
+		// The one shape here that is not a payload the server already sends:
+		// the whole response says `paused` only when it is, so a reader cannot
+		// tell "delivering" from "the field moved".
+		return emitJSON(struct {
+			Paused bool   `json:"paused"`
+			Reason string `json:"reason,omitempty"`
+		}{resp.Paused != "", resp.Paused})
 	}
 	if resp.Paused == "" {
 		fmt.Println("the bus is delivering")
