@@ -59,6 +59,26 @@ func newFlagSet(name string) *flag.FlagSet {
 	return fs
 }
 
+// whoAmI settles who is asking. Inside an agent the shim sets $SWARM_AGENT,
+// and that is the answer whatever -from says: an identity a caller can choose
+// is not an identity, and can_send bounds nothing if the sender picks its own
+// name. Disagreeing with it is refused rather than ignored, so a script that
+// meant something by -from finds out.
+//
+// A person's shell has no $SWARM_AGENT, so -from stays theirs. This is the
+// same line `swarm spawn` already draws: empty means a person asked.
+func whoAmI(fromFlag string) (string, error) {
+	me := os.Getenv("SWARM_AGENT")
+	if me == "" {
+		return fromFlag, nil
+	}
+	if fromFlag != "" && fromFlag != me {
+		return "", fmt.Errorf("-from says %q but you are %s; a message you send "+
+			"is from you. Drop -from", fromFlag, me)
+	}
+	return me, nil
+}
+
 func emitJSON(v any) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
@@ -295,6 +315,11 @@ func cmdInject(args []string) error {
 		return fmt.Errorf("nothing to inject")
 	}
 
+	sender, err := whoAmI("")
+	if err != nil {
+		return err
+	}
+
 	c, err := cf.dial()
 	if err != nil {
 		return err
@@ -308,6 +333,7 @@ func cmdInject(args []string) error {
 
 	req := ipc.Request{
 		Cmd:    ipc.CmdInject,
+		From:   sender,
 		Target: target,
 		Text:   text,
 		Files:  staged,
@@ -323,7 +349,16 @@ func cmdInject(args []string) error {
 		return err
 	}
 	if cf.asJSON {
+		if len(resp.Messages) > 0 {
+			return emitJSON(resp.Messages)
+		}
 		return emitJSON(resp.Results)
+	}
+	if len(resp.Messages) > 0 {
+		// An agent's injection is carried on the bus, so it reports like a
+		// send: the recipient's own delivery mode decided what happened to it.
+		printDelivered(resp.Messages)
+		return nil
 	}
 	printResults(resp.Results)
 	return nil
@@ -371,12 +406,17 @@ func cmdKeys(args []string) error {
 	if target == "" || keys == "" {
 		return errors.New("usage: swarm keys <target> <key>...   (e.g. swarm keys dev-1 esc ctrl+c)")
 	}
+	sender, err := whoAmI("")
+	if err != nil {
+		return err
+	}
+
 	c, err := cf.dial()
 	if err != nil {
 		return err
 	}
 	defer func() { _ = c.Close() }()
-	resp, err := c.Do(ipc.Request{Cmd: ipc.CmdKeys, Target: target, Keys: keys})
+	resp, err := c.Do(ipc.Request{Cmd: ipc.CmdKeys, From: sender, Target: target, Keys: keys})
 	if err != nil {
 		return err
 	}
@@ -488,7 +528,7 @@ func cmdSend(args []string, broadcast bool) error {
 	var cf clientFlags
 	fs := newFlagSet(name)
 	cf.register(fs)
-	from := fs.String("from", os.Getenv("SWARM_AGENT"), "sender name (defaults to $SWARM_AGENT, else 'user')")
+	from := fs.String("from", "", "sender name; inside an agent it is always that agent, else 'user'")
 	textFile := fs.String("text-file", "", "read the message body from a file (- for stdin)")
 	kind := fs.String("kind", "", "what the message is for: "+kindList())
 	final := fs.Bool("final", false, "close the matter: the bus refuses anyone the right to answer")
@@ -500,6 +540,10 @@ func cmdSend(args []string, broadcast bool) error {
 
 	if *kind != "" && !bus.ValidKind(bus.Kind(*kind)) {
 		return fmt.Errorf("unknown kind %q; try one of: %s", *kind, kindNames())
+	}
+	sender, err := whoAmI(*from)
+	if err != nil {
+		return err
 	}
 
 	rest := fs.Args()
@@ -538,7 +582,7 @@ func cmdSend(args []string, broadcast bool) error {
 	resp, err := c.Do(ipc.Request{
 		Cmd:       ipc.CmdSend,
 		Target:    target,
-		From:      *from,
+		From:      sender,
 		Kind:      *kind,
 		Final:     *final,
 		Thread:    *thread,
@@ -552,14 +596,21 @@ func cmdSend(args []string, broadcast bool) error {
 	if cf.asJSON {
 		return emitJSON(resp.Messages)
 	}
-	for _, m := range resp.Messages {
+	printDelivered(resp.Messages)
+	return nil
+}
+
+// printDelivered says where each copy of a message went, and whether it was
+// typed in or is waiting. Shared with inject, which becomes a send when an
+// agent is the one asking.
+func printDelivered(msgs []bus.Message) {
+	for _, m := range msgs {
 		how := "queued"
 		if m.Pushed {
 			how = "delivered"
 		}
 		fmt.Printf("\x1b[32m→\x1b[0m %s #%d %s\n", m.To, m.ID, how)
 	}
-	return nil
 }
 
 func cmdInbox(args []string) error {
@@ -863,9 +914,14 @@ func cmdDone(args []string) error {
 	var cf clientFlags
 	fs := newFlagSet("done")
 	cf.register(fs)
-	from := fs.String("from", os.Getenv("SWARM_AGENT"), "who finished (defaults to $SWARM_AGENT)")
+	from := fs.String("from", "", "who finished; inside an agent it is always that agent")
 	thread := fs.Uint64("thread", 0, "settle one conversation; default is everything outstanding")
 	if err := parseArgs(fs, args, -1); err != nil {
+		return err
+	}
+
+	sender, err := whoAmI(*from)
+	if err != nil {
 		return err
 	}
 
@@ -877,7 +933,7 @@ func cmdDone(args []string) error {
 
 	resp, err := c.Do(ipc.Request{
 		Cmd:    ipc.CmdDone,
-		From:   *from,
+		From:   sender,
 		Thread: *thread,
 		Text:   strings.Join(fs.Args(), " "),
 	})

@@ -179,7 +179,9 @@ func TestPushDeliveryTypesIntoTheTerminal(t *testing.T) {
 	h := newFleet(t, "")
 	srv := serve(t, h)
 
-	resp := call(t, srv.Path(), Request{Cmd: CmdSend, Target: "dev-1", From: "triage", Text: "take ticket 12"})
+	// From dev-2 rather than a name nobody configured: the sender of a message
+	// has to be an agent in this fleet, or nobody, which means a person.
+	resp := call(t, srv.Path(), Request{Cmd: CmdSend, Target: "dev-1", From: "dev-2", Text: "take ticket 12"})
 	if len(resp.Messages) != 1 {
 		t.Fatalf("send returned %d messages", len(resp.Messages))
 	}

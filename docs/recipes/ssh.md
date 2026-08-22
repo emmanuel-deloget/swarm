@@ -67,19 +67,30 @@ patterns:
     notify: true
 ```
 
-## Two facts about authorisation
+## Authorisation, and what it is worth
 
-`can_send` bounds the **bus**. It is checked when a message is sent, and a
-refusal names what the sender may reach, because that error is read by an agent.
+An injection **from an agent** is carried on the bus, so `can_send` applies to
+it exactly as it applies to `swarm send`. That is why `ops` lists `box`: without
+it, the injection is refused and the refusal names where it may write instead.
 
-`inject` is not the bus and is not bounded by it. Any client that can open the
-control socket can type into any agent. The socket lives in the state directory,
-so the boundary is the filesystem — the same boundary as the logs, which hold
-what the agents printed.
+It also means the message is rendered on the way in, which is what
+`message_template: "{body}"` on `box` is for. A shell handed
+`[swarm] message from ops: uptime` would try to run that. The body alone is the
+command.
 
-That is worth saying plainly in a recipe that hands a shell to an agent: the
-thing standing between this fleet and your staging host is the ssh
-configuration on the far end, not swarm.
+And it means the fleet's record covers it: `swarm bus tail` shows what `ops`
+told the shell to do, `swarm bus stats` counts it, and `swarm bus pause` holds
+it. An injection that went straight into a terminal did none of that.
+
+What this is not is a security boundary. `$SWARM_AGENT` is how a client says
+who it is, and a client sets its own environment — swarm refuses a `-from` that
+disagrees with it, which stops a mistake and a drifting prompt, not a program
+determined to lie. A person's shell has no `$SWARM_AGENT` and is unrestricted,
+by design: that is the operator's path.
+
+So say it plainly in a recipe that hands a shell to an agent: the thing standing
+between this fleet and your staging host is the ssh configuration on the far
+end. `can_send` decides what the fleet is *meant* to do.
 
 ## The catch
 

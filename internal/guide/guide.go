@@ -212,6 +212,17 @@ Calling it when the answer is no costs you the whole timeout and returns
 nothing, so swarm answers at once and says so rather than letting you block.
 Polling a mailbox nothing is filed in is sleeping while work waits.
 
+## Reaching another agent
+
+` + "`swarm send`" + ` is how you write to one. So is ` + "`swarm inject`" + `: an injection
+from you is carried on the bus as a note, which is what puts it on the record
+and what makes the restrictions below apply to it. ` + "`swarm keys`" + ` is checked the
+same way, though a key press cannot be carried and is simply refused where you
+may not write.
+
+Do not try to reach a peer by another route. There isn't one, and the fleet
+cannot account for what it cannot see.
+
 ## Saying what a message is for
 
 ` + "`swarm send -kind <kind> …`" + `, one of: {{range $i, $k := .Kinds}}{{if $i}}, {{end}}` + "`{{$k}}`" + `{{end}}.

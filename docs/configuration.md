@@ -178,6 +178,22 @@ Groups and roles are allowed as targets. A refused send names what the sender
 *may* reach, because that error text is read by an agent: telling it "no" and
 leaving it to guess produces a retry, telling it where to go produces a route.
 
+It covers every way an agent reaches another agent, not only `swarm send`. An
+injection from an agent is carried on the bus as a note — so it goes through
+`can_send`, appears in `swarm bus tail`, and is held by `swarm bus pause` —
+and `swarm keys` is refused where the sender may not write, since a key press
+is not a message and cannot be carried.
+
+Who is asking comes from `$SWARM_AGENT`, which the shim sets. A `-from` that
+disagrees with it is refused rather than believed. A person's shell has no
+`$SWARM_AGENT` and is not restricted: that is the operator's path, and it is
+how `swarm inject` keeps typing raw text into a terminal.
+
+This bounds what a fleet is meant to do, and it is not a security boundary. A
+client sets its own environment, so a program determined to claim another name
+can. The check stops a prompt that has drifted and a command written by mistake,
+which is what actually happens.
+
 The whole send is refused before anything is delivered — half a broadcast is
 worse than none.
 

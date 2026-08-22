@@ -256,6 +256,22 @@ func (s *Server) handle(req Request) Response {
 				text += " " + paths
 			}
 		}
+		// An agent typing into another agent is the fleet talking to itself,
+		// whatever command it used. Routing it through the bus is what makes
+		// can_send mean something, puts it in `swarm bus tail`, and lets a
+		// pause hold it — none of which a raw injection did.
+		if _, ok := h.Config().Agent(req.From); ok {
+			if why := busCannotExpress(req); why != "" {
+				return errorResponse(fmt.Errorf(
+					"an injection from an agent is carried on the bus, which %s. "+
+						"Use `swarm send` for a message", why))
+			}
+			msgs, err := h.SendKind(req.From, target(req), bus.KindNote, req.Text, req.Files)
+			if err != nil {
+				return errorResponse(err)
+			}
+			return Response{OK: true, Messages: msgs}
+		}
 		res, err := h.Inject(target(req), text, agent.InjectOptions{
 			Submit: req.Submit,
 			Raw:    req.Raw,
@@ -264,10 +280,28 @@ func (s *Server) handle(req Request) Response {
 		return targetResponse(res, err)
 
 	case CmdKeys:
+		// Keys are not a message and cannot be carried, so this one is checked
+		// rather than routed: an agent may press keys only where it may write.
+		if _, ok := h.Config().Agent(req.From); ok {
+			if agents, err := h.Resolve(target(req)); err == nil {
+				for _, a := range agents {
+					if allowed, why := h.Config().MayReach(req.From, a.Name()); !allowed {
+						return errorResponse(errors.New(why))
+					}
+				}
+			}
+		}
 		res, err := h.Keys(target(req), req.Keys)
 		return targetResponse(res, err)
 
 	case CmdSend:
+		if req.From != "" {
+			if _, ok := h.Config().Agent(req.From); !ok {
+				return errorResponse(fmt.Errorf(
+					"no agent named %q; the sender of a message is one of them, "+
+						"or nobody, which means you", req.From))
+			}
+		}
 		msgs, err := h.SendOn(req.From, target(req), bus.Kind(req.Kind), req.Text, req.Files,
 			hub.SendOptions{Final: req.Final, Thread: req.Thread, NewThread: req.NewThread})
 		if err != nil {
@@ -548,6 +582,21 @@ func grace(req Request) time.Duration {
 		return 5 * time.Second
 	}
 	return time.Duration(req.GraceMS) * time.Millisecond
+}
+
+// busCannotExpress names what an injection asks for that a bus message has no
+// way to carry, or "" when there is nothing. Dropping the option quietly would
+// be worse: -submit=false exists precisely so the newline is not sent.
+func busCannotExpress(req Request) string {
+	switch {
+	case !req.Submit:
+		return "always submits (-submit=false has no equivalent)"
+	case req.Raw:
+		return "sanitises what it carries (-raw has no equivalent)"
+	case req.Paste != nil:
+		return "leaves bracketed paste to the recipient (-no-paste has no equivalent)"
+	}
+	return ""
 }
 
 func targetResponse(res []hub.TargetResult, err error) Response {

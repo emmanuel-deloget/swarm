@@ -136,6 +136,27 @@ console's own full-screen toggle, so it never reaches swarm at all.
 `swarm run --no-tui` runs it headless if you would rather drive it entirely from
 the CLI or the web.
 
+## Who is asking
+
+Inside an agent the shim sets `$SWARM_AGENT`, and that is the sender of anything
+that agent does — `swarm send -from` disagreeing with it is refused rather than
+believed, and a `-from` naming an agent that does not exist is refused too,
+because `swarm bus stats` reads that record back.
+
+`swarm inject` from an agent is carried on the bus as a note, so `can_send`,
+`swarm bus pause` and `bus: {enabled: false}` all apply to it, and it shows in
+`swarm bus tail`. An injection asking for something the bus cannot carry —
+`-submit=false`, `-raw`, `-no-paste` — is refused rather than quietly altered.
+`swarm keys` is checked the same way and not carried: a key press is not a
+message.
+
+A person's shell has no `$SWARM_AGENT`, so none of this applies to you:
+`swarm inject` types raw text into a terminal, which is what it is for.
+
+This bounds what a fleet is meant to do. It is not a security boundary — a
+client sets its own environment — and swarm is not a security product. It stops
+a prompt that drifted and a command typed by mistake.
+
 ## Machine-readable output
 
 `-json` prints the response instead of the prose, on every command that has a
