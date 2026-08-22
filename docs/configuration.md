@@ -460,6 +460,12 @@ defined agent, checked when the file is read.
 A **target** is an agent name, `@group`, `@role`, `all` (or `*`), or a
 comma-separated list of those.
 
+It means the agents that are **running**, which is not the same as the agents in
+this file. An ephemeral entry is a template and never runs, so nothing resolves
+to it. Its instances do run and are not written down anywhere, so `all` and
+`@role` reach them — including from a parent whose own `can_send` says `all`,
+which is how `swarm spawn` hands over the task.
+
 ## `web`
 
 The remote control: one page showing every terminal, live, typeable.

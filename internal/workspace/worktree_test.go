@@ -34,6 +34,23 @@ func repo(t *testing.T) string {
 	return dir
 }
 
+// TestWorktreeBaseHeadIsTheOneValueItDocuments: worktree_base takes "head" for
+// the repository's current commit, and anything else for the remote's default
+// branch. AddWorktree consulted BaseRef only when the setting was empty, so the
+// word "head" reached git — which has no object of that name, and the instance
+// failed to start with `fatal: not a valid object name: 'head'`.
+func TestWorktreeBaseHeadIsTheOneValueItDocuments(t *testing.T) {
+	src := repo(t)
+	dir := filepath.Join(t.TempDir(), "worktrees", "worker-1")
+
+	if err := AddWorktree(dir, src, BranchName("worker-1"), "head"); err != nil {
+		t.Fatalf("worktree_base: head is the documented value: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "a.txt")); err != nil {
+		t.Errorf("the worktree does not have the repository's files: %v", err)
+	}
+}
+
 func TestAWorktreeIsItsOwnDirectoryAndBranch(t *testing.T) {
 	src := repo(t)
 	dir := filepath.Join(t.TempDir(), "worktrees", "worker-1")

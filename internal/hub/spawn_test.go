@@ -737,3 +737,92 @@ agents:
 		t.Errorf("no room after collecting one: %v", err)
 	}
 }
+
+// TestAParentReachesTheInstanceItSpawned: a parent's can_send is written in the
+// file, and the instance is not — so resolving `all` against the file refused
+// the parent its own child, and `swarm spawn` failed handing over the task it
+// exists to hand over.
+func TestAParentReachesTheInstanceItSpawned(t *testing.T) {
+	h := fleetIn(t, t.TempDir(), `
+web: {enabled: false}
+agents:
+  - name: lead
+    can_spawn: [worker]
+    can_send: [all]
+    command: [probe-echo]
+  - name: worker
+    ephemeral: true
+    command: [probe-echo]
+`)
+	name, err := h.Spawn("lead", "worker", "take rq-1")
+	if err != nil {
+		t.Fatalf("a parent allowed to write to everyone could not reach its own instance: %v", err)
+	}
+	if owed := h.Bus().Owed(name); len(owed) != 1 {
+		t.Errorf("%s owes %d things, want the task it was spawned with", name, len(owed))
+	}
+}
+
+// TestAnInstanceCanSendIsEnforced: the instance carries its own can_send — the
+// parent, plus whatever the template listed — and the file has never heard of
+// the instance, so asking the file left it unrestricted.
+func TestAnInstanceCanSendIsEnforced(t *testing.T) {
+	h := fleetIn(t, t.TempDir(), `
+web: {enabled: false}
+agents:
+  - name: lead
+    can_spawn: [worker]
+    command: [probe-echo]
+  - name: other
+    command: [probe-echo]
+  - name: worker
+    ephemeral: true
+    command: [probe-echo]
+`)
+	name, err := h.Spawn("lead", "worker", "take rq-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Send(name, "other", "not allowed", nil); err == nil {
+		t.Error("an instance reached an agent its can_send does not name")
+	}
+	if _, err := h.Send(name, "lead", "to my parent", nil); err != nil {
+		t.Errorf("an instance could not reach the parent that spawned it: %v", err)
+	}
+}
+
+// TestBroadcastSurvivesATemplate: a template is in the file and is not an
+// agent. Resolving `all` through it asked the fleet for a process that never
+// existed, and `swarm broadcast` failed outright in any fleet that had one.
+func TestBroadcastSurvivesATemplate(t *testing.T) {
+	h := fleetIn(t, t.TempDir(), `
+web: {enabled: false}
+agents:
+  - name: lead
+    can_spawn: [worker]
+    command: [probe-echo]
+  - name: worker
+    ephemeral: true
+    command: [probe-echo]
+`)
+	msgs, err := h.Send("user", "all", "to everyone", nil)
+	if err != nil {
+		t.Fatalf("broadcast failed with a template in the fleet: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Errorf("broadcast reached %d agents, want the one that is running", len(msgs))
+	}
+
+	// And once an instance exists, "all" means it too.
+	name, err := h.Spawn("lead", "worker", "take rq-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs, err = h.Send("user", "all", "and again", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 {
+		t.Errorf("broadcast reached %d agents, want lead and %s", len(msgs), name)
+	}
+}

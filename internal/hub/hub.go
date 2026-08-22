@@ -388,14 +388,61 @@ func (h *Hub) Resolve(target string) ([]*agent.Agent, error) {
 		return nil, err
 	}
 	out := make([]*agent.Agent, 0, len(names))
+	seen := make(map[string]bool, len(names))
 	for _, n := range names {
 		a, err := h.Agent(n)
 		if err != nil {
+			// A template is in the file and is not an agent: it has no process
+			// and never had one. `all` resolving to it made `swarm broadcast`
+			// fail outright in any fleet that had one.
+			if tc, ok := h.cfg.Agent(n); ok && tc.Ephemeral {
+				continue
+			}
 			return nil, err
 		}
+		seen[n] = true
 		out = append(out, a)
 	}
+	// And the instances, which the file has never heard of. Without them "all"
+	// means "all the agents someone wrote down", which is not what anybody
+	// types it for.
+	for _, a := range h.instancesIn(target) {
+		if !seen[a.Name()] {
+			out = append(out, a)
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("target %q matches no running agent", target)
+	}
 	return out, nil
+}
+
+// instancesIn is the live instances a target reaches: every one for "all", and
+// the ones carrying a role for "@role". A group names agents from the file, so
+// it never names an instance.
+func (h *Hub) instancesIn(target string) []*agent.Agent {
+	role, wantRole := strings.CutPrefix(target, "@")
+	if !wantRole && target != "all" && target != "*" {
+		return nil
+	}
+	h.spawn.mu.Lock()
+	live := make(map[string]*instance, len(h.spawn.live))
+	for name, in := range h.spawn.live {
+		live[name] = in
+	}
+	h.spawn.mu.Unlock()
+
+	var out []*agent.Agent
+	for name, in := range live {
+		if wantRole && in.Config.Role != role {
+			continue
+		}
+		if a, err := h.Agent(name); err == nil {
+			out = append(out, a)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name() < out[j].Name() })
+	return out
 }
 
 // Infos snapshots the whole fleet, unread counts included.
@@ -788,6 +835,39 @@ func (h *Hub) Inject(from, target, text string, o agent.InjectOptions) ([]Target
 	return res, nil
 }
 
+// mayReach is can_send, asked of the fleet rather than of the file.
+//
+// Config.MayReach cannot answer it. An instance is an agent of this fleet
+// without being in the file that describes it, so the configuration resolves
+// neither `all` nor `@role` to one — a parent allowed to write to everyone was
+// refused its own child, which is the message `swarm spawn` sends to hand over
+// the task. And the sender is looked up through the fleet for the same reason:
+// an instance carries its own can_send, and the file has never heard of it.
+func (h *Hub) mayReach(from, to string) (bool, string) {
+	sender, err := h.Agent(from)
+	if err != nil {
+		// Not an agent: the user, or a webhook.
+		return true, ""
+	}
+	allowed := sender.Config().CanSend
+	if len(allowed) == 0 {
+		return true, ""
+	}
+	for _, target := range allowed {
+		agents, err := h.Resolve(target)
+		if err != nil {
+			continue
+		}
+		for _, a := range agents {
+			if a.Name() == to {
+				return true, ""
+			}
+		}
+	}
+	return false, fmt.Sprintf("%s cannot reach %s; it may write to %s",
+		from, to, strings.Join(allowed, ", "))
+}
+
 // mayTypeInto applies can_send to the commands that reach a terminal directly.
 // They are not the bus and cannot be carried on it — an agent driving a shell
 // needs the bytes it wrote, not a rendered message — but reaching a peer is
@@ -804,7 +884,7 @@ func (h *Hub) mayTypeInto(from string, agents []*agent.Agent) error {
 		if a.Name() == from {
 			continue
 		}
-		if allowed, why := h.cfg.MayReach(from, a.Name()); !allowed {
+		if allowed, why := h.mayReach(from, a.Name()); !allowed {
 			return errors.New(why)
 		}
 	}
@@ -1086,7 +1166,7 @@ func (h *Hub) SendOn(from, target string, kind bus.Kind, body string, files []st
 		if a.Name() == from {
 			continue
 		}
-		if ok, why := h.cfg.MayReach(from, a.Name()); !ok {
+		if ok, why := h.mayReach(from, a.Name()); !ok {
 			refused = append(refused, why)
 		}
 	}

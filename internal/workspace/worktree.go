@@ -35,9 +35,10 @@ func AddWorktree(dir, from, branch, base string) error {
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return err
 	}
-	if base == "" {
-		base = BaseRef(repo, "")
-	}
+	// Always through BaseRef: it is what turns the setting into a ref. Calling
+	// it only for the empty case sent the word "head" to git, which has no such
+	// object — so the one value the setting documents was the one that failed.
+	base = BaseRef(repo, base)
 	if out, err := git(repo, "worktree", "add", "--quiet", "-b", branch, dir, base); err != nil {
 		return fmt.Errorf("making a worktree at %s from %s: %w%s", dir, base, err, out)
 	}

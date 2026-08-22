@@ -268,8 +268,11 @@ func (s *Server) handle(req Request) Response {
 		return targetResponse(res, err)
 
 	case CmdSend:
+		// Asked of the fleet, not of the file: an instance is an agent without
+		// being written down, and checking the configuration would stop every
+		// message a spawned agent ever sent.
 		if req.From != "" {
-			if _, ok := h.Config().Agent(req.From); !ok {
+			if _, err := h.Agent(req.From); err != nil {
 				return errorResponse(fmt.Errorf(
 					"no agent named %q; the sender of a message is one of them, "+
 						"or nobody, which means you", req.From))
