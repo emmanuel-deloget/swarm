@@ -346,11 +346,11 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 		msgs, err = s.h.Send("user", req.Target, req.Text, req.Files)
 		message = fmt.Sprintf("sent to %d agent(s)", len(msgs))
 	case "start":
-		results, err = s.h.Start(req.Target)
+		results, err = s.h.Start("", req.Target)
 	case "stop":
-		results, err = s.h.Stop(req.Target, 5*time.Second)
+		results, err = s.h.Stop("", req.Target, 5*time.Second)
 	case "restart":
-		results, err = s.h.Restart(req.Target, 5*time.Second)
+		results, err = s.h.Restart("", req.Target, 5*time.Second)
 	default:
 		http.Error(w, "unknown action "+req.Action, http.StatusBadRequest)
 		return

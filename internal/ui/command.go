@@ -74,19 +74,19 @@ func (m *model) runCommand(line string) tea.Cmd {
 	case "start":
 		target := m.orCurrent(rest)
 		return m.async(func() (string, error) {
-			res, err := m.h.Start(target)
+			res, err := m.h.Start("", target)
 			return summary(res, "started"), err
 		})
 	case "stop":
 		target := m.orCurrent(rest)
 		return m.async(func() (string, error) {
-			res, err := m.h.Stop(target, 5*time.Second)
+			res, err := m.h.Stop("", target, 5*time.Second)
 			return summary(res, "stopped"), err
 		})
 	case "restart":
 		target := m.orCurrent(rest)
 		return m.async(func() (string, error) {
-			res, err := m.h.Restart(target, 5*time.Second)
+			res, err := m.h.Restart("", target, 5*time.Second)
 			return summary(res, "restarted"), err
 		})
 

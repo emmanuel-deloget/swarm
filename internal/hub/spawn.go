@@ -430,6 +430,18 @@ func (h *Hub) Ephemeral(name string) (template string, ok bool) {
 	return in.Template, true
 }
 
+// ParentOf names the agent that spawned a live instance, and whether it is one.
+// The parent is empty when a person spawned it.
+func (h *Hub) ParentOf(name string) (parent string, ok bool) {
+	h.spawn.mu.Lock()
+	defer h.spawn.mu.Unlock()
+	in, live := h.spawn.live[name]
+	if !live {
+		return "", false
+	}
+	return in.Parent, true
+}
+
 // Dead returns what is known about an instance that is no longer running.
 func (h *Hub) Dead(name string) (Gone, bool) {
 	h.spawn.mu.Lock()

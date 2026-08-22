@@ -761,18 +761,24 @@ func results(agents []*agent.Agent, fn func(*agent.Agent) (string, error)) []Tar
 }
 
 // Start starts every agent matching target.
-func (h *Hub) Start(target string) ([]TargetResult, error) {
+func (h *Hub) Start(from, target string) ([]TargetResult, error) {
 	agents, err := h.Resolve(target)
 	if err != nil {
+		return nil, err
+	}
+	if err := h.mayControl(from, agents); err != nil {
 		return nil, err
 	}
 	return results(agents, func(a *agent.Agent) (string, error) { return "started", a.Start() }), nil
 }
 
 // Stop stops every agent matching target.
-func (h *Hub) Stop(target string, grace time.Duration) ([]TargetResult, error) {
+func (h *Hub) Stop(from, target string, grace time.Duration) ([]TargetResult, error) {
 	agents, err := h.Resolve(target)
 	if err != nil {
+		return nil, err
+	}
+	if err := h.mayControl(from, agents); err != nil {
 		return nil, err
 	}
 	return results(agents, func(a *agent.Agent) (string, error) {
@@ -788,9 +794,12 @@ func (h *Hub) Stop(target string, grace time.Duration) ([]TargetResult, error) {
 }
 
 // Restart restarts every agent matching target.
-func (h *Hub) Restart(target string, grace time.Duration) ([]TargetResult, error) {
+func (h *Hub) Restart(from, target string, grace time.Duration) ([]TargetResult, error) {
 	agents, err := h.Resolve(target)
 	if err != nil {
+		return nil, err
+	}
+	if err := h.mayControl(from, agents); err != nil {
 		return nil, err
 	}
 	return results(agents, func(a *agent.Agent) (string, error) {
@@ -833,6 +842,41 @@ func (h *Hub) Inject(from, target, text string, o agent.InjectOptions) ([]Target
 		}
 	}
 	return res, nil
+}
+
+// isAgent reports whether a name belongs to this fleet — one written in the
+// file, or a live instance that is not. Anything else is a person.
+func (h *Hub) isAgent(name string) bool {
+	_, err := h.Agent(name)
+	return err == nil
+}
+
+// mayControl says whether a caller may start, stop or restart these agents.
+//
+// A person may, whatever they are: the fleet is theirs. An agent may only reach
+// the instances it spawned itself — stopping one is how a parent cancels work
+// it handed out, which is ordinary, while stopping a peer is not something a
+// fleet member has any business doing.
+//
+// Nothing here is a security boundary; $SWARM_AGENT is what a caller says it
+// is. It is the rule an agent that has drifted runs into.
+func (h *Hub) mayControl(from string, agents []*agent.Agent) error {
+	if from == "" {
+		return nil
+	}
+	if !h.isAgent(from) {
+		// Not one of ours, however it named itself: a person.
+		return nil
+	}
+	for _, a := range agents {
+		parent, ok := h.ParentOf(a.Name())
+		if !ok || parent != from {
+			return fmt.Errorf("%s may not stop %s: an agent controls the instances "+
+				"it spawned and nothing else. `swarm ls` shows what you have running",
+				from, a.Name())
+		}
+	}
+	return nil
 }
 
 // mayReach is can_send, asked of the fleet rather than of the file.

@@ -105,3 +105,25 @@ func TestASenderHasToExist(t *testing.T) {
 		t.Errorf("the refusal should name the problem, said %q", err)
 	}
 }
+
+// TestNoAgentShutsTheFleetDown: stopping one instance is work a parent hands
+// out and takes back. Ending the fleet is not work, and an agent that decides
+// it is finished takes everyone else with it.
+func TestNoAgentShutsTheFleetDown(t *testing.T) {
+	h := newFleet(t, "")
+	srv := serve(t, h)
+	_ = h
+
+	_, err := Call(srv.Path(), Request{Cmd: CmdShutdown, From: "dev-1"})
+	if err == nil {
+		t.Fatal("an agent shut the fleet down")
+	}
+	if !strings.Contains(err.Error(), "operator") {
+		t.Errorf("the refusal should say whose it is, said %q", err)
+	}
+
+	// A person is not an agent.
+	if _, err := Call(srv.Path(), Request{Cmd: CmdShutdown}); err != nil {
+		t.Errorf("the operator was refused: %v", err)
+	}
+}

@@ -116,7 +116,7 @@ func TestAnInstanceCannotBeRestarted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := h.Restart(name, time.Second)
+	res, err := h.Restart("", name, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +345,7 @@ func TestStoppingAnInstanceCollectsIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := h.Stop(name, time.Second)
+	res, err := h.Stop("", name, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +359,7 @@ func TestStoppingAnInstanceCollectsIt(t *testing.T) {
 		t.Error("the instance is still counted as alive")
 	}
 	// A declared agent, on the other hand, stays where it is.
-	if _, err := h.Stop("triage", time.Second); err != nil {
+	if _, err := h.Stop("", "triage", time.Second); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := h.Agent("triage"); err != nil {
@@ -824,5 +824,48 @@ agents:
 	}
 	if len(msgs) != 2 {
 		t.Errorf("broadcast reached %d agents, want lead and %s", len(msgs), name)
+	}
+}
+
+// TestAnAgentControlsOnlyWhatItSpawned: stopping an instance is how a parent
+// takes back work it handed out, and that is the only lifecycle an agent has.
+// Stopping a peer, or someone else's instance, is not something a fleet member
+// has any business doing — it could do all of it.
+func TestAnAgentControlsOnlyWhatItSpawned(t *testing.T) {
+	h := fleetIn(t, t.TempDir(), `
+web: {enabled: false}
+agents:
+  - name: lead
+    can_spawn: [worker]
+    command: [probe-echo]
+  - name: other
+    can_spawn: [worker]
+    command: [probe-echo]
+  - name: worker
+    ephemeral: true
+    command: [probe-echo]
+`)
+	mine, err := h.Spawn("lead", "worker", "rq-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirs, err := h.Spawn("other", "worker", "rq-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := h.Stop("lead", theirs, time.Second); err == nil {
+		t.Error("lead stopped an instance it did not spawn")
+	}
+	if _, err := h.Stop("lead", "other", time.Second); err == nil {
+		t.Error("lead stopped a declared agent")
+	}
+	// Its own, which is the whole point.
+	if _, err := h.Stop("lead", mine, time.Second); err != nil {
+		t.Errorf("lead could not stop the instance it spawned: %v", err)
+	}
+	// And a person, who is not an agent, may stop anything.
+	if _, err := h.Stop("", theirs, time.Second); err != nil {
+		t.Errorf("the operator was refused: %v", err)
 	}
 }

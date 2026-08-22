@@ -228,15 +228,15 @@ func (s *Server) handle(req Request) Response {
 		return Response{OK: true, Agents: infos}
 
 	case CmdStart:
-		res, err := h.Start(target(req))
+		res, err := h.Start(req.From, target(req))
 		return targetResponse(res, err)
 
 	case CmdStop:
-		res, err := h.Stop(target(req), grace(req))
+		res, err := h.Stop(req.From, target(req), grace(req))
 		return targetResponse(res, err)
 
 	case CmdRestart:
-		res, err := h.Restart(target(req), grace(req))
+		res, err := h.Restart(req.From, target(req), grace(req))
 		return targetResponse(res, err)
 
 	case CmdInject:
@@ -398,6 +398,14 @@ func (s *Server) handle(req Request) Response {
 		return Response{OK: true, Path: path}
 
 	case CmdShutdown:
+		// No agent, ever. Stopping one instance is work a parent hands out and
+		// takes back; ending the fleet is not work, and an agent that decides
+		// the fleet is finished takes everyone else with it.
+		if _, err := h.Agent(req.From); err == nil {
+			return errorResponse(fmt.Errorf(
+				"%s may not shut the fleet down; that is the operator's. "+
+					"`swarm done` ends what you were asked", req.From))
+		}
 		if s.OnShutdown != nil {
 			go s.OnShutdown()
 		}

@@ -256,6 +256,11 @@ func cmdLifecycle(cmd string, args []string) error {
 	if target == "" {
 		return fmt.Errorf("%s needs a target (an agent name, @group, or all)", cmd)
 	}
+	sender, err := whoAmI("")
+	if err != nil {
+		return err
+	}
+
 	c, err := cf.dial()
 	if err != nil {
 		return err
@@ -263,7 +268,8 @@ func cmdLifecycle(cmd string, args []string) error {
 	defer func() { _ = c.Close() }()
 
 	ipcCmd := map[string]string{"start": ipc.CmdStart, "stop": ipc.CmdStop, "restart": ipc.CmdRestart}[cmd]
-	resp, err := c.Do(ipc.Request{Cmd: ipcCmd, Target: target, GraceMS: int(grace.Milliseconds())})
+	resp, err := c.Do(ipc.Request{Cmd: ipcCmd, From: sender, Target: target,
+		GraceMS: int(grace.Milliseconds())})
 	if err != nil {
 		return err
 	}
@@ -798,12 +804,17 @@ func cmdShutdown(args []string) error {
 	cf.register(fs)
 	_ = parseArgs(fs, args, -1)
 
+	sender, err := whoAmI("")
+	if err != nil {
+		return err
+	}
+
 	c, err := cf.dial()
 	if err != nil {
 		return err
 	}
 	defer func() { _ = c.Close() }()
-	resp, err := c.Do(ipc.Request{Cmd: ipc.CmdShutdown})
+	resp, err := c.Do(ipc.Request{Cmd: ipc.CmdShutdown, From: sender})
 	if err != nil {
 		return err
 	}
