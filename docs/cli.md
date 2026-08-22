@@ -151,12 +151,17 @@ handed a rendered message would try to run it — so the check is applied and
 nothing else changes. `swarm events` records the injection with the agent that
 asked for it.
 
-An agent's control of the fleet stops at what it spawned. `swarm stop` on an
-instance is how a parent takes back work it handed out — and it collects the
-instance rather than merely stopping it, since one that came back would have no
-memory of the task it still owes. Anything else is refused: a peer, a declared
-agent, somebody else's instance. `swarm shutdown` is refused to every agent
-without exception; ending the fleet is not work.
+An agent's authority over the fleet is one command: `swarm stop`, on an instance
+it spawned itself. That is how a parent takes back work it handed out, and it
+collects the instance rather than merely stopping it, since one that came back
+would have no memory of the task it still owes. A peer, a declared agent or
+somebody else's instance is refused.
+
+`swarm start`, `swarm restart` and `swarm shutdown` are refused to every agent.
+The first two are not a rule so much as an absence of use: a live instance is
+already running, a stopped one has been collected and is gone from the fleet,
+and restarting an instance is refused whoever asks. Ending the fleet is not work
+at all.
 
 A person's shell has no `$SWARM_AGENT`, so none of this applies to you:
 `swarm inject` types raw text into a terminal, which is what it is for.

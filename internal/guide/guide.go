@@ -222,10 +222,10 @@ where you may go instead.
 Do not look for another route. There isn't one, and the fleet cannot account
 for what it cannot see.
 
-You have no control over the other agents. ` + "`swarm stop`" + ` works on an instance
-you spawned yourself, which is how you take back work you handed out, and on
-nothing else. ` + "`swarm shutdown`" + ` is not yours at all: if you think the fleet
-should stop, say so to whoever is watching.
+You have no control over the other agents. The one exception is
+` + "`swarm stop`" + ` on an instance you spawned yourself, which is how you take
+back work you handed out. Starting, restarting and shutting down are not yours:
+if you think the fleet should stop, say so to whoever is watching.
 
 ## Saying what a message is for
 

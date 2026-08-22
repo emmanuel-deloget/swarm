@@ -869,3 +869,37 @@ agents:
 		t.Errorf("the operator was refused: %v", err)
 	}
 }
+
+// TestStartAndRestartAreNotAnAgentsToRun: there is nothing an agent could do
+// with them. A live instance is already running, a stopped one has been
+// collected and is gone, and restarting an instance is refused whoever asks —
+// so leaving them reachable meant a command that could only ever fail.
+func TestStartAndRestartAreNotAnAgentsToRun(t *testing.T) {
+	h := fleetIn(t, t.TempDir(), `
+web: {enabled: false}
+agents:
+  - name: lead
+    can_spawn: [worker]
+    command: [probe-echo]
+  - name: worker
+    ephemeral: true
+    command: [probe-echo]
+`)
+	mine, err := h.Spawn("lead", "worker", "rq-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Its own instance, which is the most it could ever be allowed.
+	if _, err := h.Start("lead", mine); err == nil {
+		t.Error("an agent started something")
+	}
+	if _, err := h.Restart("lead", mine, time.Second); err == nil {
+		t.Error("an agent restarted something")
+	}
+	// The operator is not refused the command itself; the instance rule is
+	// what stops a restart there, and it says so.
+	if _, err := h.Restart("", mine, time.Second); err != nil {
+		t.Errorf("the operator was refused the command: %v", err)
+	}
+}

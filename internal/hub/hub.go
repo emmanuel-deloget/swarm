@@ -766,7 +766,7 @@ func (h *Hub) Start(from, target string) ([]TargetResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := h.mayControl(from, agents); err != nil {
+	if err := h.mayControl("start", from, agents); err != nil {
 		return nil, err
 	}
 	return results(agents, func(a *agent.Agent) (string, error) { return "started", a.Start() }), nil
@@ -778,7 +778,7 @@ func (h *Hub) Stop(from, target string, grace time.Duration) ([]TargetResult, er
 	if err != nil {
 		return nil, err
 	}
-	if err := h.mayControl(from, agents); err != nil {
+	if err := h.mayControl("stop", from, agents); err != nil {
 		return nil, err
 	}
 	return results(agents, func(a *agent.Agent) (string, error) {
@@ -799,7 +799,7 @@ func (h *Hub) Restart(from, target string, grace time.Duration) ([]TargetResult,
 	if err != nil {
 		return nil, err
 	}
-	if err := h.mayControl(from, agents); err != nil {
+	if err := h.mayControl("restart", from, agents); err != nil {
 		return nil, err
 	}
 	return results(agents, func(a *agent.Agent) (string, error) {
@@ -851,27 +851,35 @@ func (h *Hub) isAgent(name string) bool {
 	return err == nil
 }
 
-// mayControl says whether a caller may start, stop or restart these agents.
+// mayControl says whether a caller may run a lifecycle command on these agents.
 //
-// A person may, whatever they are: the fleet is theirs. An agent may only reach
-// the instances it spawned itself — stopping one is how a parent cancels work
-// it handed out, which is ordinary, while stopping a peer is not something a
-// fleet member has any business doing.
+// A person may, whatever it is: the fleet is theirs. An agent may stop an
+// instance it spawned itself, which is how a parent takes back work it handed
+// out, and that is the whole of its authority.
+//
+// start and restart are not part of it, because there is nothing an agent could
+// do with them. A live instance is already running; a stopped one has been
+// collected and is gone from the fleet; and restarting an instance is refused
+// whoever asks, since it would come back knowing nothing of the task it still
+// owes. Leaving them reachable meant a command that could only ever fail, which
+// is worse than a refusal that says so.
 //
 // Nothing here is a security boundary; $SWARM_AGENT is what a caller says it
 // is. It is the rule an agent that has drifted runs into.
-func (h *Hub) mayControl(from string, agents []*agent.Agent) error {
-	if from == "" {
-		return nil
-	}
+func (h *Hub) mayControl(verb, from string, agents []*agent.Agent) error {
 	if !h.isAgent(from) {
 		// Not one of ours, however it named itself: a person.
 		return nil
 	}
+	if verb != "stop" {
+		return fmt.Errorf("%s may not %s an agent; the fleet's lifecycle is the "+
+			"operator's. You may stop an instance you spawned, and `swarm done` "+
+			"ends what you were asked", from, verb)
+	}
 	for _, a := range agents {
 		parent, ok := h.ParentOf(a.Name())
 		if !ok || parent != from {
-			return fmt.Errorf("%s may not stop %s: an agent controls the instances "+
+			return fmt.Errorf("%s may not stop %s: an agent stops the instances "+
 				"it spawned and nothing else. `swarm ls` shows what you have running",
 				from, a.Name())
 		}
