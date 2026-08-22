@@ -178,11 +178,12 @@ Groups and roles are allowed as targets. A refused send names what the sender
 *may* reach, because that error text is read by an agent: telling it "no" and
 leaving it to guess produces a retry, telling it where to go produces a route.
 
-It covers every way an agent reaches another agent, not only `swarm send`. An
-injection from an agent is carried on the bus as a note — so it goes through
-`can_send`, appears in `swarm bus tail`, and is held by `swarm bus pause` —
-and `swarm keys` is refused where the sender may not write, since a key press
-is not a message and cannot be carried.
+It covers every way an agent reaches another agent, not only `swarm send`.
+`swarm inject` and `swarm keys` are checked against it too. Neither becomes a
+bus message: an injection is bytes in a terminal, and `-raw`, `-submit=false`
+and `-no-paste` have no equivalent on the bus — which is the reason an agent
+driving a shell uses inject at all. So the rule is applied and nothing else
+changes; `swarm events` records the injection with the agent that asked.
 
 Who is asking comes from `$SWARM_AGENT`, which the shim sets. A `-from` that
 disagrees with it is refused rather than believed. A person's shell has no

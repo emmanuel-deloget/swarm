@@ -760,9 +760,12 @@ func (h *Hub) Restart(target string, grace time.Duration) ([]TargetResult, error
 }
 
 // Inject types text into every agent matching target.
-func (h *Hub) Inject(target, text string, o agent.InjectOptions) ([]TargetResult, error) {
+func (h *Hub) Inject(from, target, text string, o agent.InjectOptions) ([]TargetResult, error) {
 	agents, err := h.Resolve(target)
 	if err != nil {
+		return nil, err
+	}
+	if err := h.mayTypeInto(from, agents); err != nil {
 		return nil, err
 	}
 	res := results(agents, func(a *agent.Agent) (string, error) {
@@ -771,16 +774,60 @@ func (h *Hub) Inject(target, text string, o agent.InjectOptions) ([]TargetResult
 	})
 	for _, r := range res {
 		if r.OK {
-			h.log.Publish(event.Event{Kind: event.KindInject, Agent: r.Agent, Text: summarize(text)})
+			// Who asked goes in the text as well as the data: a message event
+			// reads "user → dev-1: ...", and an injection nobody can attribute
+			// is how an agent typing into a peer stayed invisible.
+			line := summarize(text)
+			if from != "" {
+				line = fmt.Sprintf("%s → %s: %s", from, r.Agent, line)
+			}
+			h.log.Publish(event.Event{Kind: event.KindInject, Agent: r.Agent,
+				Text: line, Data: attribution(from)})
 		}
 	}
 	return res, nil
 }
 
+// mayTypeInto applies can_send to the commands that reach a terminal directly.
+// They are not the bus and cannot be carried on it — an agent driving a shell
+// needs the bytes it wrote, not a rendered message — but reaching a peer is
+// reaching a peer, and can_send is the rule for that whichever command was
+// used.
+//
+// A caller that is not an agent is a person, and is not restricted. That is
+// the line `swarm spawn` already draws.
+func (h *Hub) mayTypeInto(from string, agents []*agent.Agent) error {
+	if _, ok := h.cfg.Agent(from); !ok {
+		return nil
+	}
+	for _, a := range agents {
+		if a.Name() == from {
+			continue
+		}
+		if allowed, why := h.cfg.MayReach(from, a.Name()); !allowed {
+			return errors.New(why)
+		}
+	}
+	return nil
+}
+
+// attribution names who asked, for an event about it. Empty for a person: the
+// log says what happened to an agent, and "nobody" is how it reads when the
+// answer is you.
+func attribution(from string) map[string]string {
+	if from == "" {
+		return nil
+	}
+	return map[string]string{"from": from}
+}
+
 // Keys sends key names to every agent matching target.
-func (h *Hub) Keys(target, keys string) ([]TargetResult, error) {
+func (h *Hub) Keys(from, target, keys string) ([]TargetResult, error) {
 	agents, err := h.Resolve(target)
 	if err != nil {
+		return nil, err
+	}
+	if err := h.mayTypeInto(from, agents); err != nil {
 		return nil, err
 	}
 	res := results(agents, func(a *agent.Agent) (string, error) { return keys, a.SendKeys(keys) })

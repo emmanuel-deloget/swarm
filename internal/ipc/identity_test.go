@@ -23,15 +23,13 @@ func restrictedAgents(t *testing.T) string {
 `
 }
 
-// TestAnInjectionFromAnAgentGoesOnTheBus: `swarm inject` typed straight into a
-// terminal, so it went round can_send, left no trace in `swarm bus tail`, and
-// a paused bus did not hold it. Whatever command an agent uses, an agent
-// writing to an agent is the fleet talking to itself.
-func TestAnInjectionFromAnAgentGoesOnTheBus(t *testing.T) {
+// TestAnAgentMayOnlyTypeWhereItMayWrite: `swarm inject` went straight into a
+// terminal, so an agent restricted to one peer could type into any of them.
+// can_send is the rule for reaching a peer, whichever command was used.
+func TestAnAgentMayOnlyTypeWhereItMayWrite(t *testing.T) {
 	h := newFleet(t, restrictedAgents(t))
 	srv := serve(t, h)
 
-	// Where it may not write, it may not inject either.
 	_, err := Call(srv.Path(), Request{Cmd: CmdInject, From: "p1", Target: "dev-1",
 		Text: "round the back", Submit: true})
 	if err == nil {
@@ -41,41 +39,33 @@ func TestAnInjectionFromAnAgentGoesOnTheBus(t *testing.T) {
 		t.Errorf("the refusal should name what it may reach, said %q", err)
 	}
 
-	// Where it may, the message is carried — and recorded.
-	ok := call(t, srv.Path(), Request{Cmd: CmdInject, From: "p1", Target: "chair",
+	// Where it may, nothing else changes: an injection is still an injection.
+	call(t, srv.Path(), Request{Cmd: CmdInject, From: "p1", Target: "chair",
 		Text: "through the front", Submit: true})
-	if len(ok.Messages) != 1 {
-		t.Fatalf("an injection from an agent returned %d messages, want one on the bus", len(ok.Messages))
-	}
-	if got := ok.Messages[0].From; got != "p1" {
-		t.Errorf("the bus recorded %q as the sender", got)
-	}
-	if n := len(h.Bus().All()); n == 0 {
-		t.Error("the injection left no trace on the bus")
+	a, _ := h.Agent("chair")
+	waitForText(t, a.Text, "saw:through the front")
+	if strings.Contains(a.Text(), "[swarm] message from") {
+		t.Error("the injection was rendered as a bus message; it should arrive as typed")
 	}
 }
 
-// TestAnInjectionAnAgentCannotExpressIsRefused: -submit=false and -raw have no
-// bus equivalent, and dropping them quietly would be worse than saying so —
-// -submit=false exists precisely so the newline is not sent.
-func TestAnInjectionAnAgentCannotExpressIsRefused(t *testing.T) {
+// TestAnAgentKeepsTheOptionsOnlyInjectHas: an injection is not a message and
+// cannot become one. -raw and -submit=false are the reason an agent driving a
+// shell uses inject at all, and gating it must not cost them.
+func TestAnAgentKeepsTheOptionsOnlyInjectHas(t *testing.T) {
 	h := newFleet(t, restrictedAgents(t))
 	srv := serve(t, h)
-	_ = h
 
 	for _, req := range []Request{
-		{Cmd: CmdInject, From: "p1", Target: "chair", Text: "no newline", Submit: false},
-		{Cmd: CmdInject, From: "p1", Target: "chair", Text: "raw bytes", Submit: true, Raw: true},
+		{Cmd: CmdInject, From: "p1", Target: "chair", Text: "typed, not sent", Submit: false},
+		{Cmd: CmdInject, From: "p1", Target: "chair", Text: "exact bytes\n", Submit: true, Raw: true},
 	} {
-		_, err := Call(srv.Path(), req)
-		if err == nil {
-			t.Errorf("an injection the bus cannot carry was accepted: %+v", req)
-			continue
-		}
-		if !strings.Contains(err.Error(), "no equivalent") {
-			t.Errorf("the refusal should say what cannot be carried, said %q", err)
+		if _, err := Call(srv.Path(), req); err != nil {
+			t.Errorf("an agent lost an option only inject has: %v", err)
 		}
 	}
+	a, _ := h.Agent("chair")
+	waitForText(t, a.Text, "saw:typed, not sentexact bytes")
 }
 
 // TestKeysAreCheckedRatherThanCarried: a key press is not a message, so it

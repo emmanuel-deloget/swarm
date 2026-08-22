@@ -35,7 +35,7 @@ func (m *model) runCommand(line string) tea.Cmd {
 			return errCmd("usage: :keys <target> <key>...")
 		}
 		return m.async(func() (string, error) {
-			res, err := m.h.Keys(target, keys)
+			res, err := m.h.Keys("", target, keys)
 			return summary(res, "keys sent"), err
 		})
 
@@ -142,7 +142,7 @@ func (m *model) injectCmd(rest string, submit bool) tea.Cmd {
 		return errCmd("usage: :inject <target> <text>")
 	}
 	return m.async(func() (string, error) {
-		res, err := m.h.Inject(target, text, agent.InjectOptions{Submit: submit})
+		res, err := m.h.Inject("", target, text, agent.InjectOptions{Submit: submit})
 		return summary(res, "injected"), err
 	})
 }
@@ -159,7 +159,7 @@ func (m *model) fileCmd(target, path string) tea.Cmd {
 		if err != nil {
 			return "", err
 		}
-		res, err := m.h.Inject(target, staged, agent.InjectOptions{Submit: true})
+		res, err := m.h.Inject("", target, staged, agent.InjectOptions{Submit: true})
 		if err != nil {
 			return "", err
 		}

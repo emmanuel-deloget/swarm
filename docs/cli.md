@@ -143,12 +143,13 @@ that agent does — `swarm send -from` disagreeing with it is refused rather tha
 believed, and a `-from` naming an agent that does not exist is refused too,
 because `swarm bus stats` reads that record back.
 
-`swarm inject` from an agent is carried on the bus as a note, so `can_send`,
-`swarm bus pause` and `bus: {enabled: false}` all apply to it, and it shows in
-`swarm bus tail`. An injection asking for something the bus cannot carry —
-`-submit=false`, `-raw`, `-no-paste` — is refused rather than quietly altered.
-`swarm keys` is checked the same way and not carried: a key press is not a
-message.
+`swarm inject` and `swarm keys` are checked against `can_send`, the same rule
+`swarm send` obeys: reaching a peer is reaching a peer, whichever command was
+used. Neither becomes a bus message, though. An injection is bytes in a
+terminal, `-raw` and `-submit=false` have no equivalent on the bus, and a shell
+handed a rendered message would try to run it — so the check is applied and
+nothing else changes. `swarm events` records the injection with the agent that
+asked for it.
 
 A person's shell has no `$SWARM_AGENT`, so none of this applies to you:
 `swarm inject` types raw text into a terminal, which is what it is for.

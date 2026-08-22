@@ -6,7 +6,8 @@ agents:
   - name: ops
     role: ops
     command: [opencode]
-    # Injecting into box goes through the bus, so it goes through can_send.
+    # can_send covers injecting, not only sending: without box here, the
+    # injections below are refused.
     can_send: [box]
     # Nothing to provision: this agent reads and decides, it does not build.
     workspace: none
@@ -16,8 +17,7 @@ agents:
       than starting helpers of your own.
 
       There is a second agent called `box`. It is not an AI — it is a live ssh
-      session on the staging host, and you drive it. You may write to it, which
-      is what `can_send` below says:
+      session on the staging host, and you drive it:
 
         swarm inject box 'uptime; echo "__rc=$?"'
         swarm screen box
@@ -29,11 +29,6 @@ agents:
 
   - name: box
     role: shell
-    # An injection from an agent is carried on the bus, so what lands in this
-    # terminal is a rendered message — and this terminal is a shell, which
-    # would try to run "[swarm] message from ops: ...". The body alone is the
-    # command.
-    message_template: "{body}"
     # swarm knows nothing about agents. This one is a terminal on another
     # machine. -tt forces a pty, which is what makes it a terminal at all.
     command: [ssh, -tt, -o, BatchMode=yes, deploy@staging.example.com]

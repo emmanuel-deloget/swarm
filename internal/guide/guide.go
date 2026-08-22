@@ -214,14 +214,13 @@ Polling a mailbox nothing is filed in is sleeping while work waits.
 
 ## Reaching another agent
 
-` + "`swarm send`" + ` is how you write to one. So is ` + "`swarm inject`" + `: an injection
-from you is carried on the bus as a note, which is what puts it on the record
-and what makes the restrictions below apply to it. ` + "`swarm keys`" + ` is checked the
-same way, though a key press cannot be carried and is simply refused where you
-may not write.
+` + "`swarm send`" + ` is how you write to one. ` + "`swarm inject`" + ` and ` + "`swarm keys`" + `
+reach one too, by typing into its terminal, and the same restriction applies to
+all three: where you may not write, you may not type either. The refusal says
+where you may go instead.
 
-Do not try to reach a peer by another route. There isn't one, and the fleet
-cannot account for what it cannot see.
+Do not look for another route. There isn't one, and the fleet cannot account
+for what it cannot see.
 
 ## Saying what a message is for
 

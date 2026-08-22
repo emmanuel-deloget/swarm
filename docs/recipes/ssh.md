@@ -69,21 +69,20 @@ patterns:
 
 ## Authorisation, and what it is worth
 
-An injection **from an agent** is carried on the bus, so `can_send` applies to
-it exactly as it applies to `swarm send`. That is why `ops` lists `box`: without
-it, the injection is refused and the refusal names where it may write instead.
+`can_send` covers every way an agent reaches another agent, not only
+`swarm send`. Injecting into `box` is checked against it, which is why `ops`
+lists `box` — without that, the injection is refused and the refusal names
+where it may write instead.
 
-It also means the message is rendered on the way in, which is what
-`message_template: "{body}"` on `box` is for. A shell handed
-`[swarm] message from ops: uptime` would try to run that. The body alone is the
-command.
+What it does not do is turn the injection into a message. An injection is bytes
+in a terminal, and that is exactly what this recipe needs: `-raw` and
+`-submit=false` have no equivalent on the bus, and a shell handed
+`[swarm] message from ops: uptime` would try to run it. So the check is applied
+and nothing else changes. `swarm events` records the injection with the agent
+that asked for it.
 
-And it means the fleet's record covers it: `swarm bus tail` shows what `ops`
-told the shell to do, `swarm bus stats` counts it, and `swarm bus pause` holds
-it. An injection that went straight into a terminal did none of that.
-
-What this is not is a security boundary. `$SWARM_AGENT` is how a client says
-who it is, and a client sets its own environment — swarm refuses a `-from` that
+What this is not is a security boundary. `$SWARM_AGENT` is how a client says who
+it is, and a client sets its own environment — swarm refuses a `-from` that
 disagrees with it, which stops a mistake and a drifting prompt, not a program
 determined to lie. A person's shell has no `$SWARM_AGENT` and is unrestricted,
 by design: that is the operator's path.

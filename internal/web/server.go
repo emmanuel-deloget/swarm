@@ -338,9 +338,9 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 		if len(req.Files) > 0 {
 			text = strings.TrimSpace(text + " " + strings.Join(req.Files, " "))
 		}
-		results, err = s.h.Inject(req.Target, text, agent.InjectOptions{Submit: submit})
+		results, err = s.h.Inject("", req.Target, text, agent.InjectOptions{Submit: submit})
 	case "keys":
-		results, err = s.h.Keys(req.Target, req.Keys)
+		results, err = s.h.Keys("", req.Target, req.Keys)
 	case "send":
 		var msgs []bus.Message
 		msgs, err = s.h.Send("user", req.Target, req.Text, req.Files)
