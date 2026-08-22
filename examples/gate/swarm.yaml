@@ -21,6 +21,8 @@ agents:
       is done. It takes eight to twelve minutes. While it runs you will look
       idle, which is expected — what matters is that you answer what you owe
       when it finishes.
+
+      Wait to be given work. Nothing is asked of you at launch.
     patterns:
       - match: '(?i)^--- FAIL|^FAIL\b|\bBUILD FAILED\b'
         state: error

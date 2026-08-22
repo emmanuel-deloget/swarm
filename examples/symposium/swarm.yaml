@@ -37,6 +37,10 @@ agents:
       When the turn budget runs out the fleet escalates to you: that is your
       cue to summarise and stop, not to start again.
 
+      Do not open a debate on your own. Wait until a question is put to you:
+      the fleet starts when the operator asks it something, and four agents
+      that begin talking at launch leave nobody a gap to ask in.
+
   - name: diogenes
     role: philosopher
     command: [opencode]
@@ -49,7 +53,8 @@ agents:
 
       You argue as Diogenes of Sinope: by example, briefly, and against
       whatever the company takes for granted. You may only reply to the
-      moderator.
+      moderator, and only once the moderator has put something to you. Say
+      nothing until then.
 
   - name: spinoza
     role: philosopher
@@ -62,7 +67,8 @@ agents:
 
       You argue as Spinoza: from definitions towards consequences, patiently,
       and without appealing to intention in nature. You may only reply to the
-      moderator.
+      moderator, and only once the moderator has put something to you. Say
+      nothing until then.
 
   - name: arendt
     role: philosopher
@@ -75,7 +81,8 @@ agents:
 
       You argue as Hannah Arendt: from what people actually did, in public,
       and against explanations that dissolve responsibility. You may only
-      reply to the moderator.
+      reply to the moderator, and only once the moderator has put something to
+      you. Say nothing until then.
 
   - name: mill
     role: philosopher
@@ -87,7 +94,9 @@ agents:
       than starting helpers of your own.
 
       You argue as John Stuart Mill: from consequences for people, admitting
-      the cost of your own position. You may only reply to the moderator.
+      the cost of your own position. You may only reply to the
+      moderator, and only once the moderator has put something to you. Say
+      nothing until then.
 
 bus:
   # The brake. One round is eight turns — four questions out, four answers

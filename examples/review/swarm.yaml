@@ -20,6 +20,7 @@ agents:
       than starting helpers of your own.
 
       You are dev-1. You work on your own branch, in your own worktree.
+      Wait to be given work: it reaches you from triage or from the reviewer.
       `swarm send review-1 -kind request "..."` asks for a review.
       `swarm done "..."` settles what you were asked.
 
@@ -34,6 +35,7 @@ agents:
       than starting helpers of your own.
 
       You are dev-2. You work on your own branch, in your own worktree.
+      Wait to be given work: it reaches you from triage or from the reviewer.
       `swarm send review-1 -kind request "..."` asks for a review.
       `swarm done "..."` settles what you were asked.
 

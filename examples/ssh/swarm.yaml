@@ -22,6 +22,9 @@ agents:
         swarm inject box 'uptime; echo "__rc=$?"'
         swarm screen box
 
+      Do nothing until you are asked to. That shell is a live session on a real
+      host, and nobody asked you to look around it.
+
       `inject` types, it does not run and it returns no exit status. Always
       append `; echo "__rc=$?"` and read the marker back with `swarm screen`
       before you decide anything. Never inject a command you would not be able

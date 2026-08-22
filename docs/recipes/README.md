@@ -30,6 +30,21 @@ cp -r examples/gate /tmp/gate && cd /tmp/gate
 swarm run
 ```
 
+## One thing every one of these had to learn
+
+`message:` is typed into the agent when it launches, and an agent given a
+description of its job will start doing it. In a fleet that is a problem: four
+philosophers begin arguing the moment `swarm run` returns, and by the time you
+have a prompt back there is no gap left to ask them anything in.
+
+So every prompt here ends by saying not to start. Some of them read oddly out of
+context — *say nothing until the moderator has put something to you* — and that
+sentence is the whole difference between a fleet you drive and a fleet you
+watch.
+
+It is worth knowing before you write your own, because it does not look like a
+bug when it happens. It looks like enthusiasm.
+
 Each recipe says what it expects — a repository, an environment variable, a
 reachable host. An agent whose command is not on your PATH shows as `exited` in
 `swarm ls`, and `swarm events` names it:

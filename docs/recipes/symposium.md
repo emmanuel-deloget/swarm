@@ -48,6 +48,18 @@ defaults:
 are `pull`, which leaves it for `swarm inbox`, and `defer`, which holds it until
 the agent falls quiet — right for a fleet writing code, wrong for a debate.
 
+## Starting it, which is later than you think
+
+Every prompt in this fleet ends by saying not to start. The moderator is told to
+wait until a question is put to it; the philosophers are told to say nothing
+until the moderator has. Without that, `swarm run` returns onto a debate already
+in progress — four agents with a persona and no question — and there is nowhere
+to put yours.
+
+```sh
+swarm inject moderator "Est-ce que voir, c'est savoir ?"
+```
+
 ## The brake, and why it needs two parts
 
 ```yaml
