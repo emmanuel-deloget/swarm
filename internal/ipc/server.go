@@ -283,7 +283,11 @@ func (s *Server) handle(req Request) Response {
 		if err != nil {
 			return errorResponse(err)
 		}
-		return Response{OK: true, Messages: msgs}
+		var left *hub.Budget
+		if b, ok := h.BudgetLeft(req.From); ok {
+			left = &b
+		}
+		return Response{OK: true, Messages: msgs, Budget: left}
 
 	case CmdBusPause:
 		switch req.Text {

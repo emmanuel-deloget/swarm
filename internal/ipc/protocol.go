@@ -125,6 +125,7 @@ type Response struct {
 	Events   []event.Event      `json:"events,omitempty"`
 	Event    *event.Event       `json:"event,omitempty"`
 	Why      *hub.Why           `json:"why,omitempty"`
+	Budget   *hub.Budget        `json:"budget,omitempty"`
 
 	Text string `json:"text,omitempty"`
 	Path string `json:"path,omitempty"`

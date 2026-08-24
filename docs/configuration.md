@@ -492,6 +492,7 @@ tunnel rather than binding `0.0.0.0` in the open.
 | `max_turns` | `0` | Messages allowed on one conversation. `0` means no bound. |
 | `escalate_to` | `""` | Who arbitrates when a conversation runs out of turns. |
 | `on_stalled` | *(none)* | What to do about an agent that is stalled: ask it, tell somebody else, or nothing. See [`on_stalled`](#on_stalled). |
+| `budget` | *(none)* | What an agent may say, over time. See [`budget`](#budget). |
 
 A *thread* is one conversation. An agent answering someone stays on the thread
 it was written to on, so nothing has to carry an identifier around; a person or
@@ -596,6 +597,81 @@ swarm bus threads                          # the open conversations
 A paused bus still records everything; it just stops interrupting anybody with
 it. The agents keep working — this stops the talking, not the fleet. Without
 `-flush`, resuming leaves what piled up in the mailboxes for `swarm inbox`.
+
+## `budget`
+
+What an agent may say, kept like hit points: a balance that refills a little at
+a time and never passes a ceiling.
+
+```yaml
+bus:
+  budget:
+    max: 60          # the ceiling; 0, the default, means no budget at all
+    refill: 1m       # how long one point takes to come back
+    cost:            # per recipient, by kind
+      fyi: 10
+      decision: 8
+```
+
+| key | default | |
+|---|---|---|
+| `max` | `0` | The ceiling. `0` switches the whole thing off, so a fleet that says nothing about a budget has none. |
+| `refill` | `1m` | How long one point takes to come back. |
+| `cost` | *(below)* | What a message costs **per recipient**, by kind. Naming a kind that does not exist is an error. |
+
+`max_turns` bounds a conversation, and a conversation is the only thing it can
+see. A fleet that ran away did it sideways: one `swarm send` to ten agents is a
+single command, ten interruptions and ten fresh threads, and it costs nothing
+against any per-thread budget. So a message is priced by **what it interrupts** —
+the kind, once per recipient. A send to ten costs ten times a send to one.
+
+**The ceiling is the load-bearing part, and it is the easy one to leave out.** A
+fleet that has been quiet has, by definition, saved up for its worst hour.
+Replayed against a real runaway — a triage agent that broadcast eight versions
+of one clause to ten agents in under two hours — a bucket deep enough to hold
+the day of silence before it funded the entire storm and refused nothing. The
+refill rate sets the steady state; the ceiling sets the disaster. Keep it to a
+few minutes of refill, not a few hours.
+
+The default prices say what swarm already believes: settling a matter is nearly
+free, asking costs something, telling everybody costs most.
+
+| kind | cost |
+|---|---|
+| `blocked` | 0 |
+| `answer`, `done` | 1 |
+| `question`, `request` | 5 |
+| `decision`, and a message with no kind | 8 |
+| `fyi` | 10 |
+
+`blocked` is free and cannot be priced otherwise. An agent that cannot go on
+must always be able to say so, and a budget that can silence that turns a stuck
+agent into a quiet one — which is the failure nobody sees.
+
+Only agents pay. You, a webhook and swarm's own escalations are not the fleet
+talking to itself, and a fleet that cannot report is worse than one that talks
+too much.
+
+A refusal carries the number, the way to spend less, and the time:
+
+```
+swarm: chair has 20 of 30 and this costs 30 (3 recipients); it can be sent at
+17:14:22. Fewer recipients costs less. Answering, finishing and saying you are
+blocked cost least.
+```
+
+The time matters. A budget refusal is transient, and a transient refusal is
+exactly the kind an agent retries in a loop.
+
+Every successful send reports what is left, on standard error, so an agent sees
+the number before it is refused rather than after:
+
+```
+swarm: 19 of 30 left to say
+```
+
+That is the half of this that changes what a fleet writes. A refusal stops one
+message; a number an agent can see before spending changes what it sends.
 
 ## `on_stalled`
 

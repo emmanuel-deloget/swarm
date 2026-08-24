@@ -272,3 +272,33 @@ agents:
 		t.Error("a template with no worktree is described as having one")
 	}
 }
+
+// TestABudgetIsExplainedOnlyWhenThereIsOne: the guide describes the mechanisms
+// that are switched on and no others. An agent told about an allowance in a
+// fleet that has none learns a rule that does not exist.
+func TestABudgetIsExplainedOnlyWhenThereIsOne(t *testing.T) {
+	with := render(t, `
+web: {enabled: false}
+bus:
+  budget: {max: 40}
+agents:
+  - name: alpha
+    command: [probe-echo]
+`)
+	if !strings.Contains(with, "40 points") {
+		t.Errorf("the guide does not say what the allowance is:\n%s", with)
+	}
+	if !strings.Contains(with, "once per recipient") {
+		t.Error("the guide does not say a send to ten costs ten times a send to one")
+	}
+
+	without := render(t, `
+web: {enabled: false}
+agents:
+  - name: alpha
+    command: [probe-echo]
+`)
+	if strings.Contains(without, "allowance for talking") {
+		t.Errorf("a fleet with no budget is told about one:\n%s", without)
+	}
+}

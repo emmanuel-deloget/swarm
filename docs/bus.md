@@ -133,3 +133,12 @@ best: `delivery_by_kind` lets the fleet defer while `blocked` still gets
 through, `can_send` says who may reach whom, `bus.max_turns` gives a
 conversation an end, and `swarm bus pause` stops all of it without stopping the
 fleet. The [configuration reference](configuration.md#bus) has the detail.
+
+`max_turns` bounds a conversation, and a conversation is the only thing it can
+see. A fleet that runs away does it sideways: one `swarm send` to ten agents is
+a single command, ten interruptions and ten fresh threads, and it costs nothing
+against any per-thread budget. `bus.budget` is the bound for that — an allowance
+per agent, priced once per recipient, refilling steadily and never passing a
+ceiling, with the balance reported on every send.
+[The prices](configuration.md#budget), and why the ceiling matters more than the
+refill rate, are in the reference.

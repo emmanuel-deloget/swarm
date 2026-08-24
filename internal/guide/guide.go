@@ -64,6 +64,9 @@ type Data struct {
 
 	// MaxTurns is the budget per conversation, zero when unbounded.
 	MaxTurns int
+	// Budget is an agent's allowance for talking at all, zero when the fleet
+	// sets none. It bounds width where MaxTurns bounds depth.
+	Budget int
 	// EscalateTo arbitrates, empty when nobody does.
 	EscalateTo string
 }
@@ -76,6 +79,7 @@ func Collect(c *config.Config) Data {
 		MaxTurns:   c.Bus.MaxTurns,
 		EscalateTo: c.Bus.EscalateTo,
 		Hooks:      c.Hooks.Enabled,
+		Budget:     c.Bus.Budget.Max,
 	}
 	if d.Hooks {
 		d.From = c.Hooks.From
@@ -227,7 +231,19 @@ You have no control over the other agents. The one exception is
 back work you handed out. Starting, restarting and shutting down are not yours:
 if you think the fleet should stop, say so to whoever is watching.
 
-## Saying what a message is for
+{{if .Budget}}## What you may say
+
+You have an allowance for talking: {{.Budget}} points, refilling steadily and
+never passing that ceiling. Every send costs, **once per recipient** — writing to
+ten costs ten times writing to one — and every send tells you what is left.
+
+Answering, finishing and saying you are blocked cost least; telling everybody
+costs most. Being blocked is free: if you cannot go on, say so, always.
+
+If you are refused, the refusal says when you may send again. Wait for it rather
+than trying again — and consider whether the message needed all its recipients.
+
+{{end}}## Saying what a message is for
 
 ` + "`swarm send -kind <kind> …`" + `, one of: {{range $i, $k := .Kinds}}{{if $i}}, {{end}}` + "`{{$k}}`" + `{{end}}.
 A question expects an answer; an fyi does not. This is not decoration — how a

@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -394,6 +395,12 @@ type BusConfig struct {
 	// somebody else are not alternatives — they are the same escalation a few
 	// hours apart, and a list says that without needing two mechanisms.
 	OnStalled []StalledRule `yaml:"on_stalled"`
+
+	// Budget bounds what an agent may say, per agent, over time. max_turns
+	// bounds a conversation and can only see depth; a fleet that ran away did
+	// it in width — one broadcast is one command, ten interruptions and ten
+	// fresh threads, and costs nothing against any per-thread budget.
+	Budget BusBudget `yaml:"budget"`
 }
 
 // EphemeralConfig holds what applies to every ephemeral agent rather than to
@@ -440,6 +447,95 @@ const StalledSelf = "self"
 // cheapest way to turn a guess into a fact is to ask the one who knows. What
 // happens next belongs to whoever is told, which is usually an agent with more
 // context about the work than the hub will ever have.
+// BusBudget is an agent's allowance for talking, kept like hit points: a
+// balance that refills a little at a time and never passes Max.
+//
+// The ceiling is the load-bearing part. A fleet that has been quiet has saved
+// up for its worst hour, so a bucket deep enough to hold a night of silence
+// funds the storm that follows it and refuses nothing.
+type BusBudget struct {
+	// Max is the ceiling, and 0 switches the whole thing off — which is the
+	// default, so a fleet that says nothing about a budget has none.
+	Max int `yaml:"max"`
+
+	// Refill is how long one point takes to come back. The default gives one a
+	// minute.
+	Refill time.Duration `yaml:"refill"`
+
+	// Cost is what a message costs *per recipient*, by kind. A send to ten
+	// costs ten times a send to one, because that is what it interrupts.
+	//
+	// The defaults price what swarm already believes: settling a matter is
+	// nearly free, asking costs something, and telling everybody costs most.
+	// `blocked` is free and cannot be made otherwise — an agent that cannot go
+	// on must always be able to say so.
+	Cost map[string]int `yaml:"cost"`
+}
+
+// kindList names the kinds a budget may price, for a refusal that tells the
+// reader what it could have written instead.
+func kindList() string {
+	var out []string
+	for _, k := range bus.Kinds() {
+		out = append(out, string(k))
+	}
+	return strings.Join(out, ", ")
+}
+
+// DefaultBudgetCost is what each kind costs per recipient when a fleet sets a
+// budget and does not price it itself. It says what swarm already believes:
+// settling is nearly free, asking costs something, telling everybody costs
+// most — and being blocked is free, because an agent that cannot go on must
+// always be able to say so.
+var DefaultBudgetCost = map[string]int{
+	"blocked":  0,
+	"answer":   1,
+	"done":     1,
+	"question": 5,
+	"request":  5,
+	"decision": 8,
+	"":         8,
+	"fyi":      10,
+}
+
+// Check fills in what the file left out and refuses what it cannot mean.
+func (b *BusBudget) Check() error {
+	if b.Max < 0 {
+		return fmt.Errorf("bus: budget.max must not be negative")
+	}
+	if b.Refill < 0 {
+		return fmt.Errorf("bus: budget.refill must not be negative")
+	}
+	if b.Max == 0 {
+		if b.Refill != 0 || len(b.Cost) > 0 {
+			return fmt.Errorf("bus: budget has a refill or a cost but no max, " +
+				"so nothing is bounded; set budget.max or drop the block")
+		}
+		return nil
+	}
+	if b.Refill == 0 {
+		b.Refill = time.Minute
+	}
+	priced := map[string]int{}
+	maps.Copy(priced, DefaultBudgetCost)
+	for kind, cost := range b.Cost {
+		if _, ok := DefaultBudgetCost[kind]; !ok {
+			return fmt.Errorf("bus: budget.cost names %q, which is not a kind; "+
+				"try one of: %s", kind, kindList())
+		}
+		if cost < 0 {
+			return fmt.Errorf("bus: budget.cost[%s] must not be negative", kind)
+		}
+		priced[kind] = cost
+	}
+	// Not a price a fleet may set. A message that says "I cannot go on" is the
+	// one that must always get through, and a budget that can silence it turns
+	// a stuck agent into a silent one.
+	priced["blocked"] = 0
+	b.Cost = priced
+	return nil
+}
+
 type StalledRule struct {
 	// To is who hears about it: "self" for the stalled agent, or an agent
 	// name, an @role or a @group for anyone else. Telling a triage agent is
@@ -801,6 +897,9 @@ func (c *Config) normalize() error {
 	}
 	if c.Bus.MaxTurns < 0 {
 		return fmt.Errorf("bus: max_turns must not be negative")
+	}
+	if err := c.Bus.Budget.Check(); err != nil {
+		return err
 	}
 
 	if len(c.Agents) == 0 {

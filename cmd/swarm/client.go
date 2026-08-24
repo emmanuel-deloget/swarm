@@ -603,7 +603,18 @@ func cmdSend(args []string, broadcast bool) error {
 		return emitJSON(resp.Messages)
 	}
 	printDelivered(resp.Messages)
+	printBudget(resp.Budget)
 	return nil
+}
+
+// printBudget says what is left to spend, when a fleet bounds it. On stderr,
+// because a script reading the delivery lines should not have to filter it out
+// — and an agent reads both.
+func printBudget(b *hub.Budget) {
+	if b == nil {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "swarm: %d of %d left to say\n", b.Left, b.Max)
 }
 
 // printDelivered says where each copy of a message went, and whether it was

@@ -218,6 +218,17 @@ agents:
 #   stalled_after: 20m
 #   max_turns: 6
 #   escalate_to: triage-1 # arbitrates a thread that ran out of turns
+#   # What an agent may say, as hit points: a balance that refills a little at
+#   # a time and never passes max. max_turns bounds one conversation and can
+#   # only see depth; a fleet runs away sideways, one send to ten agents being
+#   # a single command and ten interruptions. So a message costs its kind once
+#   # per recipient. Keep max to a few minutes of refill: a fleet that has been
+#   # quiet has saved up for its worst hour, and a deep bucket funds it.
+#   # Settling costs least, telling everybody costs most, blocked is free.
+#   budget:
+#     max: 60
+#     refill: 1m
+#     cost: {fyi: 10, decision: 8, question: 5, answer: 1}
 #   # What to do about an agent that is stalled. Nothing, unless you say so:
 #   # swarm asks, and never restarts or reassigns anything, because the state
 #   # is a guess — an agent waiting on a long test run is silent and does owe

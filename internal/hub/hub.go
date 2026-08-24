@@ -29,6 +29,7 @@ type Hub struct {
 	cfg      *config.Config
 	log      *event.Log
 	bus      *bus.Bus
+	budget   *budgets
 	stateDir string
 
 	// ports remembers what {alloc_port} resolved to, so a restart keeps it.
@@ -120,6 +121,7 @@ func New(o Options) (*Hub, error) {
 		cfg:      cfg,
 		log:      event.NewLog(o.EventHistory),
 		bus:      bus.New(cfg.Bus.History),
+		budget:   newBudgets(cfg.Bus.Budget),
 		stateDir: stateDir,
 		agents:   make(map[string]*agent.Agent, len(cfg.Agents)),
 	}
@@ -1224,6 +1226,21 @@ func (h *Hub) SendOn(from, target string, kind bus.Kind, body string, files []st
 	}
 	if len(refused) > 0 {
 		return nil, errors.New(refused[0])
+	}
+
+	// Priced by what it interrupts: the kind, once per recipient. Charged after
+	// can_send, so a refused message costs nothing, and before the thread is
+	// opened, so a refusal leaves no trace of a conversation that never began.
+	//
+	// Only agents pay. A person, a webhook and swarm's own escalations are not
+	// the fleet talking to itself, and a fleet that cannot report is worse than
+	// one that talks too much.
+	if h.budget.on() && h.isAgent(from) {
+		cost := h.budget.price(kind, len(agents))
+		left, ok, ready := h.budget.spend(from, cost, time.Now())
+		if !ok {
+			return nil, h.budget.refuse(from, kind, len(agents), left, ready)
+		}
 	}
 
 	thread, err := h.threadFor(from, o)
