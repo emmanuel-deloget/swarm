@@ -423,3 +423,36 @@ func TestAnIdleRuleWaitsForItsOwnDelay(t *testing.T) {
 		t.Errorf("a rule due at 1.1s did not fire at 2s (%d messages)", n)
 	}
 }
+
+// TestAnUnbriefedAgentIsNotToldItIsIdle: the opening message is typed when an
+// agent first falls quiet, and on_idle reads the same quiet. Telling an agent
+// it has been idle before it has been told what it is for is both a race and a
+// nonsense — it has not been given anything to be idle about.
+func TestAnUnbriefedAgentIsNotToldItIsIdle(t *testing.T) {
+	h := fleet(t, `
+web: {enabled: false}
+bus: {stalled_after: 0s}
+defaults: {idle_after: 100ms}
+agents:
+  - name: alpha
+    message: "here is what you are for"
+    command: [probe-echo]
+  - name: watcher
+    delivery: pull
+    command: [probe-echo]
+`)
+	withIdleRules(t, h, config.NudgeRule{To: "watcher", Text: "quiet"})
+
+	// Before the opening message: nothing is said about it.
+	h.nudgeIdle("alpha", time.Second)
+	if n := len(h.bus.Collect("watcher", true)); n != 0 {
+		t.Errorf("an agent was called idle before it had been briefed (%d messages)", n)
+	}
+
+	// Once it has been, the rules apply as they do to anyone.
+	h.brief("alpha")
+	h.nudgeIdle("alpha", time.Second)
+	if n := len(h.bus.Collect("watcher", true)); n != 1 {
+		t.Errorf("a briefed agent got %d messages, want one", n)
+	}
+}

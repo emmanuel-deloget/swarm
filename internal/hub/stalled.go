@@ -245,6 +245,12 @@ func (h *Hub) nudgeIdle(name string, quiet time.Duration) {
 	if len(rules) == 0 || h.stalled == nil {
 		return
 	}
+	// An agent that has not been told what it is for has nothing to be idle
+	// about. The opening message is typed when it first falls quiet, which is
+	// the same moment these rules read.
+	if !h.hasBeenBriefed(name) {
+		return
+	}
 	for i, r := range rules {
 		if quiet < h.idleAfter(name)+r.After {
 			continue // this rule is for later

@@ -572,6 +572,27 @@ func (h *Hub) Paused() string {
 	return h.paused
 }
 
+// briefed reports whether an agent has had its opening message for the launch
+// it is on, or has none to have.
+//
+// It matters to on_idle: the opening message is typed when an agent first falls
+// quiet, and an on_idle rule reads the same quiet. Telling an agent it has been
+// idle before it has been told what it is for is both a race and a nonsense —
+// it has not been given anything to be idle about.
+func (h *Hub) hasBeenBriefed(name string) bool {
+	a, err := h.Agent(name)
+	if err != nil || a.Config().Message == "" {
+		return true
+	}
+	h.briefMu.Lock()
+	defer h.briefMu.Unlock()
+	// Present, not equal: a generation starts at zero and so does a missing
+	// key, so asking whether they match says yes about an agent that has never
+	// been briefed at all.
+	gen, ok := h.briefed[name]
+	return ok && gen == a.Generation()
+}
+
 // brief types an agent's standing message, once per launch, when it first falls
 // quiet. Waiting matters: at the moment a process starts, an agent CLI has not
 // drawn its prompt, and text typed into one still painting is lost.
@@ -585,7 +606,7 @@ func (h *Hub) brief(name string) {
 		h.briefed = map[string]uint64{}
 	}
 	gen := a.Generation()
-	if h.briefed[name] == gen {
+	if seen, ok := h.briefed[name]; ok && seen == gen {
 		h.briefMu.Unlock()
 		return
 	}

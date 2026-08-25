@@ -207,13 +207,15 @@ The prompt an agent gets on launch, once per run:
 agents:
   - name: reviewer-1
     message: |
-      You review pull requests. Start with `swarm inbox`.
+      Read "$SWARM_STATE_DIR/AGENTS.md" first. You review pull requests.
       Do not push to main.
 ```
 
 It is sent when the agent first falls quiet, not the instant the process
 starts — a CLI still drawing its banner would swallow it. A restart sends it
-again; a reconnection does not.
+again; a reconnection does not. `on_idle` reads that same quiet, and leaves an
+agent alone until it has had this: being told you are idle before being told
+what you are for is a nonsense.
 
 ## `agents`
 
@@ -775,6 +777,12 @@ one is usually the better choice.
 An agent that is stalled is idle too. Both lists run if both are set, and the
 two messages say different things about the same silence — usually you want
 `on_stalled` for an agent that owes something and this for one that does not.
+
+An agent that has not had its opening `message` yet is left alone. That message
+is typed when an agent first falls quiet — a CLI still painting its prompt loses
+whatever is typed into it — which is the same moment these rules read. Telling
+an agent it has been idle before telling it what it is for is a race, and a
+nonsense besides: it has not been given anything to be idle about.
 
 One thing this has to get right, and it is not obvious: a pushed message is
 echoed by the terminal, so an agent's last output moves the moment swarm writes
