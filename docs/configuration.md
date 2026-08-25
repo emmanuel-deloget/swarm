@@ -100,6 +100,7 @@ Every key here is also an agent key. An agent that leaves one empty inherits it.
 | `follow_window` | `true` | Resize the displayed agent to the pane showing it, so its layout adapts instead of being cropped. Turn it off to pin `cols`/`rows` — which is then what the web UI and `swarm screen` show. |
 | `delivery` | `push` | What happens to a bus message addressed to this agent — `push`, `pull` or `defer`, see below. |
 | `can_send` | — | The only agents this one may write to. Unset means everyone. |
+| `budget` | *(none)* | What this agent may say, over time. See [`budget`](#budget). |
 | `message` | — | Sent to the agent once it is up. Multi-line, as a block scalar. |
 | `message_file` | — | Same, read from a file. One or the other, not both. |
 | `message_template` | `[swarm] message from {from}: {body}` | How a pushed bus message is rendered before injection. Placeholders: `{id}` `{thread}` `{from}` `{to}` `{body}` `{files}` `{time}`. |
@@ -603,21 +604,36 @@ it. The agents keep working — this stops the talking, not the fleet. Without
 What an agent may say, kept like hit points: a balance that refills a little at
 a time and never passes a ceiling.
 
+The allowance is per agent and the price list is not, and the split is
+deliberate. What a message costs is a property of the act: interrupting ten
+agents is ten interruptions whoever sent it, and a price a fleet could set per
+agent would let it quietly exempt its noisiest one — the agent a budget exists
+for. What an agent may *afford* is its own business: a coordinator broadcasts
+for a living and a worker does not.
+
 ```yaml
 bus:
   budget:
-    max: 60          # the ceiling; 0, the default, means no budget at all
-    refill: 1m       # how long one point takes to come back
-    cost:            # per recipient, by kind
-      fyi: 10
-      decision: 8
+    cost: {fyi: 10, decision: 8, question: 5, answer: 1}   # fleet-wide
+
+defaults:
+  budget: {max: 60, refill: 1m}       # what every agent can afford
+
+agents:
+  - name: coordinator
+    budget: {max: 300}                # this one broadcasts for a living
+  - name: dev-1                       # inherits 60, refilling one a minute
 ```
 
-| key | default | |
+| key | default | where |
 |---|---|---|
-| `max` | `0` | The ceiling. `0` switches the whole thing off, so a fleet that says nothing about a budget has none. |
-| `refill` | `1m` | How long one point takes to come back. |
-| `cost` | *(below)* | What a message costs **per recipient**, by kind. Naming a kind that does not exist is an error. |
+| `max` | `0` | `defaults` and `agents`. The ceiling. `0` means this agent has no budget, which is what a fleet that says nothing gets. |
+| `refill` | `1m` | `defaults` and `agents`. How long one point takes to come back. |
+| `cost` | *(below)* | `bus.budget`. What a message costs **per recipient**, by kind. Naming a kind that does not exist is an error. |
+
+Inherited from `defaults` and overridden per agent, like `delivery` and
+`can_send`. Unset means inherit; an explicit `max: 0` means this one is not
+bounded at all.
 
 `max_turns` bounds a conversation, and a conversation is the only thing it can
 see. A fleet that ran away did it sideways: one `swarm send` to ten agents is a

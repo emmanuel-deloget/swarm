@@ -129,6 +129,7 @@ type AgentDefaults struct {
 	Message         string        `yaml:"message"`
 	MessageFile     string        `yaml:"message_file"`
 	CanSend         []string      `yaml:"can_send"`
+	Budget          *AgentBudget  `yaml:"budget"`
 }
 
 // AgentConfig describes one agent process running in its own virtual terminal.
@@ -278,6 +279,10 @@ type AgentConfig struct {
 	// rule that forbids templating a webhook's target: an agent should not
 	// choose freely who it wakes.
 	CanSend []string `yaml:"can_send"`
+
+	// Budget is what this agent may say, over time. Inherited from defaults;
+	// a coordinator that broadcasts for a living needs more than a worker.
+	Budget *AgentBudget `yaml:"budget"`
 
 	// Ephemeral makes this entry a template rather than an agent.
 	//
@@ -447,21 +452,14 @@ const StalledSelf = "self"
 // cheapest way to turn a guess into a fact is to ask the one who knows. What
 // happens next belongs to whoever is told, which is usually an agent with more
 // context about the work than the hub will ever have.
-// BusBudget is an agent's allowance for talking, kept like hit points: a
-// balance that refills a little at a time and never passes Max.
+// BusBudget is the price list, and it is fleet-wide on purpose.
 //
-// The ceiling is the load-bearing part. A fleet that has been quiet has saved
-// up for its worst hour, so a bucket deep enough to hold a night of silence
-// funds the storm that follows it and refuses nothing.
+// What a message costs is a property of the act, not of the actor:
+// interrupting ten agents is ten interruptions whoever sent it. A price a
+// fleet could set per agent would let it quietly exempt its noisiest one,
+// which is the agent a budget exists for. What an agent may *afford* is its
+// own — see AgentBudget.
 type BusBudget struct {
-	// Max is the ceiling, and 0 switches the whole thing off — which is the
-	// default, so a fleet that says nothing about a budget has none.
-	Max int `yaml:"max"`
-
-	// Refill is how long one point takes to come back. The default gives one a
-	// minute.
-	Refill time.Duration `yaml:"refill"`
-
 	// Cost is what a message costs *per recipient*, by kind. A send to ten
 	// costs ten times a send to one, because that is what it interrupts.
 	//
@@ -470,6 +468,43 @@ type BusBudget struct {
 	// `blocked` is free and cannot be made otherwise — an agent that cannot go
 	// on must always be able to say so.
 	Cost map[string]int `yaml:"cost"`
+}
+
+// AgentBudget is one agent's allowance for talking, kept like hit points: a
+// balance that refills a little at a time and never passes Max.
+//
+// Per agent, because a coordinator broadcasts for a living and a worker does
+// not. Inherited from `defaults` and overridden in `agents`, like delivery and
+// can_send; nil means inherit, and an explicit max of 0 means this one is not
+// bounded at all.
+//
+// The ceiling is the load-bearing part. A fleet that has been quiet has saved
+// up for its worst hour, so a bucket deep enough to hold a night of silence
+// funds the storm that follows it and refuses nothing.
+type AgentBudget struct {
+	// Max is the ceiling. 0 means this agent has no budget.
+	Max int `yaml:"max"`
+
+	// Refill is how long one point takes to come back. The default gives one a
+	// minute.
+	Refill time.Duration `yaml:"refill"`
+}
+
+// check fills in what an agent's budget left out.
+func (a *AgentBudget) check(who string) error {
+	if a == nil {
+		return nil
+	}
+	if a.Max < 0 {
+		return fmt.Errorf("%s: budget.max must not be negative", who)
+	}
+	if a.Refill < 0 {
+		return fmt.Errorf("%s: budget.refill must not be negative", who)
+	}
+	if a.Refill == 0 {
+		a.Refill = time.Minute
+	}
+	return nil
 }
 
 // kindList names the kinds a budget may price, for a refusal that tells the
@@ -498,24 +533,8 @@ var DefaultBudgetCost = map[string]int{
 	"fyi":      10,
 }
 
-// Check fills in what the file left out and refuses what it cannot mean.
+// Check fills in the prices the file left out and refuses what it cannot mean.
 func (b *BusBudget) Check() error {
-	if b.Max < 0 {
-		return fmt.Errorf("bus: budget.max must not be negative")
-	}
-	if b.Refill < 0 {
-		return fmt.Errorf("bus: budget.refill must not be negative")
-	}
-	if b.Max == 0 {
-		if b.Refill != 0 || len(b.Cost) > 0 {
-			return fmt.Errorf("bus: budget has a refill or a cost but no max, " +
-				"so nothing is bounded; set budget.max or drop the block")
-		}
-		return nil
-	}
-	if b.Refill == 0 {
-		b.Refill = time.Minute
-	}
 	priced := map[string]int{}
 	maps.Copy(priced, DefaultBudgetCost)
 	for kind, cost := range b.Cost {
@@ -978,6 +997,15 @@ func (c *Config) normalize() error {
 		}
 		if a.KeyDelay == 0 {
 			a.KeyDelay = d.KeyDelay
+		}
+		if a.Budget == nil && d.Budget != nil {
+			// Copied, not shared: two agents inheriting one ceiling must not
+			// end up sharing one pointer that a later check writes through.
+			b := *d.Budget
+			a.Budget = &b
+		}
+		if err := a.Budget.check("agent " + a.Name); err != nil {
+			return err
 		}
 		if a.Autostart == nil {
 			a.Autostart = d.Autostart

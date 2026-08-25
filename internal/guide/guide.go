@@ -27,6 +27,11 @@ type Agent struct {
 	// Mailbox says whether `swarm inbox -wait` is worth calling for this
 	// agent. Agents call it liberally; the answer belongs where they read.
 	Mailbox bool
+
+	// Budget is this agent's allowance for talking, 0 when it has none. Per
+	// agent, because a coordinator broadcasts for a living and a worker does
+	// not.
+	Budget int
 	// CanSend is empty when the agent may reach everyone.
 	CanSend []string
 }
@@ -64,14 +69,23 @@ type Data struct {
 
 	// MaxTurns is the budget per conversation, zero when unbounded.
 	MaxTurns int
-	// Budget is an agent's allowance for talking at all, zero when the fleet
-	// sets none. It bounds width where MaxTurns bounds depth.
-	Budget int
+	// Budgets is true when any agent here has an allowance for talking, which
+	// is what decides whether the section appears at all. It bounds width
+	// where MaxTurns bounds depth.
+	Budgets bool
 	// EscalateTo arbitrates, empty when nobody does.
 	EscalateTo string
 }
 
 // Collect reads the configuration into what a template can render.
+// budgetOf is an agent's ceiling, 0 when it has none.
+func budgetOf(a *config.AgentConfig) int {
+	if a.Budget == nil {
+		return 0
+	}
+	return a.Budget.Max
+}
+
 func Collect(c *config.Config) Data {
 	d := Data{
 		Session:    c.Session,
@@ -79,7 +93,6 @@ func Collect(c *config.Config) Data {
 		MaxTurns:   c.Bus.MaxTurns,
 		EscalateTo: c.Bus.EscalateTo,
 		Hooks:      c.Hooks.Enabled,
-		Budget:     c.Bus.Budget.Max,
 	}
 	if d.Hooks {
 		d.From = c.Hooks.From
@@ -95,10 +108,14 @@ func Collect(c *config.Config) Data {
 			Delivery:  a.DeliveryMode,
 			Workspace: a.Workspace,
 			Mailbox:   config.MailboxCanFill(a.DeliveryMode, c.DeliveryByKind),
+			Budget:    budgetOf(a),
 			CanSend:   a.CanSend,
 		})
 		if a.DeliveryMode == config.DeliveryDefer {
 			d.Deferred = true
+		}
+		if budgetOf(a) > 0 {
+			d.Budgets = true
 		}
 		if len(a.CanSend) > 0 {
 			d.Restricted = true
@@ -231,12 +248,16 @@ You have no control over the other agents. The one exception is
 back work you handed out. Starting, restarting and shutting down are not yours:
 if you think the fleet should stop, say so to whoever is watching.
 
-{{if .Budget}}## What you may say
+{{if .Budgets}}## What you may say
 
-You have an allowance for talking: {{.Budget}} points, refilling steadily and
-never passing that ceiling. Every send costs, **once per recipient** — writing to
-ten costs ten times writing to one — and every send tells you what is left.
+Talking has an allowance here: a balance that refills steadily and never passes
+a ceiling. Every send costs, **once per recipient** — writing to ten costs ten
+times writing to one — and every send tells you what is left.
 
+| agent | allowance |
+|---|---|
+{{range .Agents}}| ` + "`{{.Name}}`" + ` | {{if .Budget}}{{.Budget}}{{else}}none{{end}} |
+{{end}}
 Answering, finishing and saying you are blocked cost least; telling everybody
 costs most. Being blocked is free: if you cannot go on, say so, always.
 

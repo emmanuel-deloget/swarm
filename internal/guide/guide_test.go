@@ -279,14 +279,20 @@ agents:
 func TestABudgetIsExplainedOnlyWhenThereIsOne(t *testing.T) {
 	with := render(t, `
 web: {enabled: false}
-bus:
+defaults:
   budget: {max: 40}
 agents:
   - name: alpha
     command: [probe-echo]
+  - name: chair
+    budget: {max: 400}
+    command: [probe-echo]
 `)
-	if !strings.Contains(with, "40 points") {
-		t.Errorf("the guide does not say what the allowance is:\n%s", with)
+	// Per agent, because a coordinator broadcasts for a living.
+	for _, want := range []string{"| `alpha` | 40 |", "| `chair` | 400 |"} {
+		if !strings.Contains(with, want) {
+			t.Errorf("the guide does not say %q:\n%s", want, with)
+		}
 	}
 	if !strings.Contains(with, "once per recipient") {
 		t.Error("the guide does not say a send to ten costs ten times a send to one")

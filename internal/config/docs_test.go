@@ -34,6 +34,7 @@ var docSections = map[string][]string{
 	"EphemeralConfig": {"`ephemeral`"},
 	"StalledRule":     {"`on_stalled`"},
 	"BusBudget":       {"`budget`"},
+	"AgentBudget":     {"`budget`"},
 	"HookConfig":      {"`hooks`"},
 	"OutgoingConfig":  {"`outgoing`"},
 }

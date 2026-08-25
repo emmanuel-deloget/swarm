@@ -9,10 +9,13 @@ import (
 	"github.com/emmanuel-deloget/swarm/internal/config"
 )
 
+// bucket is a one-agent fleet called "chair", bounded as asked.
 func bucket(t *testing.T, ceiling int, refill time.Duration) *budgets {
 	t.Helper()
-	c := config.BusBudget{Max: ceiling, Refill: refill}
-	if err := c.Check(); err != nil {
+	c := &config.Config{
+		Agents: []config.AgentConfig{{Name: "chair", Budget: &config.AgentBudget{Max: ceiling, Refill: refill}}},
+	}
+	if err := c.Bus.Budget.Check(); err != nil {
 		t.Fatal(err)
 	}
 	return newBudgets(c)
@@ -62,11 +65,14 @@ func TestAMessageCostsWhatItInterrupts(t *testing.T) {
 // so. A budget that can silence that turns a stuck agent into a quiet one,
 // which is the failure nobody sees.
 func TestBeingBlockedIsAlwaysFree(t *testing.T) {
-	c := config.BusBudget{Max: 10, Refill: time.Minute, Cost: map[string]int{"blocked": 99}}
-	if err := c.Check(); err != nil {
+	c := &config.Config{
+		Bus:    config.BusConfig{Budget: config.BusBudget{Cost: map[string]int{"blocked": 99}}},
+		Agents: []config.AgentConfig{{Name: "chair", Budget: &config.AgentBudget{Max: 10, Refill: time.Minute}}},
+	}
+	if err := c.Bus.Budget.Check(); err != nil {
 		t.Fatal(err)
 	}
-	if got := c.Cost["blocked"]; got != 0 {
+	if got := c.Bus.Budget.Cost["blocked"]; got != 0 {
 		t.Errorf("a fleet priced blocked at %d; it is not a price a fleet may set", got)
 	}
 
@@ -106,7 +112,7 @@ func TestARefusalSaysWhen(t *testing.T) {
 func TestOnlyAgentsPay(t *testing.T) {
 	h := fleet(t, `
 web: {enabled: false}
-bus:
+defaults:
   budget: {max: 2, refill: 1h}
 agents:
   - name: alpha
@@ -132,7 +138,7 @@ agents:
 func TestAnAgentIsToldWhatItHasLeft(t *testing.T) {
 	h := fleet(t, `
 web: {enabled: false}
-bus:
+defaults:
   budget: {max: 30, refill: 1h}
 agents:
   - name: alpha

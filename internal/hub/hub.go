@@ -121,7 +121,7 @@ func New(o Options) (*Hub, error) {
 		cfg:      cfg,
 		log:      event.NewLog(o.EventHistory),
 		bus:      bus.New(cfg.Bus.History),
-		budget:   newBudgets(cfg.Bus.Budget),
+		budget:   newBudgets(cfg),
 		stateDir: stateDir,
 		agents:   make(map[string]*agent.Agent, len(cfg.Agents)),
 	}
@@ -1235,7 +1235,7 @@ func (h *Hub) SendOn(from, target string, kind bus.Kind, body string, files []st
 	// Only agents pay. A person, a webhook and swarm's own escalations are not
 	// the fleet talking to itself, and a fleet that cannot report is worse than
 	// one that talks too much.
-	if h.budget.on() && h.isAgent(from) {
+	if _, bounded := h.budget.of(from); bounded && h.isAgent(from) {
 		cost := h.budget.price(kind, len(agents))
 		left, ok, ready := h.budget.spend(from, cost, time.Now())
 		if !ok {

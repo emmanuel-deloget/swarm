@@ -22,35 +22,45 @@ import (
 // send to one. That is the whole point: what ran away was width, not depth, and
 // depth is the only thing `max_turns` can see.
 type budgets struct {
-	mu   sync.Mutex
-	max  int
-	per  time.Duration
-	cost map[bus.Kind]int
-	bal  map[string]float64
-	at   map[string]time.Time
+	mu    sync.Mutex
+	cost  map[bus.Kind]int
+	purse map[string]config.AgentBudget
+	bal   map[string]float64
+	at    map[string]time.Time
 }
 
-func newBudgets(c config.BusBudget) *budgets {
-	cost := make(map[bus.Kind]int, len(c.Cost))
-	for kind, price := range c.Cost {
+func newBudgets(c *config.Config) *budgets {
+	cost := make(map[bus.Kind]int, len(c.Bus.Budget.Cost))
+	for kind, price := range c.Bus.Budget.Cost {
 		cost[bus.Kind(kind)] = price
 	}
+	purse := map[string]config.AgentBudget{}
+	for i := range c.Agents {
+		if b := c.Agents[i].Budget; b != nil && b.Max > 0 {
+			purse[c.Agents[i].Name] = *b
+		}
+	}
 	return &budgets{
-		max:  c.Max,
-		per:  c.Refill,
-		cost: cost,
-		bal:  map[string]float64{},
-		at:   map[string]time.Time{},
+		cost:  cost,
+		purse: purse,
+		bal:   map[string]float64{},
+		at:    map[string]time.Time{},
 	}
 }
 
-// on reports whether any of this applies. A fleet that says nothing about a
-// budget has none, and nothing changes for it.
-func (b *budgets) on() bool { return b != nil && b.max > 0 }
+// of is an agent's purse, and whether it has one. An agent with no ceiling is
+// not bounded, which is what a fleet that says nothing gets.
+func (b *budgets) of(agent string) (config.AgentBudget, bool) {
+	if b == nil {
+		return config.AgentBudget{}, false
+	}
+	p, ok := b.purse[agent]
+	return p, ok
+}
 
 // price is what a send costs: the kind, once per recipient.
 func (b *budgets) price(kind bus.Kind, recipients int) int {
-	if !b.on() || recipients <= 0 {
+	if b == nil || recipients <= 0 {
 		return 0
 	}
 	return b.cost[kind] * recipients
@@ -58,7 +68,7 @@ func (b *budgets) price(kind bus.Kind, recipients int) int {
 
 // balance is what an agent has now, refilled for the time since it last spent.
 func (b *budgets) balance(agent string, now time.Time) int {
-	if !b.on() {
+	if _, ok := b.of(agent); !ok {
 		return 0
 	}
 	b.mu.Lock()
@@ -68,17 +78,21 @@ func (b *budgets) balance(agent string, now time.Time) int {
 
 // refilled brings an agent's balance up to date. The caller holds the lock.
 func (b *budgets) refilled(agent string, now time.Time) float64 {
+	purse, ok := b.of(agent)
+	if !ok {
+		return 0
+	}
 	have, seen := b.bal[agent]
 	if !seen {
 		// Everyone starts full: a budget is a bound on running away, not a
 		// waiting period before an agent may speak at all.
-		return float64(b.max)
+		return float64(purse.Max)
 	}
-	if last, ok := b.at[agent]; ok && b.per > 0 {
-		have += float64(now.Sub(last)) / float64(b.per)
+	if last, ok := b.at[agent]; ok && purse.Refill > 0 {
+		have += float64(now.Sub(last)) / float64(purse.Refill)
 	}
-	if have > float64(b.max) {
-		have = float64(b.max)
+	if have > float64(purse.Max) {
+		have = float64(purse.Max)
 	}
 	return have
 }
@@ -86,7 +100,8 @@ func (b *budgets) refilled(agent string, now time.Time) float64 {
 // spend takes cost from an agent's balance. It returns what is left, whether
 // there was enough, and — when there was not — when there will be.
 func (b *budgets) spend(agent string, cost int, now time.Time) (left int, ok bool, ready time.Time) {
-	if !b.on() {
+	purse, bounded := b.of(agent)
+	if !bounded {
 		return 0, true, time.Time{}
 	}
 	b.mu.Lock()
@@ -97,7 +112,7 @@ func (b *budgets) spend(agent string, cost int, now time.Time) (left int, ok boo
 	if have < float64(cost) {
 		b.bal[agent] = have
 		short := float64(cost) - have
-		return int(have), false, now.Add(time.Duration(short * float64(b.per)))
+		return int(have), false, now.Add(time.Duration(short * float64(purse.Refill)))
 	}
 	have -= float64(cost)
 	b.bal[agent] = have
@@ -108,8 +123,9 @@ func (b *budgets) spend(agent string, cost int, now time.Time) (left int, ok boo
 // less, and the time — a refusal that only says "no" is one an agent retries in
 // a loop, and a transient refusal is exactly the kind it would retry.
 func (b *budgets) refuse(agent string, kind bus.Kind, recipients, left int, ready time.Time) error {
+	purse, _ := b.of(agent)
 	cost := b.price(kind, recipients)
-	msg := fmt.Sprintf("%s has %d of %d and this costs %d", agent, left, b.max, cost)
+	msg := fmt.Sprintf("%s has %d of %d and this costs %d", agent, left, purse.Max, cost)
 	if recipients > 1 {
 		msg += fmt.Sprintf(" (%d recipients)", recipients)
 	}
@@ -134,8 +150,9 @@ type Budget struct {
 // a refusal stops one message, a number it can see before spending changes what
 // it writes.
 func (h *Hub) BudgetLeft(agent string) (Budget, bool) {
-	if !h.budget.on() || !h.isAgent(agent) {
+	purse, ok := h.budget.of(agent)
+	if !ok || !h.isAgent(agent) {
 		return Budget{}, false
 	}
-	return Budget{Left: h.budget.balance(agent, time.Now()), Max: h.budget.max}, true
+	return Budget{Left: h.budget.balance(agent, time.Now()), Max: purse.Max}, true
 }

@@ -115,6 +115,16 @@ agents:
 #   on_exit: ["./scripts/cleanup-agent.sh"]
 #   # The only agents this one may write to. Unset means everyone.
 #   can_send: ["@review", triage-1]
+#   # An allowance for talking, as hit points: a balance that refills a little
+#   # at a time and never passes max. max_turns bounds one conversation and can
+#   # only see depth; a fleet runs away sideways — one send to ten agents is a
+#   # single command and ten interruptions, and costs nothing per thread.
+#   # Keep max to a few minutes of refill: a fleet that has been quiet has
+#   # saved up for its worst hour, and a deep bucket funds it. Override it on a
+#   # coordinator, which broadcasts for a living. bus.budget.cost sets prices.
+#   budget:
+#     max: 60
+#     refill: 1m
 
 # Added to every agent's environment; a per-agent "env:" overrides it.
 # {alloc_port} in any value becomes a port nobody is listening on, picked once
@@ -234,16 +244,10 @@ agents:
 #   stalled_after: 20m
 #   max_turns: 6
 #   escalate_to: triage-1 # arbitrates a thread that ran out of turns
-#   # What an agent may say, as hit points: a balance that refills a little at
-#   # a time and never passes max. max_turns bounds one conversation and can
-#   # only see depth; a fleet runs away sideways, one send to ten agents being
-#   # a single command and ten interruptions. So a message costs its kind once
-#   # per recipient. Keep max to a few minutes of refill: a fleet that has been
-#   # quiet has saved up for its worst hour, and a deep bucket funds it.
-#   # Settling costs least, telling everybody costs most, blocked is free.
+#   # What a message costs, per recipient, by kind. The price of an act, not
+#   # of an actor: interrupting ten agents is ten interruptions whoever sent
+#   # it. What each agent may afford is defaults.budget, below.
 #   budget:
-#     max: 60
-#     refill: 1m
 #     cost: {fyi: 10, decision: 8, question: 5, answer: 1}
 #   # What to do about an agent that is stalled. Nothing, unless you say so:
 #   # swarm asks, and never restarts or reassigns anything, because the state
