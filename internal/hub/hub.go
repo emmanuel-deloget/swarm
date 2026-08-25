@@ -168,8 +168,8 @@ func New(o Options) (*Hub, error) {
 
 	// What was owed when the last process stopped. Before the watchers, so a
 	// restored debt is already there the first time anything looks.
-	if len(cfg.Bus.OnStalled) > 0 {
-		h.stalled = &stalledActor{seen: map[stalledKey]stalledSeen{}}
+	if len(cfg.Bus.OnStalled) > 0 || len(cfg.Bus.OnIdle) > 0 {
+		h.stalled = &stalledActor{seen: map[stalledKey]stalledSeen{}, nudged: map[string]time.Time{}}
 	}
 
 	h.loadSpawn()
@@ -192,11 +192,39 @@ func New(o Options) (*Hub, error) {
 
 	// Last, and not before: the watcher reads the agent list, which the loop
 	// above is still writing.
-	if after := cfg.Bus.StalledAfter; after > 0 {
+	if every := h.watchEvery(); every > 0 {
 		h.stalledStop = make(chan struct{})
-		go h.watchStalled(after)
+		go h.watchStalled(every)
 	}
 	return h, nil
+}
+
+// watchEvery is how often the watcher looks, or zero when there is nothing to
+// look for. It serves two questions with different clocks — stalled_after is
+// usually twenty minutes and an on_idle rule may be one — so it takes the
+// finest of them: a watcher that ticks every five minutes cannot honour a rule
+// that asks after sixty seconds.
+func (h *Hub) watchEvery() time.Duration {
+	finest := h.cfg.Bus.StalledAfter
+	if len(h.cfg.Bus.OnIdle) > 0 {
+		for i := range h.cfg.Agents {
+			if d := h.cfg.Agents[i].IdleAfter; d > 0 && (finest == 0 || d < finest) {
+				finest = d
+			}
+		}
+		for _, r := range h.cfg.Bus.OnIdle {
+			if r.After > 0 && (finest == 0 || r.After < finest) {
+				finest = r.After
+			}
+		}
+	}
+	if finest <= 0 {
+		return 0
+	}
+	if every := finest / 4; every > time.Second {
+		return every
+	}
+	return time.Second
 }
 
 // Config returns the loaded configuration.

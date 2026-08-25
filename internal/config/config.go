@@ -399,7 +399,21 @@ type BusConfig struct {
 	// A list rather than one action, because asking the agent and telling
 	// somebody else are not alternatives — they are the same escalation a few
 	// hours apart, and a list says that without needing two mechanisms.
-	OnStalled []StalledRule `yaml:"on_stalled"`
+	OnStalled []NudgeRule `yaml:"on_stalled"`
+
+	// OnIdle is what to do about an agent that has simply gone quiet, in
+	// order, and it is a different question from OnStalled.
+	//
+	// Stalled means quiet *and owing something*, and the debt is what makes
+	// the message worth sending: swarm can say what is owed, to whom, and the
+	// command that ends it. An agent can be quiet owing nothing at all — it
+	// finished, or it was never given anything, or the fleet has been talking
+	// in kinds that open no debt — and nothing notices, because there is
+	// nothing to notice it by.
+	//
+	// So this one carries no context of its own and the text is usually worth
+	// writing: swarm knows the agent has been quiet and that is all it knows.
+	OnIdle []NudgeRule `yaml:"on_idle"`
 
 	// Budget bounds what an agent may say, per agent, over time. max_turns
 	// bounds a conversation and can only see depth; a fleet that ran away did
@@ -443,7 +457,7 @@ const DefaultRemember = 100
 // StalledSelf is the target that means the stalled agent itself.
 const StalledSelf = "self"
 
-// StalledRule is one thing to do about an agent that owes something and has
+// NudgeRule is one thing to do about an agent that owes something and has
 // gone quiet.
 //
 // swarm does the asking and nothing else. It does not decide that the work is
@@ -555,8 +569,8 @@ func (b *BusBudget) Check() error {
 	return nil
 }
 
-type StalledRule struct {
-	// To is who hears about it: "self" for the stalled agent, or an agent
+type NudgeRule struct {
+	// To is who hears about it: "self" for the agent concerned, or an agent
 	// name, an @role or a @group for anyone else. Telling a triage agent is
 	// the more useful half — it knows what the work was, so it can open a real
 	// question the stalled agent then has to settle, which asking directly
@@ -596,7 +610,7 @@ type StalledRule struct {
 }
 
 // PushWanted reports whether the message should be typed into the terminal.
-func (r StalledRule) PushWanted() bool { return r.Push == nil || *r.Push }
+func (r NudgeRule) PushWanted() bool { return r.Push == nil || *r.Push }
 
 // HookConfig configures the inbound webhook listener: HTTP in, bus messages
 // out. It listens on its own address rather than sharing the web remote
@@ -1217,11 +1231,18 @@ func (c *Config) limitTemplates() error {
 	return nil
 }
 
-// normalizeStalled fills in the defaults for on_stalled and refuses the shapes
-// that cannot work.
+// normalizeStalled fills in the defaults for on_stalled and on_idle, and
+// refuses the shapes that cannot work.
 func (c *Config) normalizeStalled() error {
-	for i := range c.Bus.OnStalled {
-		r := &c.Bus.OnStalled[i]
+	if err := normalizeNudges("on_stalled", c.Bus.OnStalled); err != nil {
+		return err
+	}
+	return normalizeNudges("on_idle", c.Bus.OnIdle)
+}
+
+func normalizeNudges(what string, rules []NudgeRule) error {
+	for i := range rules {
+		r := &rules[i]
 		if r.To == "" {
 			r.To = StalledSelf
 		}
@@ -1232,8 +1253,8 @@ func (c *Config) normalizeStalled() error {
 			r.Kind = "fyi"
 		}
 		if !bus.ValidKind(bus.Kind(r.Kind)) {
-			return fmt.Errorf("on_stalled[%d]: %q is not a message kind; one of %s",
-				i, r.Kind, strings.Join(kindNames(), ", "))
+			return fmt.Errorf("%s[%d]: %q is not a message kind; one of %s",
+				what, i, r.Kind, strings.Join(kindNames(), ", "))
 		}
 		// Asking the stalled agent with something that opens a debt gives it a
 		// second one to settle, on top of the one it is already stuck on — and
@@ -1241,13 +1262,13 @@ func (c *Config) normalizeStalled() error {
 		// fire again. Whoever wants a debt opened wants it opened by an agent
 		// that knows the work; that is what `to: <triage>` is for.
 		if r.To == StalledSelf && bus.Opening(bus.Kind(r.Kind)) {
-			return fmt.Errorf("on_stalled[%d]: a %q sent to the stalled agent opens "+
+			return fmt.Errorf("%s[%d]: a %q sent to the agent itself opens "+
 				"a second debt on top of the one it is stuck on, and answering it "+
 				"settles neither; use note or fyi here, or send to an agent that can "+
-				"open a real one", i, r.Kind)
+				"open a real one", what, i, r.Kind)
 		}
 		if r.Max < 0 {
-			return fmt.Errorf("on_stalled[%d]: max cannot be negative", i)
+			return fmt.Errorf("%s[%d]: max cannot be negative", what, i)
 		}
 		if r.Max == 0 {
 			r.Max = 1
@@ -1256,8 +1277,8 @@ func (c *Config) normalizeStalled() error {
 			}
 		}
 		if r.Every > 0 && r.Every < time.Minute {
-			return fmt.Errorf("on_stalled[%d]: every is %s; anything under a minute "+
-				"is a message a second, not a reminder", i, r.Every)
+			return fmt.Errorf("%s[%d]: every is %s; anything under a minute "+
+				"is a message a second, not a reminder", what, i, r.Every)
 		}
 	}
 	return nil

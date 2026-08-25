@@ -149,8 +149,8 @@ func (h *Hub) isStalled(in agent.Info) bool {
 // long — idle, so the wait begins where that agent's idle_after ends. It is a signal and only a signal: nothing is restarted, injected or
 // killed on the strength of it, because the state is a guess. An agent waiting
 // on a long build is silent and does owe work — ask it, and it will say so.
-func (h *Hub) watchStalled(after time.Duration) {
-	tick := time.NewTicker(after / 4)
+func (h *Hub) watchStalled(every time.Duration) {
+	tick := time.NewTicker(every)
 	defer tick.Stop()
 	said := map[string]uint64{}
 	for {
@@ -161,11 +161,25 @@ func (h *Hub) watchStalled(after time.Duration) {
 			for _, in := range h.Infos() {
 				d, owes := h.bus.OwedSince(in.Name)
 				quiet := time.Since(in.LastOutput)
+
+				// Quiet and owing nothing is a different question from stalled,
+				// and nothing else asks it: an agent that finished, or was
+				// never given anything, is silent in a way no debt reports.
+				switch {
+				case in.State == agent.StateIdle && !owes:
+					h.nudgeIdle(in.Name, quiet)
+				case h.awake(in):
+					// Working again by its own doing, not because swarm just
+					// wrote to it: whatever was said no longer holds.
+					h.forget(in.Name, "on_idle")
+					h.slept(in.Name)
+				}
+
 				if !h.isStalled(in) {
 					// Settled, busy, or has spoken since: whatever was said
 					// about it no longer holds.
 					delete(said, in.Name)
-					h.forget(in.Name)
+					h.forget(in.Name, "on_stalled")
 					continue
 				}
 				if !owes {

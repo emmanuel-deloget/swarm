@@ -493,6 +493,7 @@ tunnel rather than binding `0.0.0.0` in the open.
 | `max_turns` | `0` | Messages allowed on one conversation. `0` means no bound. |
 | `escalate_to` | `""` | Who arbitrates when a conversation runs out of turns. |
 | `on_stalled` | *(none)* | What to do about an agent that is stalled: ask it, tell somebody else, or nothing. See [`on_stalled`](#on_stalled). |
+| `on_idle` | *(none)* | What to do about an agent that has simply gone quiet, owing nothing. See [`on_idle`](#on_idle). |
 | `budget` | *(none)* | What an agent may say, over time. See [`budget`](#budget). |
 
 A *thread* is one conversation. An agent answering someone stays on the thread
@@ -739,6 +740,48 @@ message that never arrives. It is an interruption, deliberately.
 **Repeats are counted per debt.** Settle it and the counter goes with it; a new
 question later starts again. Once an entry has used its `max`, it stops and says
 so in the event log rather than going quiet as if it had worked.
+
+## `on_idle`
+
+The same rules as [`on_stalled`](#on_stalled) — `to`, `kind`, `after`, `every`,
+`max`, `text`, `push` — asked of a different question.
+
+Stalled means quiet **and owing something**, and the debt is what makes the
+message worth sending: swarm can say what is owed, to whom, since when and the
+command that ends it. An agent can be quiet owing nothing at all. It finished,
+or it was never given anything, or the fleet has been talking in kinds that open
+no debt — and nothing noticed, because there was nothing to notice it by.
+
+```yaml
+bus:
+  on_idle:
+    - to: self
+      after: 30m
+      text: |
+        You have shown nothing for a while and owe nobody anything. If you are
+        waiting on something, say so; if you have finished, say that.
+    - to: triage-1
+      after: 2h
+```
+
+`after` is counted past the point where the agent is called idle, so it adds to
+that agent's `idle_after` exactly as `on_stalled`'s adds to `stalled_after`.
+
+**Write the text.** swarm knows the agent has been quiet and knows nothing else:
+there is no debt to describe and no command that ends it, so the composed
+message can only say so. That is the reverse of `on_stalled`, where the composed
+one is usually the better choice.
+
+An agent that is stalled is idle too. Both lists run if both are set, and the
+two messages say different things about the same silence — usually you want
+`on_stalled` for an agent that owes something and this for one that does not.
+
+One thing this has to get right, and it is not obvious: a pushed message is
+echoed by the terminal, so an agent's last output moves the moment swarm writes
+to it. Reading that as the agent waking up would let a nudge reset its own
+counter and fire for ever. What counts as waking is output that kept coming — an
+agent still producing an `idle_after` after being told is working again; one
+that only echoed the message is not.
 
 ## `outgoing`
 

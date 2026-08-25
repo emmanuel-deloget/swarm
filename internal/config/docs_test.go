@@ -32,7 +32,7 @@ var docSections = map[string][]string{
 	"WebConfig":       {"`web`"},
 	"BusConfig":       {"`bus`"},
 	"EphemeralConfig": {"`ephemeral`"},
-	"StalledRule":     {"`on_stalled`"},
+	"NudgeRule":       {"`on_stalled`", "`on_idle`"},
 	"BusBudget":       {"`budget`"},
 	"AgentBudget":     {"`budget`"},
 	"HookConfig":      {"`hooks`"},

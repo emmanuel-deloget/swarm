@@ -237,6 +237,14 @@ agents:
 #   # swarm asks, and never restarts or reassigns anything, because the state
 #   # is a guess — an agent waiting on a long test run is silent and does owe
 #   # work. Left without text, the message is what "swarm why" would say.
+#   # And the other question: an agent that is quiet owing *nothing* is not
+#   # stalled, and nothing else notices it — it finished, or was never given
+#   # anything. Same rules, and here the text is worth writing: swarm knows it
+#   # has been quiet and knows nothing else.
+#   on_idle:
+#     - to: self
+#       after: 30m
+#       text: "Quiet, and you owe nobody anything. Waiting on something? Say so."
 #   on_stalled:
 #     - to: self          # ask the agent itself
 #       every: 15m

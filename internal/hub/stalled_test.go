@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emmanuel-deloget/swarm/internal/agent"
 	"github.com/emmanuel-deloget/swarm/internal/bus"
 	"github.com/emmanuel-deloget/swarm/internal/config"
 )
@@ -27,7 +28,7 @@ agents:
 // withRules puts rules on a loaded fleet directly. The configuration refuses an
 // `every` under a minute — rightly, a reminder every few seconds is not a
 // reminder — and a test that waited that out would be a minute long.
-func withRules(t *testing.T, h *Hub, rules ...config.StalledRule) {
+func withRules(t *testing.T, h *Hub, rules ...config.NudgeRule) {
 	t.Helper()
 	for i := range rules {
 		if rules[i].To == "" {
@@ -41,7 +42,25 @@ func withRules(t *testing.T, h *Hub, rules ...config.StalledRule) {
 		}
 	}
 	h.cfg.Bus.OnStalled = rules
-	h.stalled = &stalledActor{seen: map[stalledKey]stalledSeen{}}
+	h.stalled = &stalledActor{seen: map[stalledKey]stalledSeen{}, nudged: map[string]time.Time{}}
+}
+
+// withIdleRules is withRules for the other list.
+func withIdleRules(t *testing.T, h *Hub, rules ...config.NudgeRule) {
+	t.Helper()
+	for i := range rules {
+		if rules[i].To == "" {
+			rules[i].To = config.StalledSelf
+		}
+		if rules[i].Kind == "" {
+			rules[i].Kind = "fyi"
+		}
+		if rules[i].Max == 0 {
+			rules[i].Max = 1
+		}
+	}
+	h.cfg.Bus.OnIdle = rules
+	h.stalled = &stalledActor{seen: map[stalledKey]stalledSeen{}, nudged: map[string]time.Time{}}
 }
 
 // owedNow is the debt alpha is carrying, as the watcher would hand it over.
@@ -61,7 +80,7 @@ func owedNow(t *testing.T, h *Hub, name string) debtView {
 // and this is the behaviour behind the refusal.
 func TestAskingAStalledAgentDoesNotGiveItASecondDebt(t *testing.T) {
 	h := fleet(t, stallFleet)
-	withRules(t, h, config.StalledRule{To: config.StalledSelf, Kind: "fyi"})
+	withRules(t, h, config.NudgeRule{To: config.StalledSelf, Kind: "fyi"})
 
 	if _, err := h.SendKind("myself", "alpha", bus.KindQuestion, "where is the fix?", nil); err != nil {
 		t.Fatal(err)
@@ -80,7 +99,7 @@ func TestAskingAStalledAgentDoesNotGiveItASecondDebt(t *testing.T) {
 // gets an honest shrug; what it needs is what the bus still knows.
 func TestTheAgentIsToldWhatItOwesAndHowToEndIt(t *testing.T) {
 	h := fleet(t, stallFleet)
-	withRules(t, h, config.StalledRule{To: config.StalledSelf, Kind: "fyi"})
+	withRules(t, h, config.NudgeRule{To: config.StalledSelf, Kind: "fyi"})
 
 	if _, err := h.SendKind("myself", "alpha", bus.KindQuestion, "sessions or tokens?", nil); err != nil {
 		t.Fatal(err)
@@ -113,7 +132,7 @@ func TestTheAgentIsToldWhatItOwesAndHowToEndIt(t *testing.T) {
 // settle — which is exactly what swarm must not do by itself.
 func TestSomebodyElseCanBeToldInstead(t *testing.T) {
 	h := fleet(t, stallFleet)
-	withRules(t, h, config.StalledRule{To: "myself", Kind: "fyi"})
+	withRules(t, h, config.NudgeRule{To: "myself", Kind: "fyi"})
 
 	if _, err := h.SendKind("myself", "alpha", bus.KindQuestion, "well?", nil); err != nil {
 		t.Fatal(err)
@@ -138,7 +157,7 @@ func TestSomebodyElseCanBeToldInstead(t *testing.T) {
 // question every time the watcher ticks.
 func TestARuleFiresOnceForOneDebt(t *testing.T) {
 	h := fleet(t, stallFleet)
-	withRules(t, h, config.StalledRule{To: config.StalledSelf, Kind: "fyi"})
+	withRules(t, h, config.NudgeRule{To: config.StalledSelf, Kind: "fyi"})
 
 	if _, err := h.SendKind("myself", "alpha", bus.KindQuestion, "well?", nil); err != nil {
 		t.Fatal(err)
@@ -157,7 +176,7 @@ func TestARuleFiresOnceForOneDebt(t *testing.T) {
 // few reminders and no more.
 func TestRepeatsAreBoundedAndThenStop(t *testing.T) {
 	h := fleet(t, stallFleet)
-	withRules(t, h, config.StalledRule{
+	withRules(t, h, config.NudgeRule{
 		To: config.StalledSelf, Kind: "fyi", Every: time.Millisecond, Max: 3,
 	})
 
@@ -190,7 +209,7 @@ func TestRepeatsAreBoundedAndThenStop(t *testing.T) {
 // the first.
 func TestSettlingResetsTheCount(t *testing.T) {
 	h := fleet(t, stallFleet)
-	withRules(t, h, config.StalledRule{To: config.StalledSelf, Kind: "fyi"})
+	withRules(t, h, config.NudgeRule{To: config.StalledSelf, Kind: "fyi"})
 
 	if _, err := h.SendKind("myself", "alpha", bus.KindQuestion, "first", nil); err != nil {
 		t.Fatal(err)
@@ -199,7 +218,7 @@ func TestSettlingResetsTheCount(t *testing.T) {
 	if _, _, err := h.Done("alpha", 0, "done"); err != nil {
 		t.Fatal(err)
 	}
-	h.forget("alpha") // what the watcher does when an agent stops owing
+	h.forget("alpha", "on_stalled") // what the watcher does when an agent stops owing
 
 	if _, err := h.SendKind("myself", "alpha", bus.KindQuestion, "second", nil); err != nil {
 		t.Fatal(err)
@@ -217,8 +236,8 @@ func TestAfterHoldsARuleBack(t *testing.T) {
 	h := fleet(t, stallFleet)
 	withRules(t,
 		h,
-		config.StalledRule{To: config.StalledSelf, Kind: "fyi"},
-		config.StalledRule{To: "myself", Kind: "fyi", After: time.Hour},
+		config.NudgeRule{To: config.StalledSelf, Kind: "fyi"},
+		config.NudgeRule{To: "myself", Kind: "fyi", After: time.Hour},
 	)
 
 	if _, err := h.SendKind("myself", "alpha", bus.KindQuestion, "well?", nil); err != nil {
@@ -265,7 +284,7 @@ agents:
     command: [probe-echo]
 `
 	h := fleet(t, pullFleet)
-	withRules(t, h, config.StalledRule{To: config.StalledSelf, Kind: "fyi"})
+	withRules(t, h, config.NudgeRule{To: config.StalledSelf, Kind: "fyi"})
 
 	// Running, because pushing into a terminal needs one — and the point here
 	// is precisely that the message reaches the terminal.
@@ -307,7 +326,7 @@ func countFrom(h *Hub, agent, from string) int {
 // minute of the feature working.
 func TestSwarmDoesNotChaseItsOwnNotices(t *testing.T) {
 	h := fleet(t, stallFleet)
-	withRules(t, h, config.StalledRule{To: config.StalledSelf, Kind: "fyi"})
+	withRules(t, h, config.NudgeRule{To: config.StalledSelf, Kind: "fyi"})
 
 	// A debt opened by swarm itself, as the escalation rule would.
 	if _, err := h.SendOn(stallSender, "myself", bus.KindQuestion,
@@ -318,5 +337,89 @@ func TestSwarmDoesNotChaseItsOwnNotices(t *testing.T) {
 
 	if n := countFrom(h, "myself", stallSender); n != 1 {
 		t.Errorf("swarm sent %d messages: it asked about its own notice", n)
+	}
+}
+
+// on_idle is the other half: stalled means quiet *and owing something*, and an
+// agent can be quiet owing nothing at all — it finished, or was never given
+// anything, or the fleet has been talking in kinds that open nothing. Nothing
+// noticed that, because there was nothing to notice it by.
+
+const idleFleet = `
+web: {enabled: false}
+bus: {stalled_after: 0s}
+defaults: {idle_after: 100ms}
+agents:
+  - name: alpha
+    command: [probe-echo]
+  - name: watcher
+    delivery: pull
+    command: [probe-echo]
+`
+
+// TestAnIdleAgentIsToldWithoutOwingAnything: the whole point. on_stalled would
+// say nothing here, because there is no debt for it to speak about.
+func TestAnIdleAgentIsToldWithoutOwingAnything(t *testing.T) {
+	h := fleet(t, idleFleet)
+	withIdleRules(t, h, config.NudgeRule{To: "watcher", Text: "come and look"})
+
+	if _, owes := h.bus.OwedSince("alpha"); owes {
+		t.Fatal("alpha owes something; this test is about an agent that does not")
+	}
+	h.nudgeIdle("alpha", time.Second)
+
+	msgs := h.bus.Collect("watcher", true)
+	if len(msgs) != 1 {
+		t.Fatalf("watcher got %d messages, want the one about alpha", len(msgs))
+	}
+	if msgs[0].Body != "come and look" {
+		t.Errorf("the rule's own text was not used: %q", msgs[0].Body)
+	}
+}
+
+// TestANudgeDoesNotRearmItself is the bug the first version had. A pushed
+// message is echoed by the terminal, so the agent's last output moves the
+// moment swarm writes to it. Reading that as waking up let the nudge reset its
+// own counter, and a rule that may fire once fired for ever.
+func TestANudgeDoesNotRearmItself(t *testing.T) {
+	h := fleet(t, idleFleet)
+	withIdleRules(t, h, config.NudgeRule{To: "watcher", Text: "quiet"})
+
+	h.nudgeIdle("alpha", time.Second)
+
+	// What the watcher sees a moment after speaking: alpha's terminal echoed
+	// the message, so it looks busy, and its last output is now.
+	echoed := agent.Info{Name: "alpha", State: agent.StateWorking, LastOutput: time.Now()}
+	if h.awake(echoed) {
+		t.Error("an echo of swarm's own message counted as the agent waking up")
+	}
+
+	// Whereas an agent still producing an idle_after later really did wake.
+	woke := agent.Info{Name: "alpha", State: agent.StateWorking,
+		LastOutput: time.Now().Add(time.Second)}
+	if !h.awake(woke) {
+		t.Error("an agent working a second later did not count as awake")
+	}
+
+	// And the counter holds meanwhile: a second pass sends nothing.
+	h.nudgeIdle("alpha", 2*time.Second)
+	if n := len(h.bus.Collect("watcher", true)); n != 1 {
+		t.Errorf("the rule fired %d times with max 1", n)
+	}
+}
+
+// TestAnIdleRuleWaitsForItsOwnDelay: `after` is measured past the point where
+// the agent is called idle, so the two settings add up rather than compete.
+func TestAnIdleRuleWaitsForItsOwnDelay(t *testing.T) {
+	h := fleet(t, idleFleet)
+	withIdleRules(t, h, config.NudgeRule{To: "watcher", After: time.Second, Text: "late"})
+
+	h.nudgeIdle("alpha", 500*time.Millisecond)
+	if n := len(h.bus.Collect("watcher", true)); n != 0 {
+		t.Fatalf("a rule due at 1.1s fired at 0.5s")
+	}
+	h.nudgeIdle("alpha", 2*time.Second)
+	if n := len(h.bus.Collect("watcher", true)); n != 1 {
+		t.Errorf("a rule due at 1.1s did not fire at 2s (%d messages)", n)
 	}
 }

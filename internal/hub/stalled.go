@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/emmanuel-deloget/swarm/internal/agent"
 	"github.com/emmanuel-deloget/swarm/internal/bus"
 	"github.com/emmanuel-deloget/swarm/internal/config"
 	"github.com/emmanuel-deloget/swarm/internal/event"
@@ -43,19 +44,47 @@ type stalledSeen struct {
 	last time.Time
 }
 
-// stalledKey identifies a rule applied to one debt. The thread is in it because
-// repeats are counted per debt: settle it and the counter goes with it, and a
-// new question later starts again from nothing.
+// stalledKey identifies a rule applied to one thing. The thread is in it
+// because repeats are counted per debt: settle it and the counter goes with it,
+// and a new question later starts again from nothing. The list is in it because
+// on_stalled and on_idle count separately — an agent stops being stalled when
+// it settles and stops being idle when it speaks, which are not the same
+// moment.
 type stalledKey struct {
 	agent string
+	list  string
 	rule  int
 	thrd  uint64
 }
 
-// stalledActor applies the on_stalled rules.
+// stalledActor applies the on_stalled and on_idle rules.
 type stalledActor struct {
 	mu   sync.Mutex
 	seen map[stalledKey]stalledSeen
+	// nudged is when an on_idle rule last spoke to an agent, which is how an
+	// echo is told from a waking. See awake.
+	nudged map[string]time.Time
+}
+
+// mayFire decides whether a rule has anything left to do, and records that it
+// did. Shared by both lists: the counting is the same question in each, and it
+// is the part that is easy to get subtly wrong twice.
+func (h *Hub) mayFire(key stalledKey, r config.NudgeRule) (lastOne, ok bool) {
+	h.stalled.mu.Lock()
+	defer h.stalled.mu.Unlock()
+	s := h.stalled.seen[key]
+	switch {
+	case s.sent >= r.Max:
+		return false, false
+	case s.sent > 0 && r.Every == 0:
+		// Once, which is the default: enough for a gate that takes ten minutes.
+		return false, false
+	case s.sent > 0 && time.Since(s.last) < r.Every:
+		return false, false
+	}
+	s.sent, s.last = s.sent+1, time.Now()
+	h.stalled.seen[key] = s
+	return s.sent >= r.Max, true
 }
 
 // act runs the rules for one stalled agent. It is called from the watcher that
@@ -84,34 +113,16 @@ func (h *Hub) act(name string, d debtView) {
 		if age < r.After {
 			continue // this rule is for later
 		}
-		key := stalledKey{agent: name, rule: i, thrd: d.Thread}
-
-		h.stalled.mu.Lock()
-		s := h.stalled.seen[key]
-		switch {
-		case s.sent >= r.Max:
-			h.stalled.mu.Unlock()
-			continue
-		case s.sent > 0 && r.Every == 0:
-			// Once for this debt, which is the default: enough for a gate that
-			// takes ten minutes.
-			h.stalled.mu.Unlock()
-			continue
-		case s.sent > 0 && time.Since(s.last) < r.Every:
-			h.stalled.mu.Unlock()
+		lastOne, ok := h.mayFire(stalledKey{agent: name, list: "on_stalled", rule: i, thrd: d.Thread}, r)
+		if !ok {
 			continue
 		}
-		s.sent, s.last = s.sent+1, time.Now()
-		h.stalled.seen[key] = s
-		lastOne := s.sent >= r.Max
-		h.stalled.mu.Unlock()
-
 		h.tellAboutStall(name, d, r, i, lastOne)
 	}
 }
 
 // tellAboutStall sends one rule's message.
-func (h *Hub) tellAboutStall(name string, d debtView, r config.StalledRule, idx int, lastOne bool) {
+func (h *Hub) tellAboutStall(name string, d debtView, r config.NudgeRule, idx int, lastOne bool) {
 	to := r.To
 	if to == config.StalledSelf {
 		to = name
@@ -209,15 +220,122 @@ func short(d time.Duration) string {
 
 // forget drops what was counted for an agent whose debts are settled, so the
 // next one starts from nothing.
-func (h *Hub) forget(name string) {
+func (h *Hub) forget(name, list string) {
 	if h.stalled == nil {
 		return
 	}
 	h.stalled.mu.Lock()
 	defer h.stalled.mu.Unlock()
 	for k := range h.stalled.seen {
-		if k.agent == name {
+		if k.agent == name && k.list == list {
 			delete(h.stalled.seen, k)
 		}
 	}
+}
+
+// nudgeIdle runs the on_idle rules for an agent that has gone quiet.
+//
+// Quiet is all it knows. There is no debt to describe, no thread to point at
+// and no command that ends it — an agent can be quiet because it finished,
+// because nobody gave it anything, or because the fleet has been talking in
+// kinds that open nothing. That is why the rule's own text is the useful case
+// here, where for on_stalled the composed one usually is.
+func (h *Hub) nudgeIdle(name string, quiet time.Duration) {
+	rules := h.cfg.Bus.OnIdle
+	if len(rules) == 0 || h.stalled == nil {
+		return
+	}
+	for i, r := range rules {
+		if quiet < h.idleAfter(name)+r.After {
+			continue // this rule is for later
+		}
+		lastOne, ok := h.mayFire(stalledKey{agent: name, list: "on_idle", rule: i}, r)
+		if !ok {
+			continue
+		}
+
+		to := r.To
+		if to == config.StalledSelf {
+			to = name
+		}
+		body := r.Text
+		if body == "" {
+			body = h.idleMessage(name, quiet, to == name)
+		}
+		if lastOne && r.Every > 0 {
+			body += "\n\n[swarm] that was the last of these."
+		}
+		opts := SendOptions{NewThread: true, Push: r.PushWanted()}
+		if _, err := h.SendOn(stallSender, to, bus.Kind(r.Kind), body, nil, opts); err != nil {
+			h.log.Emit(event.KindError, name, fmt.Sprintf(
+				"on_idle[%d]: could not tell %s: %v", i, to, err))
+			continue
+		}
+		h.stalled.mu.Lock()
+		h.stalled.nudged[name] = time.Now()
+		h.stalled.mu.Unlock()
+
+		h.log.Emit(event.KindPattern, name, fmt.Sprintf(
+			"on_idle[%d]: told %s that %s has been quiet for %s",
+			i, to, name, quiet.Round(time.Second)))
+	}
+}
+
+// idleAfter is how long this agent may show nothing before it is called idle,
+// which is where an on_idle rule's own delay is measured from.
+func (h *Hub) idleAfter(name string) time.Duration {
+	if a, err := h.Agent(name); err == nil {
+		if d := a.Config().IdleAfter; d > 0 {
+			return d
+		}
+	}
+	return h.cfg.Defaults.IdleAfter
+}
+
+// idleMessage is what swarm sends when an on_idle rule gives no text. It says
+// the little it knows and asks for nothing, because there is nothing here it
+// could ask about.
+func (h *Hub) idleMessage(name string, quiet time.Duration, itself bool) string {
+	if itself {
+		return fmt.Sprintf("[swarm] you have shown nothing for %s and owe nobody anything. "+
+			"If you are working, carry on. If you are waiting on something, say so — "+
+			"a fleet cannot tell those apart from outside.", quiet.Round(time.Minute))
+	}
+	return fmt.Sprintf("[swarm] %s has shown nothing for %s and owes nobody anything. "+
+		"swarm knows no more than that: it is not stalled, because there is nothing "+
+		"it was asked.", name, quiet.Round(time.Minute))
+}
+
+// awake reports whether an agent has done something of its own since an
+// on_idle rule last spoke to it, which is when its counters start again.
+//
+// It is not the same question as "is it idle". A pushed nudge is echoed by the
+// terminal, so the agent's last output moves the moment swarm writes to it —
+// and reading that as waking up makes a nudge reset its own counter and fire
+// again for ever, which is how the first version of this behaved. What counts
+// is output that kept coming: an agent that read the message and went back to
+// work is still producing an idle_after later, and an agent that only echoed it
+// is not.
+func (h *Hub) awake(in agent.Info) bool {
+	if h.stalled == nil {
+		return true
+	}
+	h.stalled.mu.Lock()
+	last, nudged := h.stalled.nudged[in.Name]
+	h.stalled.mu.Unlock()
+	if !nudged {
+		return true
+	}
+	return in.LastOutput.Sub(last) >= h.idleAfter(in.Name)
+}
+
+// slept forgets that an agent was ever nudged, once it is awake by its own
+// doing. Without this the check above would hold for the rest of the run.
+func (h *Hub) slept(name string) {
+	if h.stalled == nil {
+		return
+	}
+	h.stalled.mu.Lock()
+	delete(h.stalled.nudged, name)
+	h.stalled.mu.Unlock()
 }
