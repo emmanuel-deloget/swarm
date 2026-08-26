@@ -665,7 +665,7 @@ func (h *Hub) flushPending(name string, modes ...string) {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString(m.Render(tmpl))
+		b.WriteString(m.RenderAt(tmpl, time.Now()))
 	}
 
 	if _, err := a.Inject(b.String(), agent.InjectOptions{Submit: true}); err != nil {
@@ -1348,7 +1348,7 @@ func (h *Hub) SendOn(from, target string, kind bus.Kind, body string, files []st
 			go h.flushDeferred(a.Name())
 		}
 		if mode == config.DeliveryPush {
-			rendered := msg.Render(a.Config().MessageTemplate)
+			rendered := msg.RenderAt(a.Config().MessageTemplate, time.Now())
 			if _, err := a.Inject(rendered, agent.InjectOptions{Submit: true}); err != nil {
 				// It stays in the mailbox, so whoever is waiting on it has to
 				// be told: nobody was woken when it was filed.

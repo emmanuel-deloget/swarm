@@ -89,7 +89,10 @@ agents:
 #   submit_delay: 120ms   # pause between pasting text and pressing Enter
 #   bracketed_paste: true # a multi-line prompt arrives as one message
 #   delivery: push        # push, pull, or defer
-#   message_template: "[swarm] message from {from}: {body}"
+#   # {at} is when it was sent and {held} how long it waited before landing,
+#   # empty when it did not: a deferred message arrives with no sign of its
+#   # age otherwise. Also {id} {thread} {to} {kind} {files} {time}.
+#   message_template: "[swarm] message from {from} at {at}{held}: {body}"
 #   workspace: shared     # shared, clone, or none
 #   # Run before the process starts and after it has gone, in the agent's
 #   # working directory with its environment: install dependencies, copy a

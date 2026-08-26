@@ -103,7 +103,7 @@ Every key here is also an agent key. An agent that leaves one empty inherits it.
 | `budget` | *(none)* | What this agent may say, over time. See [`budget`](#budget). |
 | `message` | — | Sent to the agent once it is up. Multi-line, as a block scalar. |
 | `message_file` | — | Same, read from a file. One or the other, not both. |
-| `message_template` | `[swarm] message from {from}: {body}` | How a pushed bus message is rendered before injection. Placeholders: `{id}` `{thread}` `{from}` `{to}` `{body}` `{files}` `{time}`. |
+| `message_template` | `[swarm] message from {from} at {at}{held}: {body}` | How a pushed bus message is rendered before injection. See [`message_template`](#message_template). |
 | `workspace` | `shared` | What swarm does about an agent's working copy — `shared`, `clone`, `worktree` or `none`, described under [`agents`](#agents). Inheritable, which is how a whole fleet is given its own clones in one line. |
 | `on_start` | — | Command run before the agent starts, as an argv. See [`agents`](#agents). |
 | `on_exit` | — | Command run after it exits, as an argv. See [`agents`](#agents). |
@@ -198,6 +198,37 @@ which is what actually happens.
 
 The whole send is refused before anything is delivered — half a broadcast is
 worse than none.
+
+### `message_template`
+
+How a bus message reads when it is typed into a terminal.
+
+| placeholder | |
+|---|---|
+| `{body}` | the message |
+| `{from}`, `{to}` | who wrote it, who is reading it |
+| `{kind}` | `question`, `answer`, `fyi`, `request`, `decision`, `blocked`, `done` |
+| `{id}`, `{thread}` | the message and the conversation it belongs to |
+| `{files}` | attachments, as paths; appended anyway when the template omits it |
+| `{time}` | when it was sent, as RFC 3339 |
+| `{at}` | when it was sent, as a clock: `15:04:05` |
+| `{held}` | how long it waited before landing — `, held 6s` — and empty when it did not |
+
+`{at}` and `{held}` are what a recipient cannot work out for itself. A message
+held while an agent was busy arrives with no sign of how old it is, and *check
+the branch before you push* reads the same whether it was said ten seconds or
+forty minutes ago.
+
+`{held}` carries its own comma and is empty below a second, so the usual case —
+a push, which lands in milliseconds — reads as though the placeholder were not
+there:
+
+```
+[swarm] message from user at 10:31:47: run the tests
+[swarm] message from user at 10:31:48, held 6s: run the tests
+```
+
+The second is a `defer` that waited for the agent to fall quiet.
 
 ### `message` and `message_file`
 

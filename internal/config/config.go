@@ -737,7 +737,7 @@ const (
 )
 
 // DefaultMessageTemplate is what a pushed bus message looks like in a terminal.
-const DefaultMessageTemplate = "[swarm] message from {from}: {body}"
+const DefaultMessageTemplate = "[swarm] message from {from} at {at}{held}: {body}"
 
 // DefaultStateDir is where swarm writes everything, relative to the config file.
 const DefaultStateDir = ".swarm"

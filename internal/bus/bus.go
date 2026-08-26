@@ -82,9 +82,19 @@ type Message struct {
 	ReadAt time.Time `json:"read_at,omitzero"`
 }
 
-// Render expands a template. Placeholders: {id} {thread} {from} {to} {body}
-// {files} {time}.
-func (m Message) Render(tmpl string) string {
+// Render expands a template, as of now. Placeholders: {id} {thread} {from}
+// {to} {body} {files} {time} {at} {kind} {held}.
+func (m Message) Render(tmpl string) string { return m.RenderAt(tmpl, time.Now()) }
+
+// RenderAt expands a template as of a given moment, which is the moment the
+// message is about to reach the agent.
+//
+// {at} and {held} are what a recipient cannot work out for itself. A message
+// held while an agent was busy arrives with no sign of how old it is, and
+// "check the branch before you push" reads the same whether it was said ten
+// seconds or forty minutes ago. {held} is empty when there was no wait worth
+// mentioning, so the usual case reads as though it were not there.
+func (m Message) RenderAt(tmpl string, now time.Time) string {
 	r := strings.NewReplacer(
 		"{id}", fmt.Sprint(m.ID),
 		"{thread}", fmt.Sprint(m.Thread),
@@ -93,6 +103,8 @@ func (m Message) Render(tmpl string) string {
 		"{body}", m.Body,
 		"{files}", strings.Join(m.Files, " "),
 		"{time}", m.At.Format(time.RFC3339),
+		"{at}", m.At.Format("15:04:05"),
+		"{held}", heldFor(now.Sub(m.At)),
 		"{kind}", string(m.Kind),
 	)
 	out := r.Replace(tmpl)
@@ -100,6 +112,17 @@ func (m Message) Render(tmpl string) string {
 		out += "\nattached: " + strings.Join(m.Files, " ")
 	}
 	return out
+}
+
+// heldFor is how long a message waited, as a clause a template can drop into a
+// sentence — and empty when it did not wait. A push lands in milliseconds and
+// saying so on every message would be noise; a defer can hold one for an hour,
+// and that is the case worth reporting.
+func heldFor(d time.Duration) string {
+	if d < time.Second {
+		return ""
+	}
+	return ", held " + d.Round(time.Second).String()
 }
 
 // Bus holds every mailbox.

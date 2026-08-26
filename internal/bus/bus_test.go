@@ -1,6 +1,7 @@
 package bus
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -404,5 +405,44 @@ func TestLastIDIsWhereAFollowerStarts(t *testing.T) {
 	}
 	if got := b.Since(b.LastID()); len(got) != 0 {
 		t.Errorf("following from the newest id already offers %d messages", len(got))
+	}
+}
+
+// TestAMessageSaysWhenItWasSentAndHowLongItWaited: a recipient cannot work
+// either out for itself. A message held while an agent was busy arrives with no
+// sign of its age, and "check the branch before you push" reads the same
+// whether it was said ten seconds or forty minutes ago.
+func TestAMessageSaysWhenItWasSentAndHowLongItWaited(t *testing.T) {
+	sent := time.Date(2026, 8, 26, 10, 31, 48, 0, time.UTC)
+	m := Message{From: "user", Body: "run the tests", At: sent}
+	tmpl := "[swarm] message from {from} at {at}{held}: {body}"
+
+	// A push lands in milliseconds, and saying so on every message is noise.
+	if got := m.RenderAt(tmpl, sent.Add(80*time.Millisecond)); got != "[swarm] message from user at 10:31:48: run the tests" {
+		t.Errorf("a message that did not wait says it did: %q", got)
+	}
+
+	// A defer can hold one for as long as the agent is busy, and that is the
+	// case worth reporting.
+	if got := m.RenderAt(tmpl, sent.Add(6*time.Second)); got != "[swarm] message from user at 10:31:48, held 6s: run the tests" {
+		t.Errorf("a message held six seconds does not say so: %q", got)
+	}
+	if got := m.RenderAt(tmpl, sent.Add(38*time.Minute)); !strings.Contains(got, "held 38m0s") {
+		t.Errorf("a message held thirty-eight minutes does not say so: %q", got)
+	}
+}
+
+// TestHeldIsEmptyRatherThanZero: the placeholder carries its own comma, so a
+// template that uses it reads as though it were not there when there was no
+// wait — which is every push.
+func TestHeldIsEmptyRatherThanZero(t *testing.T) {
+	if got := heldFor(0); got != "" {
+		t.Errorf("no wait rendered as %q", got)
+	}
+	if got := heldFor(999 * time.Millisecond); got != "" {
+		t.Errorf("under a second rendered as %q", got)
+	}
+	if got := heldFor(time.Second); got != ", held 1s" {
+		t.Errorf("a second rendered as %q", got)
 	}
 }
