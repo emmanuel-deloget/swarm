@@ -121,24 +121,96 @@ func cmdList(args []string, detailed bool) error {
 	}
 }
 
+// sparkline draws a series as one line of eighths. Empty slices are the lowest
+// mark rather than a blank, so the line reads as a floor with things happening
+// above it — a gap and a quiet moment look different and mean different things.
+func sparkline(series []int) string {
+	// Runes, not bytes: each of these is three bytes, and scaling by the byte
+	// length walks off the end of the marks.
+	marks := []rune("▁▂▃▄▅▆▇█")
+	if len(series) == 0 {
+		return ""
+	}
+	top := 0
+	for _, n := range series {
+		if n > top {
+			top = n
+		}
+	}
+	var b strings.Builder
+	for _, n := range series {
+		if top == 0 {
+			b.WriteRune(marks[0])
+			continue
+		}
+		b.WriteRune(marks[n*(len(marks)-1)/top])
+	}
+	return b.String()
+}
+
+// meter draws a proportion as a bar. Ten cells: enough to read a glance at,
+// short enough to sit in a table beside everything else.
+func meter(n, ceiling, width int) string {
+	if ceiling <= 0 || width <= 0 {
+		return ""
+	}
+	filled := n * width / ceiling
+	if filled < 0 {
+		filled = 0
+	}
+	if filled > width {
+		filled = width
+	}
+	// A balance that is spent but not gone still shows something, because an
+	// empty bar and no bar at all read the same and mean different things.
+	if filled == 0 && n > 0 {
+		filled = 1
+	}
+	return strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
+}
+
+// talkLabel is what an agent put on the bus, drawn rather than counted.
+//
+// The MSG column beside it counts unread mail, which a fleet delivering by
+// push never has: eleven agents once showed a dash apiece while two hundred
+// messages an hour went between them. This is the column that would have said
+// so.
+func talkLabel(in agent.Info) string {
+	if len(in.Talked) == 0 || in.Talking == 0 {
+		return "-"
+	}
+	return fmt.Sprintf("%s %d", sparkline(in.Talked), in.Talking)
+}
+
+// budgetLabel is an agent's allowance as hit points: the bar first, because a
+// proportion is what the eye reads, and the numbers after for whoever wants
+// them.
+func budgetLabel(in agent.Info) string {
+	if in.BudgetMax <= 0 {
+		return "-"
+	}
+	return fmt.Sprintf("%s %d/%d", meter(in.Budget, in.BudgetMax, 10), in.Budget, in.BudgetMax)
+}
+
 func printAgents(infos []agent.Info, detailed bool) {
 	var rows [][]string
 	if detailed {
-		rows = append(rows, []string{"AGENT", "ROLE", "STATE", "PID", "UPTIME", "QUIET", "OUT", "MSG", "GIT", "SIZE", "COMMAND"})
+		rows = append(rows, []string{"AGENT", "ROLE", "STATE", "PID", "UPTIME", "QUIET", "OUT", "MSG", "TALK", "BUDGET", "GIT", "SIZE", "COMMAND"})
 	} else {
-		rows = append(rows, []string{"AGENT", "ROLE", "STATE", "PID", "UPTIME", "MSG", "GIT"})
+		rows = append(rows, []string{"AGENT", "ROLE", "STATE", "PID", "UPTIME", "MSG", "TALK", "GIT"})
 	}
 	for _, in := range infos {
 		if detailed {
 			rows = append(rows, []string{
 				in.Name, dash(in.Role), stateLabel(in), pidLabel(in.Pid), durLabel(in.Uptime),
-				durLabel(in.Quiet), byteLabel(in.BytesOut), msgLabel(in.Unread), dash(in.Git),
+				durLabel(in.Quiet), byteLabel(in.BytesOut), msgLabel(in.Unread),
+				talkLabel(in), budgetLabel(in), dash(in.Git),
 				fmt.Sprintf("%dx%d", in.Cols, in.Rows), strings.Join(in.Command, " "),
 			})
 		} else {
 			rows = append(rows, []string{
 				in.Name, dash(in.Role), stateLabel(in), pidLabel(in.Pid), durLabel(in.Uptime),
-				msgLabel(in.Unread), dash(in.Git),
+				msgLabel(in.Unread), talkLabel(in), dash(in.Git),
 			})
 		}
 	}

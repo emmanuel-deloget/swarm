@@ -66,6 +66,33 @@ four times a second: there is no SIGWINCH, and the resize arrives as a console
 input record an attach cannot read without eating the keystrokes it is there to
 forward.
 
+## Reading the fleet at a glance
+
+`swarm ls` draws two things rather than counting them.
+
+```
+AGENT        ROLE   STATE    MSG  TALK            BUDGET              GIT
+coordinator  chair  idle     -    ▁▁▁▂▁▁▃▅█████ 41  █████████░ 270/300  main
+dev-1        dev    working  -    ▁▁▁▁▁▁▁▁▁▂▁▁  2   ██████░░░░  20/30   rq-620
+dev-2        dev    idle     2    ▁▁▁▁▁▁▁▁▁▁▁▁  -   ██████████  30/30   rq-638
+```
+
+**TALK** is what the agent put on the bus over the last ten minutes, one mark
+per fifty seconds, with the total beside it. The shape is the point: an agent
+talking steadily and one that started shouting forty seconds ago report the same
+total, and only one of them is running away.
+
+It sits next to **MSG**, which counts unread mail — and a fleet delivering by
+`push` never has any. Eleven agents once showed a dash apiece while two hundred
+messages an hour went between them; TALK is the column that would have said so.
+
+**BUDGET** is the [allowance](configuration.md#budget), as hit points. It is
+absent unless the fleet sets one. The bar shows something until the balance is
+actually gone, because an empty bar and no bar at all read the same and mean
+different things.
+
+Both appear in the TUI too, on the selected agent's line.
+
 ## The mouse
 
 Mouse reporting is **off by default**, and that is deliberate: a terminal that

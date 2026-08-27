@@ -1175,11 +1175,22 @@ func (m *model) paneLines(width, height int) []string {
 	// What the agent is putting on the bus, next to what it is doing: the two
 	// numbers are only worth anything side by side.
 	if in.Talking > 0 {
-		rate := fmt.Sprintf("%d msg/%dm", in.Talking, int(hub.TalkWindow.Minutes()))
+		// The shape beside the count: the two say different things, and it is
+		// the shape that tells a fleet talking steadily from one that has just
+		// started shouting.
+		rate := fmt.Sprintf("%s %d msg/%dm", sparkline(in.Talked), in.Talking,
+			int(hub.TalkWindow.Minutes()))
 		if in.Talking >= hub.TalkNoisy {
 			rate = styAttn.Render(rate)
 		}
 		meta = append(meta, rate)
+	}
+	if in.BudgetMax > 0 {
+		hp := fmt.Sprintf("%s %d/%d", meter(in.Budget, in.BudgetMax, 8), in.Budget, in.BudgetMax)
+		if in.Budget*4 < in.BudgetMax {
+			hp = styAttn.Render(hp)
+		}
+		meta = append(meta, hp)
 	}
 	if in.Pid > 0 {
 		meta = append(meta, fmt.Sprintf("pid %d", in.Pid))

@@ -58,13 +58,25 @@ type Info struct {
 	Quiet      time.Duration `json:"quiet"`
 	BytesOut   uint64        `json:"bytes_out"`
 	Restarts   int           `json:"restarts"`
-	Title      string        `json:"title,omitempty"`
-	AltScreen  bool          `json:"alt_screen"`
-	Mouse      bool          `json:"mouse"`
-	MouseDrag  bool          `json:"mouse_drag"`
-	Exit       string        `json:"exit,omitempty"`
-	Delivery   string        `json:"delivery"`
-	Unread     int           `json:"unread"`
+
+	// Budget is what this agent has left to say and its ceiling, both zero
+	// when the fleet bounds nothing. Filled by the hub, which owns the
+	// allowance; an agent knows nothing about it.
+	Budget    int `json:"budget,omitempty"`
+	BudgetMax int `json:"budget_max,omitempty"`
+
+	// Talked is what this agent put on the bus across the talk window, oldest
+	// slice first. Talking is the same thing summed — and the sum is the part
+	// that misleads: an agent talking steadily for ten minutes and one that
+	// started forty seconds ago report the same number.
+	Talked    []int  `json:"talked,omitempty"`
+	Title     string `json:"title,omitempty"`
+	AltScreen bool   `json:"alt_screen"`
+	Mouse     bool   `json:"mouse"`
+	MouseDrag bool   `json:"mouse_drag"`
+	Exit      string `json:"exit,omitempty"`
+	Delivery  string `json:"delivery"`
+	Unread    int    `json:"unread"`
 	// Workspace is the declared mode, and Git what its working copy looks like
 	// as of the last look. swarm reports this and never acts on it.
 	Workspace string `json:"workspace"`

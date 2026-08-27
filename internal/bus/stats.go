@@ -150,6 +150,42 @@ func (b *Bus) StatsSince(t time.Time) Stats {
 // half of a talk-to-work ratio, and on its own it is already the signal worth
 // watching: an agent posting nine messages in ten minutes is doing something
 // other than the task.
+// SentOver counts what an agent put on the bus in each of n equal slices of
+// the window ending now, oldest first.
+//
+// The count alone says how much; the shape says when, and when is the question
+// a fleet that ran away answers badly. One that has been talking steadily for
+// an hour and one that started four minutes ago report the same number.
+func (b *Bus) SentOver(agent string, window time.Duration, n int) []int {
+	if n <= 0 || window <= 0 {
+		return nil
+	}
+	out := make([]int, n)
+	now := time.Now()
+	start := now.Add(-window)
+	slice := window / time.Duration(n)
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for i := len(b.recent) - 1; i >= 0; i-- {
+		m := b.recent[i]
+		if m.At.Before(start) {
+			break
+		}
+		if m.From != agent {
+			continue
+		}
+		at := int(m.At.Sub(start) / slice)
+		if at >= n {
+			at = n - 1 // the message that landed on the boundary
+		}
+		if at >= 0 {
+			out[at]++
+		}
+	}
+	return out
+}
+
 func (b *Bus) SentSince(agent string, t time.Time) int {
 	b.mu.Lock()
 	defer b.mu.Unlock()

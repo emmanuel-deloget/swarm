@@ -485,8 +485,12 @@ func (h *Hub) Infos() []agent.Info {
 		info := a.Info()
 		info.Unread = pending[info.Name]
 		info.Talking = h.bus.SentSince(info.Name, since)
+		info.Talked = h.bus.SentOver(info.Name, TalkWindow, TalkSlices)
 		info.Owed = len(h.bus.Owed(info.Name))
 		info.Stalled = h.isStalled(info)
+		if b, ok := h.BudgetLeft(info.Name); ok {
+			info.Budget, info.BudgetMax = b.Left, b.Max
+		}
 		out = append(out, info)
 	}
 	return out
@@ -502,6 +506,11 @@ func (h *Hub) Infos() []agent.Info {
 const (
 	TalkWindow = 10 * time.Minute
 	TalkNoisy  = 8
+
+	// TalkSlices is how many marks a sparkline of the talk window gets. Twelve
+	// over ten minutes is a mark every fifty seconds: fine enough to see a
+	// fleet start shouting, coarse enough to fit in a column.
+	TalkSlices = 12
 )
 
 // portFor hands out a free TCP port, remembering it per agent and variable so
