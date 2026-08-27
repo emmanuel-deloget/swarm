@@ -50,6 +50,7 @@ const (
 	modeAttached
 	modeCommand
 	modeMosaic
+	modeMatrix
 	modeHelp
 )
 
@@ -541,6 +542,15 @@ func (m *model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case "w":
+		// The fleet as a shape: who may write to whom, and who did.
+		if m.mode == modeMatrix {
+			m.mode = modeNormal
+		} else {
+			m.mode = modeMatrix
+		}
+		return m, nil
+
 	case "m":
 		if m.mode == modeMosaic {
 			m.mode = modeNormal
@@ -956,6 +966,8 @@ func (m *model) View() string {
 		return m.viewHelp()
 	case modeMosaic:
 		return m.viewMosaic()
+	case modeMatrix:
+		return m.viewMatrix()
 	default:
 		return m.viewMain()
 	}
@@ -1011,7 +1023,7 @@ const (
 // fitSelected keeps the displayed agent the size of the space it is shown in,
 // as long as that space is worth having.
 func (m *model) fitSelected() {
-	if m.mode == modeMosaic || m.width == 0 {
+	if m.mode == modeMosaic || m.mode == modeMatrix || m.width == 0 {
 		return
 	}
 	in := m.current()
@@ -1222,11 +1234,13 @@ func (m *model) paneLines(width, height int) []string {
 		return out
 	}
 	if len(m.visibleLines) == 0 {
-		msg := "not running — press S to start it"
-		if in.State == agent.StateStarting {
-			msg = "starting..."
+		// A pane that is blank because the agent has not drawn its first frame
+		// yet reads exactly like one that is blank because nothing started.
+		// The mark turning says which, without anybody having to be told.
+		if in.State == agent.StateStarting || in.Pid > 0 {
+			return append(out, logoPane(width, screenHeight, in.Name+" is starting")...)
 		}
-		out = append(out, "", styMuted.Render("  "+msg))
+		out = append(out, "", styMuted.Render("  not running — press S to start it"))
 		return out
 	}
 	out = append(out, fitLines(m.visibleLines, width, screenHeight)...)
@@ -1303,6 +1317,7 @@ func (m *model) statusLine() string {
 		styKey.Render("s") + " send",
 		styKey.Render("d") + " dialogue",
 		styKey.Render("m") + " mosaic",
+		styKey.Render("w") + " who writes",
 		styKey.Render(":") + " cmd",
 		styKey.Render("?") + " help",
 	}
@@ -1401,6 +1416,22 @@ func (m *model) mosaicCell(i, width, height int) []string {
 	return block(lines, width, height)
 }
 
+// viewMatrix draws who may reach whom, with what was actually said on top.
+func (m *model) viewMatrix() string {
+	names := make([]string, 0, len(m.infos))
+	for _, in := range m.infos {
+		names = append(names, in.Name)
+	}
+	lines := []string{
+		styHeader.Render("swarm") + styMuted.Render("  who writes to whom"),
+		"",
+	}
+	lines = append(lines, matrixLines(names, m.h.Reachable(),
+		m.h.Bus().StatsSince(time.Now().Add(-hub.TalkWindow)), m.width)...)
+	lines = append(lines, "", styMuted.Render("  w to go back"))
+	return strings.Join(lines, "\n")
+}
+
 func (m *model) viewHelp() string {
 	keys := [][2]string{
 		{"j / k / ↑ / ↓", "select an agent"},
@@ -1412,6 +1443,7 @@ func (m *model) viewHelp() string {
 		{"d", "dialogue lock (on by default): typing talks to the agent"},
 		{"esc", "in dialogue: one shortcut; esc esc leaves the lock"},
 		{"m", "mosaic: every agent at once"},
+		{"w", "who writes to whom: can_send, and what was said"},
 		{"l", "show or hide the event log"},
 		{"M", "mouse: wheel and clicks, no text selection"},
 		{"i / s / b", "inject / send / broadcast"},

@@ -14,6 +14,7 @@ swarm run
 | `A` | attach full screen, with a byte-perfect keyboard |
 | `pgup` `pgdn` | scroll back through the agent's output — or page the agent itself, when it has taken the whole screen and keeps no scrollback |
 | `m` | mosaic: every agent at once |
+| `w` | who writes to whom: the fleet as a shape |
 | `l` | show/hide the event log |
 | `M` | mouse reporting on/off (see below) |
 | `i` `s` `b` | inject / send a bus message / broadcast |
@@ -94,3 +95,41 @@ Past localhost, treat that URL as a shell on your machine:
 - set `web.read_only: true` if you only want to watch;
 - put it behind TLS (`web.tls_cert` / `web.tls_key`) or a tunnel
   (`ssh -R`, `cloudflared`) rather than binding `0.0.0.0` in the open.
+
+## The fleet as a shape
+
+`w` draws who may write to whom, with what was actually said on top.
+
+```
+  to →
+          my   de   dev  devt ke   se   go
+myself    ·    █    ▓    ▓    ▒    ▒    ▒
+devone    ░    ·    ✗    ✗    ·    ·    ·
+devtwo    ▒    ✗    ·    ✗    ·    ·    ·
+devthree  ·    ✗    ✗    ·    ·    ·    ·
+keystone  ·    ·    ·    ·    ·    ✗    ✗
+sentinel  ·    ·    ·    ·    ✗    ·    ✗
+gopher    ░    ·    ·    ·    ✗    ✗    ·
+
+  ✗ can_send says no   · allowed, silent   ░▒▓█ what was said
+```
+
+`can_send` is written one agent at a time and read one agent at a time, so a
+topology nothing like the one its author had in mind stays invisible. The fleet
+above was meant as a star through `myself`; the crosses show what it is — the
+developers cannot reach each other and neither can the reviewers, but every
+other pair is open, which is a near-complete bipartite graph with a hub. Nobody
+sees that in the file.
+
+The shading is the last ten minutes. One full row and six near-empty ones is
+what a fleet talking to itself looks like from outside.
+
+A matrix rather than a graph, because a graph drawn in characters stops being
+readable at about six nodes and this is for fleets with more.
+
+## While an agent is starting
+
+An agent CLI can take a while to draw its first frame, and a blank pane during
+that is indistinguishable from one that failed to start. swarm draws its own
+mark there instead — five agents wired in a ring, with a pulse going round it —
+until the terminal has something to show.

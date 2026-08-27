@@ -947,6 +947,32 @@ func (h *Hub) mayControl(verb, from string, agents []*agent.Agent) error {
 	return nil
 }
 
+// Reachable is who each agent may write to, as the fleet resolves it — roles,
+// groups and live instances included, which is what the file alone cannot do.
+//
+// It is the shape of a fleet, and the shape is worth seeing. can_send is
+// written one agent at a time and read one agent at a time, so a topology that
+// is nothing like what its author had in mind stays invisible: five reviewers
+// and five developers meant as a star turn out to be a near-complete bipartite
+// graph, and nobody notices until the messages arrive.
+func (h *Hub) Reachable() map[string][]string {
+	agents := h.Agents()
+	out := make(map[string][]string, len(agents))
+	for _, from := range agents {
+		var to []string
+		for _, other := range agents {
+			if other.Name() == from.Name() {
+				continue
+			}
+			if ok, _ := h.mayReach(from.Name(), other.Name()); ok {
+				to = append(to, other.Name())
+			}
+		}
+		out[from.Name()] = to
+	}
+	return out
+}
+
 // mayReach is can_send, asked of the fleet rather than of the file.
 //
 // Config.MayReach cannot answer it. An instance is an agent of this fleet
