@@ -1233,13 +1233,17 @@ func (m *model) paneLines(width, height int) []string {
 	if screenHeight < 1 {
 		return out
 	}
+	// A pane that is blank because the agent has not drawn its first frame yet
+	// reads exactly like one that is blank because nothing started. The mark
+	// turning says which, without anybody having to be told.
+	//
+	// The test is bytes, not lines: a running agent's terminal renders as a
+	// screenful of empty strings rather than no strings at all, so asking
+	// whether there are lines only ever answers "is there a terminal".
+	if in.Pid > 0 && in.BytesOut == 0 {
+		return append(out, logoPane(width, screenHeight, in.Name+" is starting")...)
+	}
 	if len(m.visibleLines) == 0 {
-		// A pane that is blank because the agent has not drawn its first frame
-		// yet reads exactly like one that is blank because nothing started.
-		// The mark turning says which, without anybody having to be told.
-		if in.State == agent.StateStarting || in.Pid > 0 {
-			return append(out, logoPane(width, screenHeight, in.Name+" is starting")...)
-		}
 		out = append(out, "", styMuted.Render("  not running — press S to start it"))
 		return out
 	}
