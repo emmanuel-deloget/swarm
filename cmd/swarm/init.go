@@ -272,6 +272,21 @@ agents:
 #       after: 2h
 #       kind: question
 
+# What the fleet knows and its agents keep forgetting. An agent's context is
+# compacted and what it was told an hour ago goes with it; this survives that,
+# and every restart. An entry is a key and one line — "swarm remember <key>
+# <line>", "swarm recall", "swarm forget <key>" — and writing a key again
+# replaces what it held, which is how one is corrected.
+#
+# The limits are the feature: asked politely for something short, an agent
+# writes an essay about brevity, so anything longer is refused rather than
+# trimmed. A full memory refuses new entries rather than dropping the oldest,
+# because a memory that tidies itself is a cache. max: 0 switches it off.
+#
+# memory:
+#   max: 50
+#   chars: 200
+
 # Overrides every agent's delivery for one kind of message: the fleet can defer
 # while "somebody is stuck" still gets through. Kinds are set with
 # "swarm send -kind": question, answer, fyi, request, decision, blocked, done.

@@ -21,6 +21,7 @@ import (
 	"github.com/emmanuel-deloget/swarm/internal/config"
 	"github.com/emmanuel-deloget/swarm/internal/event"
 	"github.com/emmanuel-deloget/swarm/internal/hook"
+	"github.com/emmanuel-deloget/swarm/internal/memory"
 	"github.com/emmanuel-deloget/swarm/internal/sockpath"
 )
 
@@ -30,6 +31,7 @@ type Hub struct {
 	log      *event.Log
 	bus      *bus.Bus
 	budget   *budgets
+	memory   *memory.Store
 	stateDir string
 
 	// ports remembers what {alloc_port} resolved to, so a restart keeps it.
@@ -122,6 +124,7 @@ func New(o Options) (*Hub, error) {
 		log:      event.NewLog(o.EventHistory),
 		bus:      bus.New(cfg.Bus.History),
 		budget:   newBudgets(cfg),
+		memory:   memory.New(filepath.Join(stateDir, "memory.json"), cfg.Memory.Entries(), cfg.Memory.Chars),
 		stateDir: stateDir,
 		agents:   make(map[string]*agent.Agent, len(cfg.Agents)),
 	}
@@ -225,6 +228,35 @@ func (h *Hub) watchEvery() time.Duration {
 		return every
 	}
 	return time.Second
+}
+
+// Remember writes one thing the fleet knows. Whoever asks is recorded, and an
+// agent that is not one of ours is a person.
+func (h *Hub) Remember(by, key, fact string) (memory.Entry, error) {
+	if by == "" {
+		by = "user"
+	}
+	e, err := h.memory.Remember(key, fact, by)
+	if err != nil {
+		return e, err
+	}
+	h.log.Emit(event.KindInfo, "", fmt.Sprintf("%s remembered %s: %s", by, e.Key, e.Fact))
+	return e, nil
+}
+
+// Forget drops one.
+func (h *Hub) Forget(by, key string) error {
+	if err := h.memory.Forget(key); err != nil {
+		return err
+	}
+	h.log.Emit(event.KindInfo, "", fmt.Sprintf("%s forgot %s", orString(by, "user"), key))
+	return nil
+}
+
+// Recall is what the fleet knows, and the limits it knows it under.
+func (h *Hub) Recall(pattern string) ([]memory.Entry, int, int) {
+	held, chars := h.memory.Limits()
+	return h.memory.Recall(pattern), held, chars
 }
 
 // Config returns the loaded configuration.

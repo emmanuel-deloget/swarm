@@ -39,6 +39,9 @@ talking
   broadcast <message>       send to every agent
   inbox [agent]             collect the messages addressed to you
   done [text]               settle what you were asked; -thread for one of them
+  remember <key> <line>     one short line the fleet should not have to be told twice
+  recall [pattern]          what the fleet knows
+  forget <key>              drop one
   stage <file>              copy a file where every agent can read it
   events                    show the swarm event log
   bus tail [-f]             the messages agents send each other, as they go
@@ -105,6 +108,12 @@ func main() {
 		err = cmdSend(args, true)
 	case "inbox":
 		err = cmdInbox(args)
+	case "remember":
+		err = cmdRemember(args)
+	case "forget":
+		err = cmdForget(args)
+	case "recall":
+		err = cmdRecall(args)
 	case "done":
 		err = cmdDone(args)
 	case "stage":

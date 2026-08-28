@@ -11,6 +11,7 @@ import (
 	"github.com/emmanuel-deloget/swarm/internal/bus"
 	"github.com/emmanuel-deloget/swarm/internal/event"
 	"github.com/emmanuel-deloget/swarm/internal/hub"
+	"github.com/emmanuel-deloget/swarm/internal/memory"
 	"time"
 )
 
@@ -38,6 +39,9 @@ const (
 	CmdSpawn    = "spawn"
 	CmdAttach   = "attach"
 	CmdShutdown = "shutdown"
+	CmdRemember = "remember"
+	CmdForget   = "forget"
+	CmdRecall   = "recall"
 )
 
 // Request is a command sent to the swarm.
@@ -126,6 +130,7 @@ type Response struct {
 	Event    *event.Event       `json:"event,omitempty"`
 	Why      *hub.Why           `json:"why,omitempty"`
 	Budget   *hub.Budget        `json:"budget,omitempty"`
+	Memory   []memory.Entry     `json:"memory,omitempty"`
 
 	Text string `json:"text,omitempty"`
 	Path string `json:"path,omitempty"`

@@ -308,3 +308,32 @@ agents:
 		t.Errorf("a fleet with no budget is told about one:\n%s", without)
 	}
 }
+
+// TestTheMemoryIsExplainedWithItsLimits: an agent told about a memory without
+// its ceilings writes an essay and is refused, which teaches it nothing it
+// could not have been told first.
+func TestTheMemoryIsExplainedWithItsLimits(t *testing.T) {
+	with := render(t, `
+web: {enabled: false}
+memory: {max: 40, chars: 120}
+agents:
+  - name: alpha
+    command: [probe-echo]
+`)
+	for _, want := range []string{"120 characters", "40 entries", "swarm recall", "swarm forget"} {
+		if !strings.Contains(with, want) {
+			t.Errorf("the guide does not say %q:\n%s", want, with)
+		}
+	}
+
+	without := render(t, `
+web: {enabled: false}
+memory: {max: 0}
+agents:
+  - name: alpha
+    command: [probe-echo]
+`)
+	if strings.Contains(without, "swarm recall") {
+		t.Errorf("a fleet with no memory is told about one:\n%s", without)
+	}
+}

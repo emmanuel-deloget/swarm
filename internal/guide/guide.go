@@ -69,6 +69,11 @@ type Data struct {
 
 	// MaxTurns is the budget per conversation, zero when unbounded.
 	MaxTurns int
+	// Memory is how many entries the fleet's memory holds, 0 when it has none.
+	Memory int
+	// MemoryChars is the longest an entry may be.
+	MemoryChars int
+
 	// Budgets is true when any agent here has an allowance for talking, which
 	// is what decides whether the section appears at all. It bounds width
 	// where MaxTurns bounds depth.
@@ -88,11 +93,13 @@ func budgetOf(a *config.AgentConfig) int {
 
 func Collect(c *config.Config) Data {
 	d := Data{
-		Session:    c.Session,
-		Shared:     c.Shared,
-		MaxTurns:   c.Bus.MaxTurns,
-		EscalateTo: c.Bus.EscalateTo,
-		Hooks:      c.Hooks.Enabled,
+		Session:     c.Session,
+		Shared:      c.Shared,
+		MaxTurns:    c.Bus.MaxTurns,
+		EscalateTo:  c.Bus.EscalateTo,
+		Hooks:       c.Hooks.Enabled,
+		Memory:      c.Memory.Entries(),
+		MemoryChars: c.Memory.Chars,
 	}
 	if d.Hooks {
 		d.From = c.Hooks.From
@@ -263,6 +270,29 @@ costs most. Being blocked is free: if you cannot go on, say so, always.
 
 If you are refused, the refusal says when you may send again. Wait for it rather
 than trying again — and consider whether the message needed all its recipients.
+
+{{end}}{{if .Memory}}## What the fleet knows
+
+Your context gets compacted. What the fleet has settled does not:
+
+` + "```sh" + `
+swarm recall                    # what is known, newest first
+swarm recall gate               # what matches
+swarm remember <key> "<line>"   # one short line, under a key
+swarm forget <key>              # when it stops being true
+` + "```" + `
+
+An entry is a key and **one line of at most {{.MemoryChars}} characters**, and
+anything else is refused rather than trimmed. Write the fact, not the reasoning
+and not why it matters. Writing a key again replaces what it held, which is how
+you correct one.
+
+Remember what the fleet would otherwise have to be told twice — a number, a
+constraint, a decision that stands. Not what you did today. There is room for
+{{.Memory}} entries and a full memory refuses new ones, so an entry that is no
+longer true is worth forgetting.
+
+Nothing of this is put in front of you. Reading it is your business.
 
 {{end}}## Saying what a message is for
 

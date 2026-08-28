@@ -54,6 +54,7 @@ list of those. Every command that acts on agents accepts one.
 | `workdir` | the config's directory | Working directory for every agent that does not override it. |
 | `state_dir` | `.swarm` | Everything swarm writes: the control socket, the logs, the CLI shim, the staged files, the TUI's command history, and `owed.json` — what each agent has been asked and has not settled, kept across restarts so `swarm why` can still answer afterwards, and `ephemeral.json` — the instance name counters, and what became of the ephemeral agents that are gone. `swarm init` offers to add it to `.gitignore`. |
 | `ephemeral` | — | Limits that apply to every agent made for one task; see [`ephemeral`](#ephemeral). |
+| `memory` | — | What the fleet knows and its agents keep forgetting; see [`memory`](#memory). |
 | `shared` | `<state_dir>/shared` | Where injected files are staged so every agent can reach them by path. Agents get it as `$SWARM_SHARED`. |
 | `env` | `{}` | Added to the environment of every agent. Per-agent `env` wins. |
 | `detach_key` | `ctrl+\`, `ctrl+g` on Windows | Leaves an attached agent, in the TUI and in `swarm attach`. Any name `swarm keys -list` marks as bindable: `ctrl+g`, `ctrl+]`, `f12`, `esc esc`, `ctrl+left`. Configurable because the default is what tmux, screen and asciinema like to grab. |
@@ -460,6 +461,63 @@ than that no such agent exists, which reads as a typo and sends nobody looking
 for the work. Keeping that record is what makes the answer possible. Keeping it
 for ever is not the point, so it is a count: what matters beyond it is in the
 event log and in git.
+
+## `memory`
+
+What the fleet knows and its agents keep forgetting.
+
+An agent's context is compacted, and what it was told an hour ago goes with it.
+The bus already answers that for one thing — `swarm why` is the part of a
+conversation that does not get compacted — and this answers it for the standing
+facts, which belong to nobody's thread and survive every restart.
+
+```yaml
+memory:
+  max: 50       # entries; 0 switches it off
+  chars: 200    # the longest an entry may be
+```
+
+| key | default | |
+|---|---|---|
+| `max` | `50` | How many entries the memory holds. `0` switches it off. |
+| `chars` | `200` | The longest an entry may be, in characters. Under 40 is refused: that is a label rather than a fact. |
+
+An entry is a **key and one line**:
+
+```sh
+swarm remember gate-runtime "make integration takes 8-12 min; not a stalled agent"
+swarm recall gate
+swarm forget gate-runtime
+```
+
+Writing a key again replaces what it held, which is why there is no command to
+edit one — and a fact that is still true has its date refreshed by being
+restated. `swarm recall` lists what is held, newest first, with who wrote each
+entry and how long ago.
+
+The limits are the feature rather than a guard on it. An agent asked politely
+for something short writes an essay about brevity, so the shape is refused at
+the point of writing:
+
+- more than one line, and the refusal counts them
+- more than `chars` characters, and the refusal gives both numbers
+- a key outside `a-z0-9-`, two to thirty-two characters — no spaces, so a key
+  cannot become a chapter heading
+- an entry opening with a heading, a bullet or bold, which is formatting rather
+  than fact
+
+Naming the thing before describing it does most of the work: nobody titles a
+paragraph on the nature of time `gate-runtime`. The key is also what makes an
+entry something that can be corrected or dropped later, which a wall of prose
+is not.
+
+**A full memory refuses the write** rather than dropping the oldest entry. A
+memory that tidies itself is a cache, and what is being asked for here is that
+somebody decide what is no longer true. The refusal says so and names the
+command.
+
+Nothing is injected. The generated `AGENTS.md` says the memory exists and how
+to read it; whether an agent looks is an agent's business.
 
 ## `patterns`
 

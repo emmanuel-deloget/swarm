@@ -90,6 +90,9 @@ type Config struct {
 	// Ephemeral bounds and remembers the agents made for one task.
 	Ephemeral EphemeralConfig `yaml:"ephemeral"`
 
+	// Memory is what the fleet knows and its agents keep forgetting.
+	Memory MemoryConfig `yaml:"memory"`
+
 	// Agents is the fleet itself.
 	Agents []AgentConfig `yaml:"agents"`
 
@@ -466,6 +469,51 @@ const StalledSelf = "self"
 // cheapest way to turn a guess into a fact is to ask the one who knows. What
 // happens next belongs to whoever is told, which is usually an agent with more
 // context about the work than the hub will ever have.
+// MemoryConfig bounds what a fleet may remember.
+//
+// The limits are the feature. An agent asked politely for something short
+// writes an essay about brevity, so an entry is a key and one line, and both
+// ceilings are refused at the point of writing rather than suggested in a
+// prompt.
+type MemoryConfig struct {
+	// Max is how many entries the memory holds. A pointer, so that an explicit
+	// 0 switches the memory off where an absent key takes the default: the two
+	// are different intentions and an int cannot tell them apart.
+	//
+	// Reaching the limit refuses the write rather than dropping the oldest: a
+	// memory that tidies itself is a cache, and the thing being asked for here
+	// is that somebody decide what is no longer true.
+	Max *int `yaml:"max"`
+
+	// Chars is the longest an entry may be, in characters.
+	Chars int `yaml:"chars"`
+}
+
+// check fills in what the file left out.
+func (m *MemoryConfig) check() error {
+	if m.Max == nil {
+		m.Max = ptr(50)
+	}
+	if *m.Max < 0 || m.Chars < 0 {
+		return fmt.Errorf("memory: max and chars must not be negative")
+	}
+	if m.Chars == 0 {
+		m.Chars = 200
+	}
+	if m.Chars < 40 {
+		return fmt.Errorf("memory: chars is %d, which is a label rather than a fact", m.Chars)
+	}
+	return nil
+}
+
+// Entries is how many the memory holds, 0 when a fleet switched it off.
+func (m MemoryConfig) Entries() int {
+	if m.Max == nil {
+		return 0
+	}
+	return *m.Max
+}
+
 // BusBudget is the price list, and it is fleet-wide on purpose.
 //
 // What a message costs is a property of the act, not of the actor:
@@ -932,6 +980,9 @@ func (c *Config) normalize() error {
 		return fmt.Errorf("bus: max_turns must not be negative")
 	}
 	if err := c.Bus.Budget.Check(); err != nil {
+		return err
+	}
+	if err := c.Memory.check(); err != nil {
 		return err
 	}
 

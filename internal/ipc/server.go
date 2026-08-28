@@ -14,6 +14,7 @@ import (
 	"github.com/emmanuel-deloget/swarm/internal/agent"
 	"github.com/emmanuel-deloget/swarm/internal/bus"
 	"github.com/emmanuel-deloget/swarm/internal/hub"
+	"github.com/emmanuel-deloget/swarm/internal/memory"
 	"github.com/emmanuel-deloget/swarm/internal/sockpath"
 )
 
@@ -400,6 +401,24 @@ func (s *Server) handle(req Request) Response {
 			return errorResponse(err)
 		}
 		return Response{OK: true, Path: path}
+
+	case CmdRemember:
+		e, err := h.Remember(req.From, req.Name, req.Text)
+		if err != nil {
+			return errorResponse(err)
+		}
+		return Response{OK: true, Memory: []memory.Entry{e}}
+
+	case CmdForget:
+		if err := h.Forget(req.From, req.Name); err != nil {
+			return errorResponse(err)
+		}
+		return Response{OK: true, Text: "forgotten"}
+
+	case CmdRecall:
+		held, room, chars := h.Recall(req.Text)
+		return Response{OK: true, Memory: held,
+			Text: fmt.Sprintf("%d of %d entries, at most %d characters each", len(held), room, chars)}
 
 	case CmdShutdown:
 		// No agent, ever. Stopping one instance is work a parent hands out and

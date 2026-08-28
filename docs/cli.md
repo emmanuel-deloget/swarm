@@ -27,6 +27,10 @@ swarm inbox dev-1                   # read a mailbox
 swarm inbox -wait 30s               # ... or wait for one, if anything is filed there
 swarm stage diff.patch              # copy a file where every agent can read it
 
+swarm remember gate-runtime "make integration takes 8-12 min"
+swarm recall gate                   # what the fleet knows
+swarm forget gate-runtime           # drop one
+
 swarm bus tail -f                   # the messages agents send each other
 swarm bus tail -n 0 -f              # ... only what happens from now on
 swarm bus stats -since 30m          # how much of the fleet's time went into talking
