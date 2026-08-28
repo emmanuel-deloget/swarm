@@ -163,23 +163,18 @@ func logoCanvas(w, h int, phase float64) *canvas {
 	return c
 }
 
-// logoSize picks a mark that fits the space and leaves plenty of it alone.
+// logoWidth is the mark's size in cells wherever there is room for it. The
+// mark is something to look at while waiting, not the thing being waited for,
+// and one that filled the pane read as an error screen.
+const logoWidth = 24
+
+// logoSize is logoWidth where it fits, less where it does not.
 //
-// A third of the pane, capped: the mark is something to look at while waiting,
-// not the thing being waited for, and one that filled the pane read as an
-// error screen. The shape stays square-ish, which means the height in cells is
-// about half the width, a cell being about twice as tall as it is wide.
-//
-// It shrinks until it fits, and gives up rather than drawing something clipped.
+// The shape stays square-ish, which means the height in cells is about half the
+// width, a cell being about twice as tall as it is wide. It shrinks until it
+// fits and gives up rather than drawing something clipped.
 func logoSize(width, height int) (w, h int) {
-	w = width / 3
-	if w > 24 {
-		w = 24
-	}
-	if w < 16 {
-		w = 16
-	}
-	for ; w >= 16; w -= 2 {
+	for w = logoWidth; w >= 16; w -= 2 {
 		h = int(float64(w)*0.47) + 1
 		if h <= height-3 && w <= width-2 {
 			return w, h
