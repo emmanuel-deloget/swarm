@@ -163,25 +163,29 @@ func logoCanvas(w, h int, phase float64) *canvas {
 	return c
 }
 
-// logoSize picks a mark that fits the space, keeping the shape square-ish: a
-// cell is about twice as tall as it is wide, so the height in cells is about
-// half the width.
+// logoSize picks a mark that fits the space and leaves plenty of it alone.
+//
+// A third of the pane, capped: the mark is something to look at while waiting,
+// not the thing being waited for, and one that filled the pane read as an
+// error screen. The shape stays square-ish, which means the height in cells is
+// about half the width, a cell being about twice as tall as it is wide.
+//
+// It shrinks until it fits, and gives up rather than drawing something clipped.
 func logoSize(width, height int) (w, h int) {
-	w = width - 4
-	if w > 44 {
-		w = 44
-	}
-	if w > (height-4)*2 {
-		w = (height - 4) * 2
+	w = width / 3
+	if w > 24 {
+		w = 24
 	}
 	if w < 16 {
 		w = 16
 	}
-	h = int(float64(w)*0.47) + 1
-	if h < 6 {
-		h = 6
+	for ; w >= 16; w -= 2 {
+		h = int(float64(w)*0.47) + 1
+		if h <= height-3 && w <= width-2 {
+			return w, h
+		}
 	}
-	return w, h
+	return 0, 0
 }
 
 // logoPane centres the mark in the space a terminal would have taken, with the
@@ -189,6 +193,9 @@ func logoSize(width, height int) (w, h int) {
 // be longer than a narrow pane.
 func logoPane(width, height int, caption string) []string {
 	w, h := logoSize(width, height)
+	if w == 0 {
+		return nil
+	}
 	art := logoLines(w, h, logoPhase(time.Now()))
 	if len(art) == 0 {
 		return nil
