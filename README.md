@@ -209,7 +209,7 @@ on Windows runs into.
 | `secret_path` | Not checked. Windows has no POSIX modes — every readable file reports `0666` — and who may open a file is its ACL, which mode bits cannot express. On a shared machine, put the secret somewhere your account alone can read. |
 | `workspace: none` | Reports the branch of the directory an agent started in, even after it has moved. Following a process needs `/proc`, which only Linux has; macOS is in the same position. |
 | The mouse | Clicks, drags and the wheel are not passed to agents. A pseudoconsole does not carry an application's private modes back out, so swarm cannot tell whether an agent wants them — and sending them regardless would be read as text. Mouse mode still works for swarm's own interface. |
-| Fonts | The shortcut bar writes `enter` where it writes `↵` elsewhere: the raster fonts the older console offers have no glyph for it. Windows Terminal does. |
+| Fonts | The shortcut bar writes `enter` where it writes `↵` elsewhere: the raster fonts the older console offers have no glyph for it. The mark drawn while an agent starts is braille, which those fonts do not have either — it comes out blank rather than wrong, and it is decoration. Windows Terminal has both. |
 
 Two things are worth knowing about the console you run it in. The older
 `conhost` (the plain "Command Prompt" window) works, and swarm asks it to

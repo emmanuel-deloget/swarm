@@ -25,7 +25,7 @@ func TestTheMarkIsDrawnWhileAnAgentHasSaidNothing(t *testing.T) {
 	m.infos[0].BytesOut = 0
 	m.sel = 0
 	pane := strings.Join(m.paneLines(80, 20), "\n")
-	if !strings.Contains(pane, "●") || !strings.Contains(pane, "○") {
+	if !hasBraille(pane) {
 		t.Errorf("the mark is not in the pane of an agent that has said nothing:\n%s", pane)
 	}
 	if !strings.Contains(pane, "is starting") {
@@ -35,7 +35,7 @@ func TestTheMarkIsDrawnWhileAnAgentHasSaidNothing(t *testing.T) {
 	// The moment it prints anything, its own screen takes the pane back.
 	m.infos[0].BytesOut = 12
 	pane = strings.Join(m.paneLines(80, 20), "\n")
-	if strings.Contains(pane, "○") {
+	if hasBraille(pane) {
 		t.Errorf("the mark is still drawn after the agent produced output:\n%s", pane)
 	}
 
@@ -43,10 +43,19 @@ func TestTheMarkIsDrawnWhileAnAgentHasSaidNothing(t *testing.T) {
 	m.infos[0].Pid = 0
 	m.infos[0].BytesOut = 0
 	pane = strings.Join(m.paneLines(80, 20), "\n")
-	if strings.Contains(pane, "○") {
+	if hasBraille(pane) {
 		t.Error("the mark is drawn for an agent that is not running")
 	}
 	if !strings.Contains(pane, "not running") {
 		t.Errorf("a stopped agent does not say so:\n%s", pane)
 	}
+}
+
+func hasBraille(s string) bool {
+	for _, r := range s {
+		if isBraille(r) {
+			return true
+		}
+	}
+	return false
 }

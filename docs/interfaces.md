@@ -133,3 +133,14 @@ An agent CLI can take a while to draw its first frame, and a blank pane during
 that is indistinguishable from one that failed to start. swarm draws its own
 mark there instead — five agents wired in a ring, with a pulse going round it —
 until the terminal has something to show.
+
+It is drawn in braille. A terminal cell is about twice as tall as it is wide, so
+the mark's diagonals are nothing like 45°, and box drawing has no glyph for a
+shallow one: the first version came out as a staircase. Braille gives eight
+sub-cells to place a line in, and the line comes out as a line.
+
+The pulse thickens the wire as well as brightening it, because colour alone is
+invisible on a terminal that has none and swarm cannot know whether this one
+does. On a Windows console with a raster font the mark is blank rather than
+wrong — it is decoration, and the pane says what it is waiting for in words
+underneath.
