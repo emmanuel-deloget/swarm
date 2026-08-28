@@ -1403,7 +1403,14 @@ func (h *Hub) SendOn(from, target string, kind bus.Kind, body string, files []st
 			Kind:  event.KindMessage,
 			Agent: a.Name(),
 			Text:  fmt.Sprintf("%s → %s: %s", from, a.Name(), summarize(body)),
-			Data:  map[string]string{"from": from, "id": fmt.Sprint(msg.ID)},
+			Data: map[string]string{
+				"from": from,
+				"id":   fmt.Sprint(msg.ID),
+				// Whether it reached the agent or is waiting in its mailbox.
+				// The two look the same from outside and are not the same
+				// thing: one interrupted somebody, the other did not.
+				"pushed": fmt.Sprint(msg.Pushed),
+			},
 		})
 		out = append(out, msg)
 	}

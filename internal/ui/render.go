@@ -33,6 +33,7 @@ var (
 	styErr    = lipgloss.NewStyle().Foreground(colDead)
 	styMsg    = lipgloss.NewStyle().Foreground(colMsg)
 	styAttn   = lipgloss.NewStyle().Foreground(colAttention)
+	styAccent = lipgloss.NewStyle().Foreground(colAccent)
 )
 
 // stateColor picks the colour that says "this agent needs you" at a glance.
@@ -231,6 +232,106 @@ const (
 // light one fades to white, the dark one to black, and swarm never has to ask
 // what the background actually is.
 var msgFadeStyles = fadeStyles(colMsg, msgFadeSteps)
+
+// arriveFor is longer than the envelope's own fade: an arrival is drawn as a
+// small movement toward the agent, and half a second is not enough to read a
+// movement in.
+const arriveFor = 800 * time.Millisecond
+
+// accentFadeStyles is the same ramp in the accent colour, for what an agent
+// sends. Sending and receiving are the two halves of one exchange, and telling
+// them apart at a glance is the whole reason to draw either.
+var accentFadeStyles = fadeStyles(colAccent, msgFadeSteps)
+
+func fadeStyle(styles []lipgloss.Style, age, over time.Duration) (lipgloss.Style, bool) {
+	if age < 0 || age >= over {
+		return lipgloss.Style{}, false
+	}
+	i := int(float64(len(styles)) * float64(age) / float64(over))
+	if i >= len(styles) {
+		i = len(styles) - 1
+	}
+	return styles[i], true
+}
+
+// arriving is the badge for a message reaching an agent: chevrons pointing at
+// the name, closing into an envelope. The badge sits to the right of the name,
+// so a mark that points left is one coming in — which is the whole difference
+// between this and what an agent sends.
+func arriving(age time.Duration) (string, bool) {
+	style, ok := fadeStyle(msgFadeStyles, age, arriveFor)
+	if !ok {
+		return "", false
+	}
+	switch t := float64(age) / float64(arriveFor); {
+	case t < 0.22:
+		return styMsg.Render(" ‹‹"), true
+	case t < 0.4:
+		return styMsg.Render(" ‹"), true
+	default:
+		return style.Render(" ✉"), true
+	}
+}
+
+// leaving is the same thing played the other way: the envelope first, then the
+// chevrons carrying it off. The count comes with it, because a broadcast is one
+// command and nine messages, and nine flashes on one line read as a tremble
+// rather than as nine.
+func leaving(age time.Duration, n int) (string, bool) {
+	style, ok := fadeStyle(accentFadeStyles, age, arriveFor)
+	if !ok {
+		return "", false
+	}
+	many := ""
+	if n > 1 {
+		many = fmt.Sprint(n)
+	}
+	switch t := float64(age) / float64(arriveFor); {
+	case t < 0.3:
+		return styAccent.Render(" ✉" + many), true
+	case t < 0.5:
+		return styAccent.Render(" ››" + many), true
+	default:
+		return style.Render(" ›" + many), true
+	}
+}
+
+// nameFlash is the colour an agent's name takes while something is happening
+// to it, sliding back to what it was. The name is the widest thing on the row,
+// so it is what reads across a list of eleven.
+func nameFlash(from lipgloss.AdaptiveColor, to lipgloss.TerminalColor, age, over time.Duration) (lipgloss.TerminalColor, bool) {
+	if age < 0 || age >= over {
+		return to, false
+	}
+	t := float64(age) / float64(over)
+	base, ok := to.(lipgloss.AdaptiveColor)
+	if !ok {
+		base = colBase
+	}
+	return lipgloss.AdaptiveColor{
+		Light: mixHex(from.Light, base.Light, t),
+		Dark:  mixHex(from.Dark, base.Dark, t),
+	}, true
+}
+
+// breatheFor is one turn of the pulse on a stalled agent. Slow: the list is
+// looked at all day, and anything quicker is a flicker rather than a signal.
+const breatheFor = 2 * time.Second
+
+// breathing is the stalled colour rising and falling. Stalled is a state, not
+// an event — it lasts as long as the agent owes something and says nothing —
+// so this does not fade out, it keeps going until the state does.
+func breathing(now time.Time) lipgloss.TerminalColor {
+	ms := now.UnixMilli() % int64(breatheFor/time.Millisecond)
+	if ms < 0 {
+		ms += int64(breatheFor / time.Millisecond)
+	}
+	t := (math.Sin(2*math.Pi*float64(ms)/float64(breatheFor/time.Millisecond)) + 1) / 2
+	return lipgloss.AdaptiveColor{
+		Light: mixHex(mixHex(colStalled.Light, "#ffffff", 0.55), colStalled.Light, t),
+		Dark:  mixHex(mixHex(colStalled.Dark, "#000000", 0.55), colStalled.Dark, t),
+	}
+}
 
 func fadeStyles(c lipgloss.AdaptiveColor, steps int) []lipgloss.Style {
 	out := make([]lipgloss.Style, steps)

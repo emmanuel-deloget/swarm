@@ -96,6 +96,30 @@ Past localhost, treat that URL as a shell on your machine:
 - put it behind TLS (`web.tls_cert` / `web.tls_key`) or a tunnel
   (`ssh -R`, `cloudflared`) rather than binding `0.0.0.0` in the open.
 
+## What moves in the agent list
+
+Three things, and they are three because they mean three different things.
+
+**A message reaching an agent** draws chevrons pointing at the name, closing
+into an envelope, while the name itself flashes in the bus colour: ` ‹‹`, ` ‹`,
+` ✉`. The badge sits to the right of the name, so a mark that points left is one
+coming in.
+
+**A message leaving** is the same thing the other way, in the accent colour so
+the two halves of an exchange are not confused: ` ✉`, ` ››`, ` ›`. It carries the
+count when there is more than one, because a broadcast is a single command and
+nine messages arriving milliseconds apart — nine flashes on one line read as a
+tremble, and ` ››9` says it once.
+
+**A message merely queued** does not move at all. It shows as ` 2✉`, a count. A
+message waiting in a mailbox has interrupted nobody, and drawing it the same way
+as one that landed would say the fleet is busier than it is.
+
+**A stalled agent breathes.** The state dot rises and falls over two seconds and
+keeps doing it, because stalled is a state rather than an event: it lasts as
+long as the agent owes something and says nothing, where a fade would stop while
+the trouble carried on.
+
 ## The fleet as a shape
 
 `w` draws who may write to whom, with what was actually said on top.

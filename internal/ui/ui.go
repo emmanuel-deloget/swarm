@@ -114,6 +114,10 @@ type model struct {
 	// envelope can be faded out instead of disappearing between two frames.
 	delivered map[string]time.Time
 
+	// sending is when each agent last put something on the bus, and how many
+	// went out together.
+	sending map[string]outgoing
+
 	// visibleLines is the rendered window into the selected agent's output, and
 	// maxOffset how far back its scrollback still goes. Both come from the last
 	// refresh, so scrolling can be bounded by what actually exists.
@@ -150,6 +154,7 @@ func newModel(h *hub.Hub, events <-chan event.Event, quit <-chan struct{}) *mode
 		input:     in,
 		status:    "press ? for help",
 		delivered: map[string]time.Time{},
+		sending:   map[string]outgoing{},
 		detachKey: key,
 		detachSeq: seq,
 		mouse:     h.Config().Mouse,
@@ -182,6 +187,12 @@ func (m *model) tick() tea.Cmd {
 // noteDeliveries replaces the fleet snapshot, stamping every agent whose unread
 // count has just reached zero. That covers both ways a message leaves a
 // mailbox: typed into a push agent's terminal, or collected by a pull agent.
+// outgoing is one agent's last send: when, and how many messages went with it.
+type outgoing struct {
+	at time.Time
+	n  int
+}
+
 func (m *model) noteDeliveries(fresh []agent.Info) {
 	was := make(map[string]int, len(m.infos))
 	for _, in := range m.infos {
@@ -198,7 +209,12 @@ func (m *model) noteDeliveries(fresh []agent.Info) {
 
 func (m *model) anyFading() bool {
 	for name := range m.delivered {
-		if _, ok := msgFadeStyle(time.Since(m.delivered[name])); ok {
+		if _, ok := arriving(time.Since(m.delivered[name])); ok {
+			return true
+		}
+	}
+	for name := range m.sending {
+		if _, ok := leaving(time.Since(m.sending[name].at), 1); ok {
 			return true
 		}
 	}
@@ -208,19 +224,25 @@ func (m *model) anyFading() bool {
 // messageBadge is what follows an agent's name: the count while messages are
 // waiting, then an envelope dimming away once they have gone.
 func (m *model) messageBadge(in agent.Info) string {
+	if at, ok := m.delivered[in.Name]; ok {
+		if badge, live := arriving(time.Since(at)); live {
+			return badge
+		}
+		delete(m.delivered, in.Name)
+	}
+	if out, ok := m.sending[in.Name]; ok {
+		if badge, live := leaving(time.Since(out.at), out.n); live {
+			return badge
+		}
+		delete(m.sending, in.Name)
+	}
+	// Nothing moving: what is waiting in the mailbox, if anything is. A queued
+	// message has interrupted nobody, which is why it is a count and not a
+	// movement.
 	if in.Unread > 0 {
 		return styMsg.Render(fmt.Sprintf(" %d✉", in.Unread))
 	}
-	at, ok := m.delivered[in.Name]
-	if !ok {
-		return ""
-	}
-	style, fading := msgFadeStyle(time.Since(at))
-	if !fading {
-		delete(m.delivered, in.Name)
-		return ""
-	}
-	return style.Render(" ✉")
+	return ""
 }
 
 func (m *model) waitEvent() tea.Cmd {
@@ -275,8 +297,25 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.tick()
 
 	case eventMsg:
-		if e := event.Event(msg); e.Kind == event.KindMessage && e.Agent != "" {
-			m.delivered[e.Agent] = time.Now()
+		if e := event.Event(msg); e.Kind == event.KindMessage {
+			now := time.Now()
+			// Delivered, not merely filed: a message waiting in a mailbox has
+			// interrupted nobody, and the count beside the name already says
+			// it is there.
+			if e.Agent != "" && e.Data["pushed"] == "true" {
+				m.delivered[e.Agent] = now
+			}
+			if from := e.Data["from"]; from != "" {
+				// A broadcast is one command and nine messages, arriving as
+				// nine events a few milliseconds apart. Counted rather than
+				// replayed: nine flashes on one line read as a tremble.
+				out := m.sending[from]
+				if now.Sub(out.at) > 400*time.Millisecond {
+					out.n = 0
+				}
+				out.at, out.n = now, out.n+1
+				m.sending[from] = out
+			}
 		}
 		m.log = append(m.log, event.Event(msg))
 		if len(m.log) > 500 {
@@ -1134,9 +1173,16 @@ func (m *model) sidebarLines(height int) []string {
 			start = len(m.infos) - height
 		}
 	}
+	now := time.Now()
 	for i := start; i < len(m.infos) && len(lines) < height; i++ {
 		in := m.infos[i]
-		glyph := lipgloss.NewStyle().Foreground(stateColor(in)).Render(stateGlyph(in))
+		// Stalled is a state, so it does not fade: it breathes for as long as
+		// the agent owes something and says nothing.
+		colour := stateColor(in)
+		if in.Stalled {
+			colour = breathing(now)
+		}
+		glyph := lipgloss.NewStyle().Foreground(colour).Render(stateGlyph(in))
 		name := in.Name
 		badge := m.messageBadge(in)
 		if in.Talking >= hub.TalkNoisy {
@@ -1154,6 +1200,19 @@ func (m *model) sidebarLines(height int) []string {
 		if i == m.sel {
 			prefix = stySelect.Render("▌ ")
 			style = stySelect
+		}
+		// The name is the widest thing on the row, so it is what carries a
+		// message arriving or leaving across a list of eleven. Different
+		// colours for the two: they are the halves of one exchange, and
+		// telling them apart at a glance is the point of drawing either.
+		if at, ok := m.delivered[in.Name]; ok {
+			if c, live := nameFlash(colMsg, style.GetForeground(), now.Sub(at), arriveFor); live {
+				style = style.Foreground(c)
+			}
+		} else if out, ok := m.sending[in.Name]; ok {
+			if c, live := nameFlash(colAccent, style.GetForeground(), now.Sub(out.at), arriveFor); live {
+				style = style.Foreground(c)
+			}
 		}
 		room := sidebarWidth - 4 - lipgloss.Width(badge)
 		if len(name) > room && room > 1 {
