@@ -145,6 +145,10 @@ jobs:
     # blanket run would be red for a reason nobody would read, and a red job
     # nobody reads is a job that stops being read. Every package added below is
     # a package that has been made portable on purpose.
+    #
+    # internal/web is the one still out: its fixtures start agents through `sh`.
+    # Porting them onto the probe binary the other packages use is the work
+    # that would let it in, and it has not been done.
     name: test · windows
     runs-on: windows-latest
     steps:
@@ -159,8 +163,9 @@ jobs:
       - name: Test
         run: >
           go test -count=1 -timeout 5m
-          ./internal/agent/ ./internal/bus/ ./internal/event/ ./internal/hook/
-          ./internal/hub/ ./internal/ipc/ ./internal/licenses/ ./internal/ui/
+          ./internal/agent/ ./internal/bus/ ./internal/config/ ./internal/event/
+          ./internal/guide/ ./internal/hook/ ./internal/hub/ ./internal/ipc/
+          ./internal/licenses/ ./internal/memory/ ./internal/ui/
           ./internal/version/ ./internal/workspace/
 
       # And the Windows child itself: pseudoconsole, PATH resolution, .cmd
