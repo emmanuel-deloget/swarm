@@ -201,6 +201,10 @@ agents:
 }
 
 func TestSharedAndWorkdirResolveAgainstConfig(t *testing.T) {
+	// Quoted, because an absolute path on Windows carries a drive letter and a
+	// colon, and a plain YAML scalar is the wrong place to find out whether
+	// that parses.
+	elsewhere := absElsewhere(t)
 	path := write(t, `
 workdir: sub
 shared: elsewhere/files
@@ -209,7 +213,7 @@ agents:
     command: [x]
   - name: b
     command: [x]
-    workdir: /tmp
+    workdir: '`+elsewhere+`'
 `)
 	cfg, err := Load(path)
 	if err != nil {
@@ -227,9 +231,25 @@ agents:
 		t.Errorf("agent workdir = %q, want the inherited one", a.Workdir)
 	}
 	b, _ := cfg.Agent("b")
-	if b.Workdir != "/tmp" {
+	if b.Workdir != elsewhere {
 		t.Errorf("an absolute workdir should be kept as is, got %q", b.Workdir)
 	}
+}
+
+// absElsewhere is a path that is absolute wherever this runs, and not under the
+// config. `/tmp` is neither on Windows: with no drive letter it is a relative
+// path, and resolve joins it against the config's directory — which is the
+// correct behaviour and the opposite of what the test meant to check.
+//
+// Called once and kept: t.TempDir() hands out a new directory each time, so a
+// second call would compare a path the file never held.
+func absElsewhere(t *testing.T) string {
+	t.Helper()
+	abs, err := filepath.Abs(filepath.Join(t.TempDir(), "elsewhere"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return abs
 }
 
 func TestBusIsEnabledByDefault(t *testing.T) {
@@ -596,10 +616,14 @@ agents:
 		}
 		return r
 	}
+	// Written with forward slashes and compared after conversion: a path is
+	// joined with the separator of the machine it runs on, and a literal
+	// ".state/workspaces/b" is an assertion about Unix rather than about
+	// workspace modes.
 	for _, c := range []struct{ name, mode, workdir string }{
 		{"a", WorkspaceShared, "."},
-		{"b", WorkspaceClone, ".state/workspaces/b"},
-		{"c", WorkspaceClone, "../clones/c"},
+		{"b", WorkspaceClone, filepath.FromSlash(".state/workspaces/b")},
+		{"c", WorkspaceClone, filepath.FromSlash("../clones/c")},
 		{"d", WorkspaceNone, "."},
 	} {
 		got, ok := cfg.Agent(c.name)
