@@ -28,6 +28,7 @@ swarm inbox -wait 30s               # ... or wait for one, if anything is filed 
 swarm stage diff.patch              # copy a file where every agent can read it
 
 swarm remember gate-runtime "make integration takes 8-12 min"
+swarm remember -tell @dev spec-281 "v9 approved"   # and say so on the bus
 swarm recall gate                   # what the fleet knows
 swarm forget gate-runtime           # drop one
 

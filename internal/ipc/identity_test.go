@@ -127,3 +127,53 @@ func TestNoAgentShutsTheFleetDown(t *testing.T) {
 		t.Errorf("the operator was refused: %v", err)
 	}
 }
+
+// TestTellingTheFleetIsASendLikeAnyOther: `swarm remember -tell` puts the entry
+// on the bus, and it goes through the bus rather than beside it — can_send
+// bounds it and the budget charges it once per recipient. A memory that could
+// notify everybody on every write, unbudgeted, would be a broadcast channel
+// next to the one that was just given a price.
+func TestTellingTheFleetIsASendLikeAnyOther(t *testing.T) {
+	h := newFleet(t, restrictedAgents(t))
+	srv := serve(t, h)
+
+	// p1 may write to chair and nowhere else.
+	_, err := Call(srv.Path(), Request{Cmd: CmdRemember, From: "p1",
+		Name: "gate-runtime", Text: "8-12 min", Target: "dev-1"})
+	if err != nil {
+		t.Fatalf("the whole command failed where only the telling should have: %v", err)
+	}
+
+	// The entry is written even so: it is the valuable half, and losing it
+	// because can_send said no would be the wrong trade.
+	held := call(t, srv.Path(), Request{Cmd: CmdRecall})
+	if len(held.Memory) != 1 || held.Memory[0].Key != "gate-runtime" {
+		t.Errorf("a refused telling took the entry with it: %+v", held.Memory)
+	}
+
+	// And where it may write, the message goes.
+	resp := call(t, srv.Path(), Request{Cmd: CmdRemember, From: "p1",
+		Name: "spec-281", Text: "v9 approved", Target: "chair"})
+	if len(resp.Messages) != 1 {
+		t.Fatalf("telling an agent it may reach carried %d messages", len(resp.Messages))
+	}
+	if !strings.Contains(resp.Messages[0].Body, "spec-281") {
+		t.Errorf("the notice does not name the entry: %q", resp.Messages[0].Body)
+	}
+	if !strings.Contains(resp.Messages[0].Body, "swarm recall") {
+		t.Errorf("the notice does not say where the record is: %q", resp.Messages[0].Body)
+	}
+}
+
+// TestWritingWithoutTellingTellsNobody: notifying on every write would make the
+// memory a platform, which is the shape a fleet runs away in.
+func TestWritingWithoutTellingTellsNobody(t *testing.T) {
+	h := newFleet(t, "")
+	srv := serve(t, h)
+	_ = h
+
+	resp := call(t, srv.Path(), Request{Cmd: CmdRemember, Name: "gate", Text: "8-12 min"})
+	if len(resp.Messages) != 0 {
+		t.Errorf("a plain write put %d messages on the bus", len(resp.Messages))
+	}
+}

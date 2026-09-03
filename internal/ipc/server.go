@@ -407,7 +407,20 @@ func (s *Server) handle(req Request) Response {
 		if err != nil {
 			return errorResponse(err)
 		}
-		return Response{OK: true, Memory: []memory.Entry{e}}
+		resp := Response{OK: true, Memory: []memory.Entry{e}}
+		if req.Target != "" {
+			// Told after being written, and a refused telling does not undo
+			// the writing: the entry is the valuable half, and losing it
+			// because can_send or a budget said no would be the wrong trade.
+			// The caller is told which happened.
+			msgs, err := h.SendKind(req.From, req.Target, bus.KindFYI, hub.MemoryNotice(e), nil)
+			if err != nil {
+				resp.Text = "remembered, but not told: " + err.Error()
+			} else {
+				resp.Messages = msgs
+			}
+		}
+		return resp
 
 	case CmdForget:
 		if err := h.Forget(req.From, req.Name); err != nil {

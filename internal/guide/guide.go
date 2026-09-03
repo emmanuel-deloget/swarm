@@ -292,6 +292,12 @@ constraint, a decision that stands. Not what you did today. There is room for
 {{.Memory}} entries and a full memory refuses new ones, so an entry that is no
 longer true is worth forgetting.
 
+Writing an entry tells nobody, on purpose. If one is worth interrupting people
+for, say so as well — it goes on the bus like any other message, so it costs
+what a message costs and only reaches who you may write to:
+
+    swarm remember -tell <target> <key> "<line>"
+
 Nothing of this is put in front of you. Reading it is your business.
 
 {{end}}## Saying what a message is for

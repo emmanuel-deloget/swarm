@@ -35,6 +35,14 @@ const (
 	OutAttention = "agent.attention"
 	OutError     = "agent.error"
 	OutMessage   = "bus.message"
+
+	// Memory changes are not an agent's doing in the way the rest of these
+	// are, so they carry no agent name and say who in data.by. A fleet that
+	// settles something overnight is the case these exist for: the standing
+	// decisions are what somebody wants to find in the morning without
+	// reading a log.
+	OutRemembered = "memory.remembered"
+	OutForgotten  = "memory.forgotten"
 )
 
 // notify offers a notice to the sender, if there is one.

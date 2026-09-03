@@ -516,8 +516,39 @@ memory that tidies itself is a cache, and what is being asked for here is that
 somebody decide what is no longer true. The refusal says so and names the
 command.
 
-Nothing is injected. The generated `AGENTS.md` says the memory exists and how
-to read it; whether an agent looks is an agent's business.
+Nothing is injected, and nothing is announced. Writing an entry tells nobody:
+a memory that notified the fleet on every write would be a broadcast channel
+beside the one [`budget`](#budget) was just built to price, and one message per
+agent per write is the shape a fleet runs away in.
+
+Telling them is a separate, deliberate act:
+
+```sh
+swarm remember -tell @dev gate-runtime "make integration takes 8-12 min"
+```
+
+It goes **through** the bus rather than beside it, so `can_send` bounds it and
+the budget charges it once per recipient, like any other send. The message
+carries the key and the line, and says where the record is — an entry is short
+by construction, so carrying it costs no more than a pointer and saves the
+reader a round trip.
+
+A refused telling does not undo the writing. The entry is the valuable half,
+and losing it because a budget said no would be the wrong trade; the command
+says which of the two happened:
+
+```
+gate-runtime  make integration takes 8-12 min
+swarm: remembered, but not told: dev-1 cannot reach dev-2; it may write to lead
+```
+
+`-tell` goes **before** the key. Everything from the key onwards is taken
+literally, which is what stops a fact about `-race` from being read as a flag —
+and a `-tell` after the key would otherwise be written into the memory as
+though somebody meant it, so that is refused too.
+
+The generated `AGENTS.md` says the memory exists and how to read it; whether an
+agent looks is an agent's business.
 
 ## `patterns`
 
@@ -927,6 +958,14 @@ outgoing:
 | `agent.stalled` | it owes something and has been silent for `bus.stalled_after` |
 | `agent.attention` | a `pattern` with `notify: true` matched |
 | `agent.error` | anything swarm logged as an error, the restart streak included |
+| `memory.remembered` | somebody wrote to the fleet's memory — `text` is the line, `data.key` and `data.by` say which and who |
+| `memory.forgotten` | somebody dropped an entry — `text` and `data.key` are the key |
+
+The two `memory.*` notices carry no `agent`: a change to what the fleet knows
+is not one agent's doing in the way the rest of these are, and who did it is in
+`data.by`. They exist for the fleet that settles something overnight — the
+standing decisions are what somebody wants to find in the morning without
+reading a log.
 
 `agent.done` is declared, never deduced. An earlier version of this raised it
 from the git tree — quiet plus a dirty checkout — which was wrong in both

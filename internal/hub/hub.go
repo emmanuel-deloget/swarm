@@ -241,7 +241,23 @@ func (h *Hub) Remember(by, key, fact string) (memory.Entry, error) {
 		return e, err
 	}
 	h.log.Emit(event.KindInfo, "", fmt.Sprintf("%s remembered %s: %s", by, e.Key, e.Fact))
+	h.notify("", OutRemembered, e.Fact, map[string]string{"key": e.Key, "by": by})
 	return e, nil
+}
+
+// MemoryNotice is the message a `-tell` carries: the entry, and where the
+// record is.
+//
+// The line comes with it rather than only a pointer to it. An entry is short
+// by construction, so carrying it costs no more than a reference and saves the
+// reader a round trip — and a message is timestamped by nature, so it reads as
+// "this was so when it was sent" rather than claiming to be the record.
+func MemoryNotice(e memory.Entry) string {
+	// No "[swarm]" of its own: the recipient's message_template already puts
+	// one in front, and two is how a notice starts looking like a quotation
+	// of itself.
+	return fmt.Sprintf("remembered %s: %s\n`swarm recall %s` is the record.",
+		e.Key, e.Fact, e.Key)
 }
 
 // Forget drops one.
@@ -249,7 +265,9 @@ func (h *Hub) Forget(by, key string) error {
 	if err := h.memory.Forget(key); err != nil {
 		return err
 	}
-	h.log.Emit(event.KindInfo, "", fmt.Sprintf("%s forgot %s", orString(by, "user"), key))
+	who := orString(by, "user")
+	h.log.Emit(event.KindInfo, "", fmt.Sprintf("%s forgot %s", who, key))
+	h.notify("", OutForgotten, key, map[string]string{"key": key, "by": who})
 	return nil
 }
 

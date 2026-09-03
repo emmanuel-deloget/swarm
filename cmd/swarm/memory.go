@@ -21,14 +21,27 @@ func cmdRemember(args []string) error {
 	var cf clientFlags
 	fs := newFlagSet("remember")
 	cf.register(fs)
+	// Telling the fleet is a deliberate act rather than what writing does. An
+	// entry that notified everybody on every write would make the memory a
+	// platform, which is the shape a fleet runs away in — and the message goes
+	// through the bus, so can_send bounds it and the budget charges it once
+	// per recipient, like any other send.
+	tell := fs.String("tell", "", "also say so on the bus: an agent, @group, @role or all")
 	// One positional before the text: the key, then the fact as written.
 	_ = parseArgs(fs, args, 1)
 
 	key := fs.Arg(0)
 	fact := joinArgs(argsFrom(fs, 1))
 	if key == "" || fact == "" {
-		return fmt.Errorf("usage: swarm remember <key> <one short line>   " +
+		return fmt.Errorf("usage: swarm remember [-tell <target>] <key> <one short line>   " +
 			"(e.g. swarm remember gate-runtime \"make integration takes 8-12 min\")")
+	}
+	// Free text starts at the key, which is what stops a fact about `-race`
+	// from being read as a flag — and what would otherwise write `-tell dev-2`
+	// into the memory as though somebody meant it.
+	if strings.Contains(" "+fact+" ", " -tell ") || strings.Contains(" "+fact+" ", " --tell ") {
+		return fmt.Errorf("-tell goes before the key, or it is part of the line: " +
+			"swarm remember -tell <target> <key> <one short line>")
 	}
 	sender, err := whoAmI("")
 	if err != nil {
@@ -41,14 +54,19 @@ func cmdRemember(args []string) error {
 	}
 	defer func() { _ = c.Close() }()
 
-	resp, err := c.Do(ipc.Request{Cmd: ipc.CmdRemember, From: sender, Name: key, Text: fact})
+	resp, err := c.Do(ipc.Request{Cmd: ipc.CmdRemember, From: sender, Name: key,
+		Text: fact, Target: *tell})
 	if err != nil {
 		return err
 	}
 	if cf.asJSON {
-		return emitJSON(resp.Memory)
+		return emitJSON(resp)
 	}
 	printMemory(resp.Memory, "")
+	printDelivered(resp.Messages)
+	if resp.Text != "" {
+		fmt.Fprintln(os.Stderr, "swarm: "+resp.Text)
+	}
 	return nil
 }
 
