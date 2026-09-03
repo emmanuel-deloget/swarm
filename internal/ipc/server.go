@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -403,11 +404,19 @@ func (s *Server) handle(req Request) Response {
 		return Response{OK: true, Path: path}
 
 	case CmdRemember:
-		e, err := h.Remember(req.From, req.Name, req.Text)
+		e, evicted, err := h.Remember(req.From, req.Name, req.Text)
 		if err != nil {
 			return errorResponse(err)
 		}
 		resp := Response{OK: true, Memory: []memory.Entry{e}}
+		var notes []string
+		if evicted != nil {
+			// Whoever wrote is who caused it, and this is the only place that
+			// says so at the moment it happens. The line comes with it: a key
+			// alone is not enough to decide whether it wanted writing back.
+			notes = append(notes, fmt.Sprintf("the memory was full, so %s went to make room: %s",
+				evicted.Key, evicted.Fact))
+		}
 		if req.Target != "" {
 			// Told after being written, and a refused telling does not undo
 			// the writing: the entry is the valuable half, and losing it
@@ -415,11 +424,12 @@ func (s *Server) handle(req Request) Response {
 			// The caller is told which happened.
 			msgs, err := h.SendKind(req.From, req.Target, bus.KindFYI, hub.MemoryNotice(e), nil)
 			if err != nil {
-				resp.Text = "remembered, but not told: " + err.Error()
+				notes = append(notes, "not told: "+err.Error())
 			} else {
 				resp.Messages = msgs
 			}
 		}
+		resp.Text = strings.Join(notes, "; ")
 		return resp
 
 	case CmdForget:
@@ -429,9 +439,12 @@ func (s *Server) handle(req Request) Response {
 		return Response{OK: true, Text: "forgotten"}
 
 	case CmdRecall:
-		held, room, chars := h.Recall(req.Text)
-		return Response{OK: true, Memory: held,
-			Text: fmt.Sprintf("%d of %d entries, at most %d characters each", len(held), room, chars)}
+		held, room, chars, ttl := h.Recall(req.Text)
+		text := fmt.Sprintf("%d of %d entries, at most %d characters each", len(held), room, chars)
+		if ttl > 0 {
+			text += fmt.Sprintf(", kept %s after their last use", ttl)
+		}
+		return Response{OK: true, Memory: held, Text: text}
 
 	case CmdShutdown:
 		// No agent, ever. Stopping one instance is work a parent hands out and

@@ -264,12 +264,18 @@ agents:
 #
 # The limits are the feature: asked politely for something short, an agent
 # writes an essay about brevity, so anything longer is refused rather than
-# trimmed. A full memory refuses new entries rather than dropping the oldest,
-# because a memory that tidies itself is a cache. max: 0 switches it off.
+# trimmed. max: 0 switches the memory off.
+#
+# A full memory drops the entry the fleet has gone longest without writing or
+# looking up, and ttl drops one nobody has wanted in that long — both measure
+# use rather than age, because the oldest entry is often the one everything
+# rests on. ttl: 0s keeps entries forever. Every change is appended to
+# .swarm/memory.log, including the line that was written over.
 #
 # memory:
 #   max: 50
 #   chars: 200
+#   ttl: 0s
 
 # Overrides every agent's delivery for one kind of message: the fleet can defer
 # while "somebody is stuck" still gets through. Kinds are set with

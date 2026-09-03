@@ -177,3 +177,63 @@ func TestWritingWithoutTellingTellsNobody(t *testing.T) {
 		t.Errorf("a plain write put %d messages on the bus", len(resp.Messages))
 	}
 }
+
+// TestAFullMemoryTellsTheWriterWhatItCost: eviction is one agent's write
+// costing another agent's line. Doing it silently would be the worst of both —
+// the fleet loses a standing fact and nobody is in a position to notice.
+func TestAFullMemoryTellsTheWriterWhatItCost(t *testing.T) {
+	h := newFleet(t, "memory:\n  max: 2\n  chars: 200\n")
+	srv := serve(t, h)
+
+	for _, k := range []string{"first-fact", "second-fact"} {
+		call(t, srv.Path(), Request{Cmd: CmdRemember, From: "dev-1", Name: k, Text: "a fact"})
+	}
+	resp := call(t, srv.Path(), Request{Cmd: CmdRemember, From: "dev-2",
+		Name: "third-fact", Text: "a fact"})
+	if len(resp.Memory) != 1 || resp.Memory[0].Key != "third-fact" {
+		t.Fatalf("the write did not land: %+v", resp.Memory)
+	}
+	if !strings.Contains(resp.Text, "first-fact") {
+		t.Errorf("the writer was not told what went: %q", resp.Text)
+	}
+	if !strings.Contains(resp.Text, "a fact") {
+		t.Errorf("the writer was told a key with no line, which is not enough to put it back: %q", resp.Text)
+	}
+	held := call(t, srv.Path(), Request{Cmd: CmdRecall})
+	if len(held.Memory) != 2 {
+		t.Errorf("the memory holds %d entries, want the two it was told to", len(held.Memory))
+	}
+}
+
+// TestARevisionCarriesWhatItWroteOver: correcting an entry and quietly
+// replacing one are the same command, so the entry has to say which it was.
+func TestARevisionCarriesWhatItWroteOver(t *testing.T) {
+	h := newFleet(t, "memory:\n  max: 10\n  chars: 200\n")
+	srv := serve(t, h)
+
+	call(t, srv.Path(), Request{Cmd: CmdRemember, From: "dev-1", Name: "spec-281", Text: "v8 approved"})
+	resp := call(t, srv.Path(), Request{Cmd: CmdRemember, From: "dev-2", Name: "spec-281", Text: "v9 approved"})
+	if len(resp.Memory) != 1 {
+		t.Fatalf("the write returned %+v", resp.Memory)
+	}
+	if got := resp.Memory[0]; got.Was != "dev-1" || got.Rev != 1 {
+		t.Errorf("the entry says was=%q rev=%d, want dev-1 and 1", got.Was, got.Rev)
+	}
+	if resp.Text != "" {
+		t.Errorf("correcting an entry reported %q", resp.Text)
+	}
+}
+
+// TestRecallSaysWhatTheLimitsAre: an agent refused for length should be able
+// to find out what it may write without reading the configuration.
+func TestRecallSaysWhatTheLimitsAre(t *testing.T) {
+	h := newFleet(t, "memory:\n  max: 10\n  chars: 120\n  ttl: 6h\n")
+	srv := serve(t, h)
+
+	resp := call(t, srv.Path(), Request{Cmd: CmdRecall})
+	for _, want := range []string{"10 entries", "120 characters", "6h"} {
+		if !strings.Contains(resp.Text, want) {
+			t.Errorf("recall says %q, want it to mention %q", resp.Text, want)
+		}
+	}
+}

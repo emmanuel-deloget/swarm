@@ -155,9 +155,31 @@ func printMemory(entries []memory.Entry, footer string) {
 	}
 	for _, e := range entries {
 		fmt.Printf("\x1b[1m%-*s\x1b[0m  %s\n", width, e.Key, e.Fact)
-		fmt.Printf("%s  \x1b[90m%s, %s\x1b[0m\n", strings.Repeat(" ", width), e.By, ago(e.At))
+		fmt.Printf("%s  \x1b[90m%s\x1b[0m\n", strings.Repeat(" ", width), provenance(e))
 	}
 	if footer != "" {
 		fmt.Fprintln(os.Stderr, "swarm: "+footer)
 	}
+}
+
+// provenance is the second line of an entry: who wrote it, when, who they
+// wrote over, and when it was last wanted.
+//
+// The revision is shown because writing a key again is how a memory is
+// corrected and therefore also how one is quietly rewritten. The reading is
+// shown because it is what eviction and ttl go by, and an operator asked why
+// a fact went should not have to work that out from the source.
+func provenance(e memory.Entry) string {
+	who := e.By
+	if e.Was != "" {
+		who = fmt.Sprintf("%s, revising %s", e.By, e.Was)
+		if e.Rev > 1 {
+			who = fmt.Sprintf("%s, revising %s (%d times over)", e.By, e.Was, e.Rev)
+		}
+	}
+	line := who + ", " + ago(e.At)
+	if e.Used.After(e.At.Add(time.Minute)) {
+		line += ", read " + ago(e.Used)
+	}
+	return line
 }

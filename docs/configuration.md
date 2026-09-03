@@ -52,7 +52,7 @@ list of those. Every command that acts on agents accepts one.
 |---|---|---|
 | `session` | `default` | Names this swarm. It picks the control socket, so two swarms with different session names run side by side. No slashes or spaces. |
 | `workdir` | the config's directory | Working directory for every agent that does not override it. |
-| `state_dir` | `.swarm` | Everything swarm writes: the control socket, the logs, the CLI shim, the staged files, the TUI's command history, and `owed.json` — what each agent has been asked and has not settled, kept across restarts so `swarm why` can still answer afterwards, and `ephemeral.json` — the instance name counters, and what became of the ephemeral agents that are gone. `swarm init` offers to add it to `.gitignore`. |
+| `state_dir` | `.swarm` | Everything swarm writes: the control socket, the logs, the CLI shim, the staged files, the TUI's command history, and `owed.json` — what each agent has been asked and has not settled, kept across restarts so `swarm why` can still answer afterwards, and `ephemeral.json` — the instance name counters, and what became of the ephemeral agents that are gone, and `memory.json` with `memory.log` beside it — what the fleet knows and every change that ever made it. `swarm init` offers to add it to `.gitignore`. |
 | `ephemeral` | — | Limits that apply to every agent made for one task; see [`ephemeral`](#ephemeral). |
 | `memory` | — | What the fleet knows and its agents keep forgetting; see [`memory`](#memory). |
 | `shared` | `<state_dir>/shared` | Where injected files are staged so every agent can reach them by path. Agents get it as `$SWARM_SHARED`. |
@@ -475,12 +475,14 @@ facts, which belong to nobody's thread and survive every restart.
 memory:
   max: 50       # entries; 0 switches it off
   chars: 200    # the longest an entry may be
+  ttl: 0s       # how long an entry survives unused; 0s is forever
 ```
 
 | key | default | |
 |---|---|---|
-| `max` | `50` | How many entries the memory holds. `0` switches it off. |
+| `max` | `50` | How many entries the memory holds. `0` switches it off. A full memory evicts the least recently used entry to make room. |
 | `chars` | `200` | The longest an entry may be, in characters. Under 40 is refused: that is a label rather than a fact. |
+| `ttl` | `0s` | How long an entry survives without being written or asked for by name. `0s` is forever. Under a minute is refused: nothing would survive long enough to be read once. |
 
 An entry is a **key and one line**:
 
@@ -511,10 +513,68 @@ paragraph on the nature of time `gate-runtime`. The key is also what makes an
 entry something that can be corrected or dropped later, which a wall of prose
 is not.
 
-**A full memory refuses the write** rather than dropping the oldest entry. A
-memory that tidies itself is a cache, and what is being asked for here is that
-somebody decide what is no longer true. The refusal says so and names the
-command.
+### What goes, and when
+
+Two things keep a memory from silting up, and both measure **use** rather than
+age. An entry is used when it is written and when a `swarm recall <pattern>`
+matches it; a bare `swarm recall` is a listing and refreshes nothing.
+
+**A full memory evicts the least recently used entry** rather than refusing the
+write. The entry that went is named in the response, with its line, so whoever
+caused it can put it back:
+
+```
+$ swarm remember spec-284 "v2 approved"
+spec-284  v2 approved
+          dev-2, just now
+swarm: the memory was full, so old-gate-flake went to make room: gate flakes on ARM runners
+```
+
+**With `ttl` set, an entry nobody has written or asked for in that long
+expires.** Measuring use and not age is the point: a constraint settled on the
+first morning and read every day since is the fleet's oldest entry and its most
+load-bearing one, and expiring by age would drop exactly that. Expiry is lazy —
+it happens the next time anything asks the memory a question, not on a timer.
+
+Earlier versions refused the write on a full memory. That asked the wrong thing
+of an agent: pick somebody else's fact to delete, from inside a command that
+was about to fail anyway. To keep the old behaviour, leave `max` where the
+fleet will not reach it.
+
+### The journal
+
+`memory.json` is what the fleet knows now. `.swarm/memory.log` beside it is
+every change that ever made it, one JSON object per line, appended and never
+rewritten:
+
+```json
+{"at":"2026-09-03T09:14:02Z","act":"revised","key":"spec-281","fact":"v9 approved","by":"myself","prev":"v8 approved","was":"dev-1"}
+{"at":"2026-09-03T11:40:55Z","act":"evicted","key":"old-gate-flake","fact":"gate flakes on ARM runners","by":"dev-3","was":"chair"}
+```
+
+`act` is one of `remembered`, `revised`, `forgotten`, `expired` or `evicted`.
+`fact` is the line the record is about — what the entry now holds, or for a
+removal, what went. `by` is whoever did it, and is absent only on an `expired`,
+which nobody did. `was` is who wrote the line that is no longer held, and `prev`
+is that line when a revision replaced it. **`by` and `was` are different
+people**: an entry deleted by somebody other than its author is the case worth
+finding, and one field could not answer for both.
+Nothing in swarm reads it back. It exists because the state cannot answer the
+questions asked afterwards: writing a key again leaves nothing behind, because
+that is what writing it again means, so *what did this used to say, who changed
+it, and what was dropped to make room* has no other record. Reading is not
+journalled — the journal is a history of what the memory said, not of who
+looked.
+
+An entry also carries the last of these in itself: `swarm recall` shows who
+wrote the line, who they wrote over, and how many times the key has turned
+over. A standing fact three agents have taken turns rewriting in an hour is not
+a settled fact, and this is what makes that visible without opening the log.
+
+```
+spec-281  v9 withdrawn
+          chair, revising myself (2 times over), 4m ago, read just now
+```
 
 Nothing is injected, and nothing is announced. Writing an entry tells nobody:
 a memory that notified the fleet on every write would be a broadcast channel
@@ -958,14 +1018,19 @@ outgoing:
 | `agent.stalled` | it owes something and has been silent for `bus.stalled_after` |
 | `agent.attention` | a `pattern` with `notify: true` matched |
 | `agent.error` | anything swarm logged as an error, the restart streak included |
-| `memory.remembered` | somebody wrote to the fleet's memory — `text` is the line, `data.key` and `data.by` say which and who |
-| `memory.forgotten` | somebody dropped an entry — `text` and `data.key` are the key |
+| `memory.remembered` | somebody wrote to the fleet's memory — `text` is the line, `data.key` and `data.by` say which and who. A write over an existing key adds `data.was`, whose line it replaced, and `data.rev`, how many times that key has turned over |
+| `memory.forgotten` | an entry went — `text` and `data.key` are the key, `data.why` is `forgotten` or `evicted` |
 
 The two `memory.*` notices carry no `agent`: a change to what the fleet knows
 is not one agent's doing in the way the rest of these are, and who did it is in
 `data.by`. They exist for the fleet that settles something overnight — the
 standing decisions are what somebody wants to find in the morning without
 reading a log.
+
+An entry that **expired** sends nothing. An eviction is somebody's write
+costing somebody else's line, so it is reported the way a forgetting is; an
+expiry is the clock, and what expired is by definition what the fleet had
+already stopped asking for. Both are in [the journal](#the-journal).
 
 `agent.done` is declared, never deduced. An earlier version of this raised it
 from the git tree — quiet plus a dirty checkout — which was wrong in both

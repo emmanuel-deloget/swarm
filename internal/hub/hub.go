@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -124,7 +125,7 @@ func New(o Options) (*Hub, error) {
 		log:      event.NewLog(o.EventHistory),
 		bus:      bus.New(cfg.Bus.History),
 		budget:   newBudgets(cfg),
-		memory:   memory.New(filepath.Join(stateDir, "memory.json"), cfg.Memory.Entries(), cfg.Memory.Chars),
+		memory:   memory.New(filepath.Join(stateDir, "memory.json"), cfg.Memory.Entries(), cfg.Memory.Chars, cfg.Memory.TTL),
 		stateDir: stateDir,
 		agents:   make(map[string]*agent.Agent, len(cfg.Agents)),
 	}
@@ -232,17 +233,41 @@ func (h *Hub) watchEvery() time.Duration {
 
 // Remember writes one thing the fleet knows. Whoever asks is recorded, and an
 // agent that is not one of ours is a person.
-func (h *Hub) Remember(by, key, fact string) (memory.Entry, error) {
+//
+// Writing over a key is a revision rather than a second entry, and it says so:
+// the notice carries who had written the line before and how many times the
+// key has turned over. An entry three agents have rewritten in an hour is not
+// a settled fact, and this is what makes that visible without reading the
+// journal.
+//
+// A full memory makes room, and what it dropped comes back so the caller can
+// be told. Nobody else is: eviction is one agent's write costing another
+// agent's line, and the fleet learns of it the same way it learns of a
+// forgetting.
+func (h *Hub) Remember(by, key, fact string) (memory.Entry, *memory.Entry, error) {
 	if by == "" {
 		by = "user"
 	}
-	e, err := h.memory.Remember(key, fact, by)
+	e, evicted, err := h.memory.Remember(key, fact, by)
 	if err != nil {
-		return e, err
+		return e, nil, err
 	}
-	h.log.Emit(event.KindInfo, "", fmt.Sprintf("%s remembered %s: %s", by, e.Key, e.Fact))
-	h.notify("", OutRemembered, e.Fact, map[string]string{"key": e.Key, "by": by})
-	return e, nil
+	if evicted != nil {
+		h.log.Emit(event.KindInfo, "", fmt.Sprintf(
+			"%s was evicted to make room for %s: %s", evicted.Key, e.Key, evicted.Fact))
+		h.notify("", OutForgotten, evicted.Key, map[string]string{
+			"key": evicted.Key, "by": by, "why": "evicted"})
+	}
+	data := map[string]string{"key": e.Key, "by": by}
+	verb := "remembered"
+	if e.Rev > 0 {
+		verb = "revised"
+		data["was"] = e.Was
+		data["rev"] = strconv.Itoa(e.Rev)
+	}
+	h.log.Emit(event.KindInfo, "", fmt.Sprintf("%s %s %s: %s", by, verb, e.Key, e.Fact))
+	h.notify("", OutRemembered, e.Fact, data)
+	return e, evicted, nil
 }
 
 // MemoryNotice is the message a `-tell` carries: the entry, and where the
@@ -262,19 +287,19 @@ func MemoryNotice(e memory.Entry) string {
 
 // Forget drops one.
 func (h *Hub) Forget(by, key string) error {
-	if err := h.memory.Forget(key); err != nil {
+	who := orString(by, "user")
+	if err := h.memory.Forget(key, who); err != nil {
 		return err
 	}
-	who := orString(by, "user")
 	h.log.Emit(event.KindInfo, "", fmt.Sprintf("%s forgot %s", who, key))
-	h.notify("", OutForgotten, key, map[string]string{"key": key, "by": who})
+	h.notify("", OutForgotten, key, map[string]string{"key": key, "by": who, "why": "forgotten"})
 	return nil
 }
 
 // Recall is what the fleet knows, and the limits it knows it under.
-func (h *Hub) Recall(pattern string) ([]memory.Entry, int, int) {
+func (h *Hub) Recall(pattern string) ([]memory.Entry, int, int, time.Duration) {
 	held, chars := h.memory.Limits()
-	return h.memory.Recall(pattern), held, chars
+	return h.memory.Recall(pattern), held, chars, h.memory.TTL()
 }
 
 // Config returns the loaded configuration.

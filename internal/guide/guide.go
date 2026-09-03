@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/emmanuel-deloget/swarm/internal/bus"
 	"github.com/emmanuel-deloget/swarm/internal/config"
@@ -73,6 +74,8 @@ type Data struct {
 	Memory int
 	// MemoryChars is the longest an entry may be.
 	MemoryChars int
+	// MemoryTTL is how long an entry survives unused, empty when forever.
+	MemoryTTL string
 
 	// Budgets is true when any agent here has an allowance for talking, which
 	// is what decides whether the section appears at all. It bounds width
@@ -100,6 +103,7 @@ func Collect(c *config.Config) Data {
 		Hooks:       c.Hooks.Enabled,
 		Memory:      c.Memory.Entries(),
 		MemoryChars: c.Memory.Chars,
+		MemoryTTL:   durationOrEmpty(c.Memory.TTL),
 	}
 	if d.Hooks {
 		d.From = c.Hooks.From
@@ -153,6 +157,16 @@ func Collect(c *config.Config) Data {
 	}
 	sort.Strings(d.Groups)
 	return d
+}
+
+// durationOrEmpty is a setting an agent should only read about when the fleet
+// switched it on: a template that says "and nothing expires" spends a
+// paragraph on a mechanism that is not there.
+func durationOrEmpty(d time.Duration) string {
+	if d <= 0 {
+		return ""
+	}
+	return d.String()
 }
 
 // Write renders the guide into dir. A template named in the configuration is
@@ -289,8 +303,15 @@ you correct one.
 
 Remember what the fleet would otherwise have to be told twice — a number, a
 constraint, a decision that stands. Not what you did today. There is room for
-{{.Memory}} entries and a full memory refuses new ones, so an entry that is no
-longer true is worth forgetting.
+{{.Memory}} entries; a write into a full memory drops whichever entry has gone
+longest without being written or looked up{{if .MemoryTTL}}, and any entry
+untouched for {{.MemoryTTL}} goes on its own{{end}}. Looking something up by
+name keeps it — ` + "`swarm recall gate`" + ` counts as wanting it, a bare
+` + "`swarm recall`" + ` does not.
+
+Entries are attributed and every change is on the record, including the line
+you wrote over. Correct what is wrong; do not quietly replace what you disagree
+with.
 
 Writing an entry tells nobody, on purpose. If one is worth interrupting people
 for, say so as well — it goes on the bus like any other message, so it costs

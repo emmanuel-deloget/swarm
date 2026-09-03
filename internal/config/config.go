@@ -480,13 +480,25 @@ type MemoryConfig struct {
 	// 0 switches the memory off where an absent key takes the default: the two
 	// are different intentions and an int cannot tell them apart.
 	//
-	// Reaching the limit refuses the write rather than dropping the oldest: a
-	// memory that tidies itself is a cache, and the thing being asked for here
-	// is that somebody decide what is no longer true.
+	// Reaching the limit drops the least recently used entry rather than
+	// refusing the write. Refusing was the first answer, and it asked the
+	// wrong thing of an agent: pick somebody else's fact to delete, from
+	// inside a command that was about to fail anyway. What the memory can
+	// answer on its own is which fact the fleet has gone longest without
+	// wanting, and that is the one that goes.
 	Max *int `yaml:"max"`
 
 	// Chars is the longest an entry may be, in characters.
 	Chars int `yaml:"chars"`
+
+	// TTL is how long an entry survives without being written or asked for by
+	// name. Zero, the default, is forever.
+	//
+	// It measures use and not age on purpose. A constraint settled on the
+	// first morning and read every day since is the fleet's oldest entry and
+	// its most load-bearing one, and a memory that expired by age would drop
+	// exactly that.
+	TTL time.Duration `yaml:"ttl"`
 }
 
 // check fills in what the file left out.
@@ -502,6 +514,13 @@ func (m *MemoryConfig) check() error {
 	}
 	if m.Chars < 40 {
 		return fmt.Errorf("memory: chars is %d, which is a label rather than a fact", m.Chars)
+	}
+	if m.TTL < 0 {
+		return fmt.Errorf("memory: ttl must not be negative")
+	}
+	if m.TTL > 0 && m.TTL < time.Minute {
+		return fmt.Errorf("memory: ttl is %s, and nothing written survives long enough "+
+			"to be read once; 0 keeps entries forever", m.TTL)
 	}
 	return nil
 }
