@@ -538,8 +538,13 @@ it happens the next time anything asks the memory a question, not on a timer.
 
 Earlier versions refused the write on a full memory. That asked the wrong thing
 of an agent: pick somebody else's fact to delete, from inside a command that
-was about to fail anyway. To keep the old behaviour, leave `max` where the
-fleet will not reach it.
+was about to fail anyway — a judgement it has no standing to make about fifty
+lines mostly written by other people. What it did in practice was give up, and
+the fact was lost instead of an entry nobody had read in a week.
+
+There is no setting that brings the refusal back. A `max` the fleet never
+reaches never evicts, but that is not the same thing: the write succeeds either
+way, it simply never costs anything.
 
 ### The journal
 
