@@ -1,6 +1,6 @@
 module github.com/emmanuel-deloget/swarm
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/charmbracelet/bubbles v1.0.0
@@ -13,7 +13,7 @@ require (
 	github.com/charmbracelet/x/vt v0.0.0-20260816001655-68d539dca504
 	github.com/coder/websocket v1.8.15
 	github.com/creack/pty v1.1.24
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.48.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
